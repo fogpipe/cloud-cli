@@ -81,4 +81,4 @@ case ":$PATH:" in
   *":$dir:"*) : ;;
   *) printf '  Add it to your PATH:  export PATH="%s:$PATH"\n' "$dir" ;;
 esac
-printf '  Next:  fpcloud login  &&  fpcloud fke get-credentials --project <name>\n'
+printf '  Next:  fpcloud login   # then: fpcloud org use / project use / app deploy\n'
