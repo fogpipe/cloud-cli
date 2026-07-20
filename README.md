@@ -45,9 +45,10 @@ e.g. `nixpkgs.config.allowUnfree = true`, or `--impure` with
 ## Quickstart
 
 ```sh
-fpcloud login                                    # browser sign-in
-fpcloud fke get-credentials --project <name>     # scoped kubeconfig context
-kubectl get pods                                  # now works against your project
+fpcloud login                                # browser sign-in
+fpcloud org use <org>                        # select your organization
+fpcloud project use <project>                # select a project
+fpcloud app deploy <app> --image <image>     # deploy or update an app
 ```
 
 `fpcloud --help` lists everything; `fpcloud <command> --help-llm` prints dense,
