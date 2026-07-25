@@ -42,6 +42,22 @@ fpcloud is a proprietary (unfree) binary, so allow unfree when installing it —
 e.g. `nixpkgs.config.allowUnfree = true`, or `--impure` with
 `NIXPKGS_ALLOW_UNFREE=1`.
 
+## Update
+
+Update through the channel you installed from:
+
+| Installed with | Update with |
+| --- | --- |
+| the shell script | `fpcloud upgrade` |
+| Homebrew | `brew upgrade fpcloud` |
+| a Nix flake input | `nix flake update fpcloud`, then re-enter the dev shell |
+| `nix profile install` | `nix profile upgrade fpcloud` |
+
+`fpcloud upgrade` replaces the binary in place with the version your control
+plane advertises, so the CLI tracks the API you talk to. It only works for the
+shell install: a Nix-installed fpcloud lives in the read-only store and can't
+replace itself, so `fpcloud upgrade` prints the commands above instead.
+
 ## Quickstart
 
 ```sh
