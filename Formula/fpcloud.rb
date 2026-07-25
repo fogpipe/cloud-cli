@@ -6,7 +6,7 @@
 # version + the four sha256 values are rewritten by the release pipeline
 # (release-fpcloud.yml) on every tag; the placeholders below are intentional.
 class Fpcloud < Formula
-  desc "Fogpipe Cloud CLI — deploy apps, manage databases, scoped kubectl access"
+  desc "Fogpipe Cloud CLI — deploy apps, manage databases, domains, and object storage"
   homepage "https://github.com/fogpipe/cloud-cli"
   version "0.76.0"
   license :cannot_represent # proprietary binary; the packaging in this tap is MIT
