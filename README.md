@@ -1,7 +1,7 @@
 # fpcloud
 
 The command-line interface for [Fogpipe Cloud](https://cloud.fogpipe.com) — deploy
-apps, manage databases, and get scoped `kubectl` access to your projects.
+apps, manage databases, attach domains, and serve object storage.
 
 ## Install
 

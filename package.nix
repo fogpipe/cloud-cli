@@ -62,7 +62,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   meta = {
-    description = "Fogpipe Cloud CLI — deploy apps, manage databases, and get scoped kubectl access";
+    description = "Fogpipe Cloud CLI — deploy apps, manage databases, domains, and object storage";
     homepage = "https://github.com/fogpipe/cloud-cli";
     license = lib.licenses.unfree; # the fpcloud binary is proprietary; packaging is MIT
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
