@@ -13,7 +13,7 @@
   fetchurl,
 }:
 let
-  version = "0.88.0"; # bumped by the release pipeline (release-fpcloud.yml)
+  version = "0.89.0"; # bumped by the release pipeline (release-fpcloud.yml)
   baseURL = "https://github.com/fogpipe/cloud-cli/releases/download/v${version}";
 
   # Per-platform release asset + its hash. The release pipeline rewrites the
@@ -22,19 +22,19 @@ let
   sources = {
     x86_64-linux = {
       asset = "fpcloud-linux-amd64";
-      hash = "sha256-od3eDwZDiEUjVYllUZ+dRJlyEZIceV5nuAD/Npw456c=";
+      hash = "sha256-1OCU5CUbk3rbGag9VOr7z7SUZiE9SEV7uyrmBfgAZJs=";
     };
     aarch64-linux = {
       asset = "fpcloud-linux-arm64";
-      hash = "sha256-27N4Sa2aemRvU2V9YSAD+OJC5en7Y9NEh/Dt5ezUF4M=";
+      hash = "sha256-EgtOUgheKHqncXYaHwuamm8obCWoiKDGGdUEU4d5iCA=";
     };
     x86_64-darwin = {
       asset = "fpcloud-darwin-amd64";
-      hash = "sha256-xJ9Q4OW9r9Hji16YB0750SJaFpu/O9xWwcYdiIf5Sqo=";
+      hash = "sha256-q9NnorPv2HJ65YvfyVrw78b1XyNYOZnOhaoRvYUJOaY=";
     };
     aarch64-darwin = {
       asset = "fpcloud-darwin-arm64";
-      hash = "sha256-+hhGJvANN7j7KXwXtcGqcXCd8YCMfvFmUovt3SzBVPg=";
+      hash = "sha256-5tSty6GKnTfVjlkvmVwr+LqNv+Uop8XVuMZxsuHZB1U=";
     };
   };
 
