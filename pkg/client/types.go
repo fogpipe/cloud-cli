@@ -275,6 +275,7 @@ type App struct {
 	Ingress             string          `json:"ingress"`
 	Routes              []Route         `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
 	Mode                string          `json:"mode"`
+	Type                string          `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
 	Storage             string          `json:"storage"`
 	KubeServiceAccount  string          `json:"kube_service_account,omitempty"`
 	StoragePath         string          `json:"storage_path"`
@@ -352,10 +353,14 @@ type CreateAppRequest struct {
 	Port            int              `json:"port,omitempty"`
 	Replicas        int              `json:"replicas,omitempty"`
 	Ingress         string           `json:"ingress,omitempty"`
-	Routes          []Route          `json:"routes,omitempty"`       // per-path visibility carve-outs (#501)
-	Mode            string           `json:"mode,omitempty"`         // "always-on" (default) or "serverless"
-	Storage         string           `json:"storage,omitempty"`      // persistent volume size (e.g. "50Gi")
-	StoragePath     string           `json:"storage_path,omitempty"` // mount path (defaults to /data)
+	Routes          []Route          `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode            string           `json:"mode,omitempty"`   // "always-on" (default) or "serverless"
+	// Type is the process type: "web" (default) serves HTTP behind a Service;
+	// "worker" is a long-lived process with no port, Service or hostname. Frozen
+	// at create — no update path changes it.
+	Type        string `json:"type,omitempty"`
+	Storage     string `json:"storage,omitempty"`      // persistent volume size (e.g. "50Gi")
+	StoragePath string `json:"storage_path,omitempty"` // mount path (defaults to /data)
 	// EnvVars seeds the app's config store with plain (non-secret) values —
 	// shorthand for a SetConfig per key. Use SetConfig to change them afterwards;
 	// there is no second env layer on the app itself.

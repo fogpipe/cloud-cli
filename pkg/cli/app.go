@@ -102,6 +102,16 @@ func slugDisplay(slug string) string {
 	return slug
 }
 
+// ingressDisplay renders an app's ingress setting, or an em-dash for a worker —
+// which has no Service to be reachable on, so neither "all" nor "internal"
+// describes it.
+func ingressDisplay(app *client.App) string {
+	if app.Type == "worker" {
+		return mutedStyle.Render("—")
+	}
+	return app.Ingress
+}
+
 var appCreateCmd = &cobra.Command{
 	Use:   "create [name]",
 	Short: "Create a new app",
@@ -121,6 +131,7 @@ var appCreateCmd = &cobra.Command{
 		replicas, _ := cmd.Flags().GetInt("replicas")
 		ingress, _ := cmd.Flags().GetString("ingress")
 		mode, _ := cmd.Flags().GetString("mode")
+		appType, _ := cmd.Flags().GetString("type")
 		storage, _ := cmd.Flags().GetString("storage")
 		storagePath, _ := cmd.Flags().GetString("storage-path")
 
@@ -175,6 +186,19 @@ var appCreateCmd = &cobra.Command{
 		displayName, _ := cmd.Flags().GetString("display-name")
 		slug, _ := cmd.Flags().GetString("slug")
 
+		// --port and --health-check-path carry defaults, so their value alone
+		// cannot say whether the user asked for them. A worker has neither and
+		// the API refuses both, so drop the untyped defaults — that way the
+		// refusal answers something the user actually wrote.
+		if appType == "worker" {
+			if !cmd.Flags().Changed("port") {
+				port = 0
+			}
+			if !cmd.Flags().Changed("health-check-path") {
+				healthCheckPath = ""
+			}
+		}
+
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
 
@@ -196,6 +220,7 @@ var appCreateCmd = &cobra.Command{
 				Ingress:             ingress,
 				Routes:              routes,
 				Mode:                mode,
+				Type:                appType,
 				Storage:             storage,
 				StoragePath:         storagePath,
 				ServiceAccount:      serviceAccount,
@@ -220,17 +245,25 @@ var appCreateCmd = &cobra.Command{
 			return renderData(app)
 		}
 
-		fmt.Println(renderInfoBox("App Created", [][]string{
+		rows := [][]string{
 			{"ID", mutedStyle.Render(app.ID)},
 			{"Name", app.Name},
 			{"Display Name", app.DisplayName},
-			{"URL Slug", slugDisplay(app.URLSlug)},
 			{"Image", app.Image},
+			{"Type", app.Type},
 			{"Mode", app.Mode},
-			{"Ingress", app.Ingress},
 			{"Status", renderStatus(app.Status)},
-			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
-		}))
+		}
+		// A worker has no slug, ingress or URL. Printing those rows empty would
+		// read as "not configured yet" rather than "does not apply".
+		if app.Type != "worker" {
+			rows = append(rows,
+				[]string{"URL Slug", slugDisplay(app.URLSlug)},
+				[]string{"Ingress", app.Ingress},
+				[]string{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
+			)
+		}
+		fmt.Println(renderInfoBox("App Created", rows))
 		return nil
 	},
 }
@@ -434,13 +467,13 @@ var appListCmd = &cobra.Command{
 		showID, _ := cmd.Flags().GetBool("show-id")
 		rows := make([][]string, len(apps))
 		for i, a := range apps {
-			row := []string{a.Name, a.Image, a.Mode, a.Ingress, renderStatus(a.Status), a.URL}
+			row := []string{a.Name, a.Image, a.Type, a.Mode, ingressDisplay(a), renderStatus(a.Status), a.URL}
 			if showID {
 				row = append([]string{a.ID}, row...)
 			}
 			rows[i] = row
 		}
-		headers := []string{"NAME", "IMAGE", "MODE", "INGRESS", "STATUS", "URL"}
+		headers := []string{"NAME", "IMAGE", "TYPE", "MODE", "INGRESS", "STATUS", "URL"}
 		if showID {
 			headers = append([]string{"ID"}, headers...)
 		}
@@ -515,25 +548,34 @@ var appGetCmd = &cobra.Command{
 			routesDisplay = strings.Join(parts, ", ")
 		}
 
-		fmt.Println(renderInfoBox("App Details", [][]string{
+		rows := [][]string{
 			{"ID", mutedStyle.Render(app.ID)},
 			{"Name", app.Name},
 			{"Display Name", app.DisplayName},
-			{"URL Slug", slugDisplay(app.URLSlug)},
 			{"Image", app.Image},
+			{"Type", app.Type},
 			{"Mode", app.Mode},
-			{"Ingress", app.Ingress},
-			{"Routes", routesDisplay},
 			{"Status", renderStatus(app.Status)},
-			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 			{"Replicas", fmt.Sprintf("%d", app.Replicas)},
 			{"Storage", storageDisplay},
 			{"Release Command", releaseDisplay},
-			{"Health Check", healthCheck},
-			{"Probes", probesDisplay},
-			{"Domains", domains},
 			{"Service Account", saDisplay},
-		}))
+		}
+		// Everything below describes how the app is reached or checked. A worker
+		// is reached by nothing and probed by nothing, so the rows are dropped
+		// rather than shown blank.
+		if app.Type != "worker" {
+			rows = append(rows,
+				[]string{"URL Slug", slugDisplay(app.URLSlug)},
+				[]string{"Ingress", app.Ingress},
+				[]string{"Routes", routesDisplay},
+				[]string{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
+				[]string{"Health Check", healthCheck},
+				[]string{"Probes", probesDisplay},
+				[]string{"Domains", domains},
+			)
+		}
+		fmt.Println(renderInfoBox("App Details", rows))
 		return nil
 	},
 }
@@ -1672,6 +1714,7 @@ func init() {
 	appCreateCmd.Flags().String("ingress", "internal", "Ingress setting: 'all' (public) or 'internal' (default)")
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
 	appCreateCmd.Flags().String("mode", "always-on", "Hosting mode: 'always-on' (default) or 'serverless' (scale-to-zero)")
+	appCreateCmd.Flags().String("type", "web", "Process type: 'web' (default, serves HTTP) or 'worker' (long-running process with no port, URL or health checks). Frozen at create")
 	appCreateCmd.Flags().String("storage", "", "Attach a persistent volume of this size (e.g. 50Gi). Always-on mode only; opt-in")
 	appCreateCmd.Flags().String("storage-path", "/data", "Mount path for the persistent volume (default: /data)")
 	appCreateCmd.Flags().String("service-account", "", "Service account email for workload identity")
