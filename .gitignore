@@ -2,3 +2,6 @@ bin/
 .direnv/
 .go/
 result
+.claude/worktrees/
+go.work
+go.work.sum
