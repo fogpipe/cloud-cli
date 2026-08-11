@@ -23,16 +23,18 @@ import (
 )
 
 // The CLI's default OIDC client is a Google **Desktop-app** client (#392). Its client
-// id is public and committed here; the client secret is NOT. Google requires the secret
-// in the token exchange even with PKCE (confirmed: a secretless exchange is rejected
-// with "client_secret is missing"), but no longer lets it be viewed after creation and
-// says secrets must not live in a repo — so it's baked from the gitignored
-// google-client.json at build time via `just build-fpcloud` (ldflags), never committed.
+// id is public and committed here; the client secret is never in this binary at all.
+// Google requires it in the token exchange even with PKCE (confirmed: a secretless
+// exchange is rejected with "client_secret is missing"), and a native app cannot keep
+// one — so the platform holds it and the exchange is brokered through
+// /api/v1/auth/oauth/token instead. That is what makes a plain `go build` of this repo
+// a CLI that can actually log in, which is what nixpkgs and Homebrew core require.
 // Setting FPCLOUD_OIDC_CLIENT_ID switches to a different client entirely — e.g. a
-// self-hosted IdP (ADR-022), whose FPCLOUD_OIDC_CLIENT_SECRET may be empty (public/PKCE).
+// self-hosted IdP (ADR-022), whose FPCLOUD_OIDC_CLIENT_SECRET may be empty (public/PKCE);
+// that path talks to the issuer directly and never touches the broker.
 var (
 	oidcClientID     = "597394613214-a44p2lq2md2728dmfbtedolau3sn2d18.apps.googleusercontent.com"
-	oidcClientSecret = "" // baked at build time from the gitignored client JSON; never committed
+	oidcClientSecret = "" // only ever set for a non-Google client, via FPCLOUD_OIDC_CLIENT_SECRET
 	// OIDC endpoints default to Google; override per-issuer via ldflags or the
 	// FPCLOUD_OIDC_* env vars. FPCLOUD_OIDC_ISSUER triggers .well-known discovery,
 	// while FPCLOUD_OIDC_AUTH_URL / FPCLOUD_OIDC_TOKEN_URL set the endpoints directly.
@@ -118,6 +120,10 @@ func idpName() string {
 	return "your identity provider"
 }
 
+// brokerTokenPath is where the platform exchanges codes and refresh tokens on
+// the CLI's behalf, holding the Google client secret this binary does not.
+const brokerTokenPath = "/api/v1/auth/oauth/token"
+
 func oauthConfig(ctx context.Context) (*oauth2.Config, error) {
 	id, secret, err := resolveOIDCClient()
 	if err != nil {
@@ -126,6 +132,13 @@ func oauthConfig(ctx context.Context) (*oauth2.Config, error) {
 	endpoint, err := resolveEndpoints(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// Only the default Google client is brokered. A self-hosted issuer is either
+	// public (PKCE, no secret to hold) or configured with its own secret here, and
+	// in both cases talking to it directly is correct — routing it through our
+	// platform would put a third party in the middle of someone else's login.
+	if usingGoogleDefaults() && os.Getenv("FPCLOUD_OIDC_CLIENT_ID") == "" {
+		endpoint.TokenURL = strings.TrimSuffix(rootCmd.Flag("api-url").Value.String(), "/") + brokerTokenPath
 	}
 	if secret == "" {
 		// Public client: send client_id in the request body and don't attempt HTTP

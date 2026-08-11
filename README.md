@@ -38,11 +38,6 @@ Or add it to your flake:
 }
 ```
 
-The Nix package installs the released binary rather than building it. Google
-rejects the OAuth token exchange without a client secret even under PKCE, and
-that secret is injected at release time rather than committed — so a
-from-source build would install fine and then fail at `fpcloud login`.
-
 ## Update
 
 Update through the channel you installed from:
@@ -85,6 +80,11 @@ import "github.com/fogpipe/cloud-cli/pkg/client"
 go build ./...
 go test ./...
 ```
+
+A binary you build yourself is the same one we release — nothing is injected at
+release time. Google requires a client secret in the OAuth token exchange even
+under PKCE, and a native app cannot keep one, so the platform holds it and
+brokers the exchange; `fpcloud login` works from a plain `go build`.
 
 The API this speaks to is published: `openapi.yaml`, `/docs` and `/llms.txt` on
 your platform host.
