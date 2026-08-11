@@ -331,7 +331,7 @@ func runnerInfoRows(r *client.Runner) [][]string {
 // runnerBuilderFromFlags reads the builder a create asked for, or nil for a pool
 // that builds nothing. Naming a size implies the builder, so `--builder-memory
 // 8Gi` alone does what it looks like; an unset size takes the platform's
-// default for a builder, which is not the runner's own size (ADR-069).
+// default for a builder, which is not the runner's own size (ADR-071).
 func runnerBuilderFromFlags(cmd *cobra.Command) *client.RunnerBuilder {
 	cpu, memory := mustString(cmd, "builder-cpu"), mustString(cmd, "builder-memory")
 	if !mustBool(cmd, "builder") && cpu == "" && memory == "" {

@@ -1310,7 +1310,7 @@ type Runner struct {
 	Memory          string `json:"memory,omitempty"`
 
 	// Builder is the image builder that runs alongside each job, or nil for a
-	// pool that builds nothing (ADR-069). CPU and Memory bound the builder, not
+	// pool that builds nothing (ADR-071). CPU and Memory bound the builder, not
 	// the runner — a read always fills them in, so the pod's cost is the sum of
 	// two numbers you can see.
 	Builder *RunnerBuilder `json:"builder,omitempty"`
@@ -1385,7 +1385,7 @@ type UpdateRunnerRequest struct {
 }
 
 // RunnerBuilder is the rootless image builder a pool runs alongside each job
-// (ADR-064), and what it costs (ADR-069).
+// (ADR-064), and what it costs (ADR-071).
 //
 // The runner and the builder are two processes with unrelated appetites — the
 // runner's memory follows the workflow's steps, the builder's follows the
