@@ -1,0 +1,198 @@
+name: release
+
+# Build fpcloud for each platform with the Google OAuth client injected from CI
+# secrets (never in git), publish the binaries to a GitHub Release, and point
+# the Homebrew formula and Nix package at them.
+# Trigger by pushing a tag, e.g.:  git tag v0.1.0 && git push origin v0.1.0
+#
+# Single job (not a matrix): all targets build in one runner and the release is
+# created in one call. A matrix raced here — every job tried to create the same
+# release and collided with "already_exists". One job, one create = no race.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # full history + tags so the changelog can diff against the previous tag
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Build all platforms
+        env:
+          CID: ${{ secrets.FPCLOUD_OIDC_CLIENT_ID }}
+          CSEC: ${{ secrets.FPCLOUD_OIDC_CLIENT_SECRET }}
+          # Through the environment, never interpolated into the script: a tag is
+          # attacker-chosen text, and `${{ }}` is substituted before the shell
+          # parses the line, so a tag containing a quote would run as code.
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # CGO_ENABLED=0 → fully static binaries on every target (no libc
+          # dependency), so the CLI runs anywhere: NixOS, Alpine/musl, old glibc.
+          # Without it the native linux/amd64 build links glibc dynamically and
+          # won't run on those. fpcloud is pure Go, so nothing needs cgo.
+          export CGO_ENABLED=0
+          pkg=github.com/fogpipe/cloud-cli/pkg/cli
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            export GOOS="${target%/*}" GOARCH="${target#*/}"
+            out="fpcloud-${GOOS}-${GOARCH}"
+            go build -ldflags "-X $pkg.oidcClientID=$CID -X $pkg.oidcClientSecret=$CSEC -X $pkg.version=$TAG" -o "$out" ./cmd/fpcloud
+            sha256sum "$out" > "$out.sha256"
+          done
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "$TAG" \
+            --generate-notes \
+            fpcloud-* \
+          || gh release upload "$TAG" fpcloud-* --clobber
+
+      - name: Update Homebrew formula + Nix package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          # Rewrite version + per-asset hashes: sha256 hex for Homebrew, SRI for Nix.
+          python3 - "$ver" <<'PY'
+          import base64, hashlib, pathlib, re, sys
+          ver = sys.argv[1]
+          assets = ["fpcloud-darwin-arm64", "fpcloud-darwin-amd64", "fpcloud-linux-arm64", "fpcloud-linux-amd64"]
+          hexd, sri = {}, {}
+          for a in assets:
+              digest = hashlib.sha256(pathlib.Path(a).read_bytes()).digest()
+              hexd[a] = digest.hex()
+              sri[a] = "sha256-" + base64.b64encode(digest).decode()
+
+          def rewrite(path, asset_re, hash_re, hashes, version_re, version_repl):
+              lines = pathlib.Path(path).read_text().splitlines(keepends=True)
+              out, pend = [], None
+              for ln in lines:
+                  if re.search(version_re, ln):
+                      out.append(re.sub(version_re, version_repl, ln)); continue
+                  m = re.search(asset_re, ln)
+                  if m and m.group(1) in hashes:
+                      pend = m.group(1); out.append(ln); continue
+                  if pend and re.search(hash_re, ln):
+                      out.append(re.sub(hash_re, hashes[pend], ln, count=1)); pend = None; continue
+                  out.append(ln)
+              pathlib.Path(path).write_text("".join(out))
+
+          # Homebrew: `url ".../fpcloud-<os>-<arch>"` then `sha256 "<hex>"`.
+          rewrite("Formula/fpcloud.rb",
+                  r'/(fpcloud-[a-z0-9-]+)"', r'sha256 "[^"]*"',
+                  {a: f'sha256 "{h}"' for a, h in hexd.items()},
+                  r'version "[^"]*"', f'version "{ver}"')
+          # Nix: `asset = "fpcloud-<os>-<arch>";` then `hash = <...>;`.
+          rewrite("package.nix",
+                  r'asset = "(fpcloud-[a-z0-9-]+)"', r'hash = [^;]*;',
+                  {a: f'hash = "{h}";' for a, h in sri.items()},
+                  r'version = "[^"]*"', f'version = "{ver}"')
+          PY
+          git config user.name "fogpipe-release"
+          git config user.email "release@fogpipe.com"
+          git add Formula/fpcloud.rb package.nix
+          git commit -m "fpcloud ${TAG}" && git push origin HEAD:main || echo "no formula/package changes to commit"
+
+  # Post the release notes to Slack on every successful release.
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [release]
+    if: success()
+    env:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+    steps:
+      - name: Get release notes
+        id: release
+        if: env.SLACK_WEBHOOK != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          result-encoding: string
+          script: |
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: context.ref.replace('refs/tags/', '')
+            });
+            return release.data.body || 'No release notes provided.';
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK != ''
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ${{ toJSON(format('New release: fpcloud {0}', github.ref_name)) }},
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ${{ toJSON(format('fpcloud {0} released', github.ref_name)) }},
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ${{ toJSON(steps.release.outputs.result) }}
+                  }
+                }
+              ]
+            }
+
+  notify-failure:
+    name: Notify Release Failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [release]
+    if: failure()
+    env:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+    steps:
+      - name: Send failure notification
+        if: env.SLACK_WEBHOOK != ''
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ${{ toJSON(format('Release failed: fpcloud {0}', github.ref_name)) }},
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ${{ toJSON(format('❌ fpcloud {0} release failed', github.ref_name)) }},
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                    }
+                  ]
+                }
+              ]
+            }
