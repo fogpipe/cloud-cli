@@ -40,8 +40,8 @@ a release, so a tag is all it takes.
 
 ## Working across repos
 
-`just worktree <name> platform cli` at the workspace root creates a matching
-worktree here and in the platform repo and writes a `go.work` over the pair, so
+`just tree <name>` at the workspace root gives a session an isolated copy of
+the whole workspace — this repo and the platform repo under one `go.work` — so
 a `pkg/client` change is testable against the server before it is tagged.
 Without it you are testing against the last tag.
 
