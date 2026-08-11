@@ -25,6 +25,19 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
+      # A binary built without the OAuth client installs and runs, and fails only
+      # at `fpcloud login` — after it is already in someone's PATH and the
+      # formula and Nix package point at it. Refuse the release instead.
+      - name: Require the OAuth client
+        env:
+          CID: ${{ secrets.FPCLOUD_OIDC_CLIENT_ID }}
+          CSEC: ${{ secrets.FPCLOUD_OIDC_CLIENT_SECRET }}
+        run: |
+          if [ -z "$CID" ] || [ -z "$CSEC" ]; then
+            echo "FPCLOUD_OIDC_CLIENT_ID / FPCLOUD_OIDC_CLIENT_SECRET are not set on this repository." >&2
+            echo "Without them every published binary fails at \`fpcloud login\`." >&2
+            exit 1
+          fi
       - name: Build all platforms
         env:
           CID: ${{ secrets.FPCLOUD_OIDC_CLIENT_ID }}
