@@ -9,7 +9,7 @@ class Fpcloud < Formula
   desc "Fogpipe Cloud CLI — deploy apps, manage databases, domains, and object storage"
   homepage "https://github.com/fogpipe/cloud-cli"
   version "0.117.0"
-  license :cannot_represent # proprietary binary; the packaging in this tap is MIT
+  license :cannot_represent # proprietary binary; the packaging in this tap is Apache-2.0
 
   on_macos do
     on_arm do

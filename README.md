@@ -73,6 +73,10 @@ machine-readable help for a command and its subtree.
 ## Licensing
 
 The packaging in this repository — the install script, Nix flake/derivation,
-Homebrew formula, and docs — is [MIT](LICENSE). The `fpcloud` binary distributed
-via [Releases](https://github.com/fogpipe/cloud-cli/releases) is proprietary,
+Homebrew formula, and docs — is [Apache-2.0](LICENSE), the licence every public
+Fogpipe repository carries. The `fpcloud` binary distributed via
+[Releases](https://github.com/fogpipe/cloud-cli/releases) is proprietary,
 closed-source software governed separately by Fogpipe.
+
+Releases up to and including v0.116.2 were published under MIT, and that grant
+stands for those versions.

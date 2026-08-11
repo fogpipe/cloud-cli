@@ -6,7 +6,7 @@
 #
 # The binary is closed-source, so this fetches the released artifact per platform
 # rather than building from source (meta.license = unfree, sourceProvenance =
-# binaryNativeCode). The packaging around it is MIT (see LICENSE).
+# binaryNativeCode). The packaging around it is Apache-2.0 (see LICENSE).
 {
   lib,
   stdenvNoCC,
@@ -64,7 +64,7 @@ stdenvNoCC.mkDerivation {
   meta = {
     description = "Fogpipe Cloud CLI — deploy apps, manage databases, domains, and object storage";
     homepage = "https://github.com/fogpipe/cloud-cli";
-    license = lib.licenses.unfree; # the fpcloud binary is proprietary; packaging is MIT
+    license = lib.licenses.unfree; # the fpcloud binary is proprietary; packaging is Apache-2.0
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
     mainProgram = "fpcloud";
     platforms = builtins.attrNames sources;
