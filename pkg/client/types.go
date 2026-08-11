@@ -1464,8 +1464,16 @@ type AppStatus struct {
 	// answer to "is this changing right now".
 	Rollout *RolloutStatus `json:"rollout,omitempty"`
 	// Pods is the app's population by state: running, coming up, going away.
-	Pods     *PodPhases      `json:"pods,omitempty"`
+	Pods *PodPhases `json:"pods,omitempty"`
+	// Config is how much configuration the app carries — counts, never values.
+	Config   *ConfigCount    `json:"config,omitempty"`
 	Problems []StatusProblem `json:"problems,omitempty"`
+}
+
+// ConfigCount is how many config values an app holds, and how many are secret.
+type ConfigCount struct {
+	Values  int `json:"values"`
+	Secrets int `json:"secrets"`
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,
@@ -1523,10 +1531,14 @@ type JobRunStatus struct {
 	DurationMs *int       `json:"duration_ms,omitempty"`
 }
 
-// DomainStatus is one custom hostname and whether it is actually serving.
+// DomainStatus is one hostname the project serves — the app's own platform host
+// included, not only custom ones.
 type DomainStatus struct {
-	Domain    string          `json:"domain"`
-	Mode      string          `json:"mode"`
+	Domain string `json:"domain"`
+	// Source is "custom" for a hostname someone attached, "platform" for the one
+	// the app was given.
+	Source    string          `json:"source"`
+	Mode      string          `json:"mode,omitempty"`
 	Status    string          `json:"status"`
 	TLSStatus string          `json:"tls_status,omitempty"`
 	Owner     string          `json:"owner,omitempty"`

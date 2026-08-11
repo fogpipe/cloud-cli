@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -72,17 +74,25 @@ healthy if it also says that everything was looked at.`,
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return fmt.Errorf("--watch renders a live view; it cannot be combined with -o %s", rootCmd.Flag("output").Value.String())
 		}
-		return watchProjectStatus(c, project, interval)
+		return watchProjectStatus(project, interval)
 	},
 }
 
 // watchProjectStatus redraws the status view in place until interrupted.
 //
 // In process rather than under watch(1): re-running the binary each tick would
-// re-read the config, re-check the token and re-resolve the project every time,
-// and — because each run starts blank — could never say what changed between two
-// of them, which is the only thing a watcher is actually looking for.
-func watchProjectStatus(c *client.Client, project string, interval time.Duration) error {
+// re-read the config and re-resolve the project every time, and — because each
+// run starts blank — could never say what changed between two of them, which is
+// the only thing a watcher is actually looking for.
+//
+// The client is rebuilt every poll rather than captured once. A Google ID token
+// lasts about an hour, so a watch held open longer than that used to fail with
+// "invalid or expired credentials" and then stay failed forever: the expired
+// token was pinned in memory, and even logging in again — which writes a fresh
+// one to disk — could not reach it. Rebuilding per tick both picks up that new
+// token and lets `currentIDToken` do the refresh it already knows how to do,
+// silently, from the refresh token.
+func watchProjectStatus(project string, interval time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -96,7 +106,7 @@ func watchProjectStatus(c *client.Client, project string, interval time.Duration
 		prev *client.ProjectStatus
 	)
 	for {
-		status, newETag, err := c.ProjectStatus(ctx, project, etag)
+		status, newETag, err := getClient().ProjectStatus(ctx, project, etag)
 		switch {
 		case ctx.Err() != nil:
 			return nil
@@ -104,7 +114,7 @@ func watchProjectStatus(c *client.Client, project string, interval time.Duration
 			// A failed poll is reported in place and retried: a watch that exited
 			// on the first blip would be useless during exactly the incident
 			// someone opened it for.
-			fmt.Print("\x1b[H\x1b[2J" + errorBox.Render("poll failed: "+err.Error()) + "\n")
+			fmt.Print("\x1b[H\x1b[2J" + errorBox.Render(pollFailure(err)) + "\n")
 		case status != nil:
 			fmt.Print("\x1b[H\x1b[2J" + renderProjectStatus(status, prev) +
 				mutedStyle.Render(fmt.Sprintf("\nwatching every %s — ctrl-c to stop\n", interval)))
@@ -172,7 +182,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 			hints = append(hints, moving)
 		}
 		appRows = append(appRows, statusRow{
-			cells: []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), a.URL},
+			cells: []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
 			notes: problemNotes(a.Problems),
 			hints: hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
@@ -186,7 +196,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 				len(was.Problems) != len(a.Problems)),
 		})
 	}
-	b.WriteString(renderStatusSection("APPS", []string{"MODE", "STATUS", "RELEASE", "IMAGE", "AGE", "URL"}, appRows))
+	b.WriteString(renderStatusSection("APPS", []string{"MODE", "STATUS", "RELEASE", "IMAGE", "AGE", "CONFIG"}, appRows))
 
 	dbRows := make([]statusRow, 0, len(s.Databases))
 	for _, d := range s.Databases {
@@ -223,8 +233,12 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		if owner != "" && d.OwnerKind != "" {
 			owner = d.OwnerKind + "/" + d.Owner
 		}
+		mode := d.Mode
+		if mode == "" {
+			mode = mutedStyle.Render(d.Source)
+		}
 		domainRows = append(domainRows, statusRow{
-			cells: []string{d.Domain, d.Mode, renderStatus(d.Status), tlsLabel(d.TLSStatus), owner},
+			cells: []string{d.Domain, mode, renderStatus(d.Status), tlsLabel(d.TLSStatus), owner},
 			notes: problemNotes(d.Problems),
 		})
 	}
@@ -518,4 +532,31 @@ func shortDuration(seconds int64) string {
 	default:
 		return fmt.Sprintf("%dd", seconds/86400)
 	}
+}
+
+// configLabel says how much configuration an app carries — never what it is.
+// The count is the useful part of the answer: an app with no config where you
+// expected six is a diagnosis, and the values themselves are `fpcloud config
+// list`'s business, behind its own permission check.
+func configLabel(c *client.ConfigCount) string {
+	if c == nil || c.Values == 0 {
+		return mutedStyle.Render("—")
+	}
+	if c.Secrets == 0 {
+		return fmt.Sprintf("%d", c.Values)
+	}
+	return fmt.Sprintf("%d (%d secret)", c.Values, c.Secrets)
+}
+
+// pollFailure renders a failed poll with what to do about it. A watch keeps
+// retrying rather than exiting, so the message has to carry the remedy —
+// otherwise an expired login shows an error that never changes and never says
+// it is waiting for you to fix it.
+func pollFailure(err error) string {
+	msg := "poll failed: " + err.Error()
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
+		msg += "\n\nRun `fpcloud login` in another terminal — this view picks the\nnew credentials up on its next poll, no restart needed."
+	}
+	return msg
 }
