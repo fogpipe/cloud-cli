@@ -38,10 +38,10 @@ Or add it to your flake:
 }
 ```
 
-The Nix package installs the released binary rather than building from source,
-which Nix classes as unfree — allow it when installing, e.g.
-`nixpkgs.config.allowUnfree = true`, or `--impure` with
-`NIXPKGS_ALLOW_UNFREE=1`.
+The Nix package installs the released binary rather than building it. Google
+rejects the OAuth token exchange without a client secret even under PKCE, and
+that secret is injected at release time rather than committed — so a
+from-source build would install fine and then fail at `fpcloud login`.
 
 ## Update
 
