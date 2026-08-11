@@ -16,9 +16,13 @@ The Fogpipe Cloud CLI and its Go SDK. Public, Apache-2.0.
 ## It is public
 
 Nothing operator-internal goes here. Operator-only API paths live under
-`/api/v1/admin/*` and are not part of the tenant CLI; keep it that way. The
-Google OAuth client secret is injected via ldflags at release time and must
-never be committed — `oidcClientSecret` stays `""` in source.
+`/api/v1/admin/*` and are not part of the tenant CLI; keep it that way.
+
+No credential belongs in this binary, and none is in it. The Google client
+secret the token exchange needs lives on the platform, which brokers the
+exchange at `/api/v1/auth/oauth/token`; `oidcClientSecret` is only ever set for
+a non-Google client, from the environment. Don't reintroduce a build-time
+injection — it is what stopped this from being buildable from source.
 
 Read rather than contributed to: there is no contribution process, and issues
 here are not a support channel.
@@ -30,10 +34,9 @@ tagged version. Nothing downstream can move until a change is merged **and
 tagged** — a merged-but-untagged client change is invisible to both, and reads
 as the method not existing rather than as a missing tag.
 
-Pushing a `v*` tag builds the binaries, publishes the release and rewrites the
-Homebrew formula and Nix package to point at it. It refuses to publish if
-`FPCLOUD_OIDC_CLIENT_ID` / `FPCLOUD_OIDC_CLIENT_SECRET` are unset, because a
-binary without them installs fine and fails only at `fpcloud login`.
+Pushing a `v*` tag builds the binaries, publishes the release and bumps the
+version in the Homebrew formula and the Nix package. No secrets are needed for
+a release, so a tag is all it takes.
 
 ## Working across repos
 

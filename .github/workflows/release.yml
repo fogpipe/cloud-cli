@@ -1,8 +1,9 @@
 name: release
 
-# Build fpcloud for each platform with the Google OAuth client injected from CI
-# secrets (never in git), publish the binaries to a GitHub Release, and point
-# the Homebrew formula and Nix package at them.
+# Build fpcloud for each platform, publish the binaries to a GitHub Release, and
+# point the Homebrew formula and Nix package at the new version. No credential is
+# injected: the Google client secret lives on the platform, which brokers the
+# token exchange, so a release binary is what anyone gets from `go build`.
 # Trigger by pushing a tag, e.g.:  git tag v0.1.0 && git push origin v0.1.0
 #
 # Single job (not a matrix): all targets build in one runner and the release is
@@ -25,23 +26,8 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      # A binary built without the OAuth client installs and runs, and fails only
-      # at `fpcloud login` — after it is already in someone's PATH and the
-      # formula and Nix package point at it. Refuse the release instead.
-      - name: Require the OAuth client
-        env:
-          CID: ${{ secrets.FPCLOUD_OIDC_CLIENT_ID }}
-          CSEC: ${{ secrets.FPCLOUD_OIDC_CLIENT_SECRET }}
-        run: |
-          if [ -z "$CID" ] || [ -z "$CSEC" ]; then
-            echo "FPCLOUD_OIDC_CLIENT_ID / FPCLOUD_OIDC_CLIENT_SECRET are not set on this repository." >&2
-            echo "Without them every published binary fails at \`fpcloud login\`." >&2
-            exit 1
-          fi
       - name: Build all platforms
         env:
-          CID: ${{ secrets.FPCLOUD_OIDC_CLIENT_ID }}
-          CSEC: ${{ secrets.FPCLOUD_OIDC_CLIENT_SECRET }}
           # Through the environment, never interpolated into the script: a tag is
           # attacker-chosen text, and `${{ }}` is substituted before the shell
           # parses the line, so a tag containing a quote would run as code.
@@ -53,11 +39,14 @@ jobs:
           # Without it the native linux/amd64 build links glibc dynamically and
           # won't run on those. fpcloud is pure Go, so nothing needs cgo.
           export CGO_ENABLED=0
+          # No credential is injected: the Google client secret lives on the
+          # platform, which brokers the token exchange, so a release binary is
+          # byte-identical to what anyone can build from this tag.
           pkg=github.com/fogpipe/cloud-cli/pkg/cli
           for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
             export GOOS="${target%/*}" GOARCH="${target#*/}"
             out="fpcloud-${GOOS}-${GOARCH}"
-            go build -ldflags "-X $pkg.oidcClientID=$CID -X $pkg.oidcClientSecret=$CSEC -X $pkg.version=$TAG" -o "$out" ./cmd/fpcloud
+            go build -ldflags "-X $pkg.version=$TAG" -o "$out" ./cmd/fpcloud
             sha256sum "$out" > "$out.sha256"
           done
       - name: Publish release
@@ -79,16 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           ver="${TAG#v}"
-          # Rewrite version + per-asset hashes: sha256 hex for Homebrew, SRI for Nix.
+          # Homebrew still ships the binary, so it needs per-asset hashes; the Nix
+          # package builds from source and only needs the version.
           python3 - "$ver" <<'PY'
-          import base64, hashlib, pathlib, re, sys
+          import hashlib, pathlib, re, sys
           ver = sys.argv[1]
           assets = ["fpcloud-darwin-arm64", "fpcloud-darwin-amd64", "fpcloud-linux-arm64", "fpcloud-linux-amd64"]
-          hexd, sri = {}, {}
+          hexd = {}
           for a in assets:
               digest = hashlib.sha256(pathlib.Path(a).read_bytes()).digest()
               hexd[a] = digest.hex()
-              sri[a] = "sha256-" + base64.b64encode(digest).decode()
 
           def rewrite(path, asset_re, hash_re, hashes, version_re, version_repl):
               lines = pathlib.Path(path).read_text().splitlines(keepends=True)
@@ -109,11 +98,10 @@ jobs:
                   r'/(fpcloud-[a-z0-9-]+)"', r'sha256 "[^"]*"',
                   {a: f'sha256 "{h}"' for a, h in hexd.items()},
                   r'version "[^"]*"', f'version "{ver}"')
-          # Nix: `asset = "fpcloud-<os>-<arch>";` then `hash = <...>;`.
-          rewrite("package.nix",
-                  r'asset = "(fpcloud-[a-z0-9-]+)"', r'hash = [^;]*;',
-                  {a: f'hash = "{h}";' for a, h in sri.items()},
-                  r'version = "[^"]*"', f'version = "{ver}"')
+          # Nix builds from source, so only the version moves — no asset hashes.
+          pathlib.Path("package.nix").write_text(
+              re.sub(r'version = "[^"]*"', f'version = "{ver}"',
+                     pathlib.Path("package.nix").read_text(), count=1))
           PY
           git config user.name "fogpipe-release"
           git config user.email "release@fogpipe.com"
