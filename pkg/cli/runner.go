@@ -115,7 +115,7 @@ var runnerCreateCmd = &cobra.Command{
 			Image:                   mustString(cmd, "image"),
 			CPU:                     mustString(cmd, "cpu"),
 			Memory:                  mustString(cmd, "memory"),
-			Builds:                  mustBool(cmd, "builds"),
+			Builder:                 runnerBuilderFromFlags(cmd),
 			Credential:              credential,
 			GitHubAppID:             appID,
 			GitHubAppInstallationID: installationID,
@@ -226,10 +226,6 @@ var runnerUpdateCmd = &cobra.Command{
 			v := mustInt(cmd, "max")
 			req.MaxRunners = &v
 		}
-		if cmd.Flags().Changed("builds") {
-			v := mustBool(cmd, "builds")
-			req.Builds = &v
-		}
 		credential, appID, installationID, privateKey, token, err := runnerCredential(cmd)
 		if err != nil {
 			return err
@@ -253,6 +249,14 @@ var runnerUpdateCmd = &cobra.Command{
 		runner, err := c.UpdateRunner(context.Background(), id, req)
 		if err != nil {
 			return err
+		}
+		// The builder is its own call, so it is only made when the command said
+		// something about one — otherwise every unrelated update would remove it.
+		if builder, said := runnerBuilderChange(cmd, runner.Builder); said {
+			runner, err = c.UpdateRunnerBuilder(context.Background(), id, builder)
+			if err != nil {
+				return err
+			}
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(runner)
@@ -300,8 +304,9 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		{"Scale", fmt.Sprintf("%d-%d (%d active)", r.MinRunners, r.MaxRunners, r.CurrentRunners)},
 		{"Status", renderStatus(r.Status)},
 	}
-	if r.Builds {
-		rows = append(rows, []string{"Builds", "rootless BuildKit (BUILDKIT_HOST is set in the job)"})
+	if r.Builder != nil {
+		rows = append(rows, []string{"Builder", fmt.Sprintf("rootless BuildKit, %s (BUILDKIT_HOST is set in the job)",
+			strings.TrimSpace(r.Builder.CPU+" "+r.Builder.Memory))})
 	}
 	switch r.Credential {
 	case "platform":
@@ -315,12 +320,51 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		rows = append(rows, []string{"Image", r.Image})
 	}
 	if r.CPU != "" || r.Memory != "" {
-		rows = append(rows, []string{"Limits", strings.TrimSpace(r.CPU + " " + r.Memory)})
+		rows = append(rows, []string{"Runner limits", strings.TrimSpace(r.CPU + " " + r.Memory)})
 	}
 	if r.Message != "" {
 		rows = append(rows, []string{"Note", r.Message})
 	}
 	return rows
+}
+
+// runnerBuilderFromFlags reads the builder a create asked for, or nil for a pool
+// that builds nothing. Naming a size implies the builder, so `--builder-memory
+// 8Gi` alone does what it looks like; an unset size takes the platform's
+// default for a builder, which is not the runner's own size (ADR-069).
+func runnerBuilderFromFlags(cmd *cobra.Command) *client.RunnerBuilder {
+	cpu, memory := mustString(cmd, "builder-cpu"), mustString(cmd, "builder-memory")
+	if !mustBool(cmd, "builder") && cpu == "" && memory == "" {
+		return nil
+	}
+	return &client.RunnerBuilder{CPU: cpu, Memory: memory}
+}
+
+// runnerBuilderChange reports what an update said about the builder, and whether
+// it said anything at all. Silence is not "remove it": a pool updated for its
+// display name keeps the builder it has.
+//
+// The endpoint replaces the builder rather than patching it, so a size the
+// command did not name is carried over from current rather than dropped —
+// `--builder-memory 8Gi` changes the memory and leaves the CPU where the tenant
+// put it.
+func runnerBuilderChange(cmd *cobra.Command, current *client.RunnerBuilder) (*client.RunnerBuilder, bool) {
+	if mustBool(cmd, "no-builder") {
+		return nil, true
+	}
+	builder := runnerBuilderFromFlags(cmd)
+	if builder == nil {
+		return nil, false
+	}
+	if current != nil {
+		if builder.CPU == "" {
+			builder.CPU = current.CPU
+		}
+		if builder.Memory == "" {
+			builder.Memory = current.Memory
+		}
+	}
+	return builder, true
 }
 
 // runnerSpecFlags are the knobs shared by create and update.
@@ -330,9 +374,11 @@ func runnerSpecFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("min", 0, "Runners kept idle and ready (default 0, scale to zero)")
 	cmd.Flags().Int("max", 2, "Jobs the pool runs at once")
 	cmd.Flags().String("image", "", "Runner image (defaults to the platform's)")
-	cmd.Flags().String("cpu", "", "CPU limit per runner, e.g. 2")
-	cmd.Flags().String("memory", "", "Memory limit per runner, e.g. 4Gi")
-	cmd.Flags().Bool("builds", false, "Run a rootless image builder alongside each job (sets BUILDKIT_HOST)")
+	cmd.Flags().String("cpu", "", "CPU limit for the runner itself, e.g. 2")
+	cmd.Flags().String("memory", "", "Memory limit for the runner itself, e.g. 4Gi")
+	cmd.Flags().Bool("builder", false, "Run a rootless image builder alongside each job (sets BUILDKIT_HOST)")
+	cmd.Flags().String("builder-cpu", "", "CPU limit for the builder, e.g. 1 (implies --builder)")
+	cmd.Flags().String("builder-memory", "", "Memory limit for the builder, e.g. 2Gi (implies --builder)")
 	cmd.Flags().String("display-name", "", "Human-readable label")
 	cmd.Flags().String("credential", "", "How the runner authenticates: platform (default, the Fogpipe GitHub App), app (your own), token")
 	cmd.Flags().String("github-app-id", "", "GitHub App id (--credential app)")
@@ -344,6 +390,10 @@ func runnerSpecFlags(cmd *cobra.Command) {
 func init() {
 	runnerSpecFlags(runnerCreateCmd)
 	runnerSpecFlags(runnerUpdateCmd)
+	runnerUpdateCmd.Flags().Bool("no-builder", false, "Remove the pool's image builder")
+	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder")
+	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-cpu")
+	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-memory")
 
 	runnerCmd.AddCommand(runnerCreateCmd, runnerListCmd, runnerShowCmd, runnerUpdateCmd, runnerDeleteCmd)
 	rootCmd.AddCommand(runnerCmd)

@@ -1308,7 +1308,12 @@ type Runner struct {
 	Image           string `json:"image,omitempty"`
 	CPU             string `json:"cpu,omitempty"`
 	Memory          string `json:"memory,omitempty"`
-	Builds          bool   `json:"builds"`
+
+	// Builder is the image builder that runs alongside each job, or nil for a
+	// pool that builds nothing (ADR-069). CPU and Memory bound the builder, not
+	// the runner — a read always fills them in, so the pod's cost is the sum of
+	// two numbers you can see.
+	Builder *RunnerBuilder `json:"builder,omitempty"`
 
 	// Credential is which source the pool authenticates with: platform (the
 	// Fogpipe GitHub App), app (your own), or token.
@@ -1346,7 +1351,10 @@ type CreateRunnerRequest struct {
 	Image         string `json:"image,omitempty"`
 	CPU           string `json:"cpu,omitempty"`
 	Memory        string `json:"memory,omitempty"`
-	Builds        bool   `json:"builds,omitempty"`
+
+	// Builder asks for an image builder alongside each job. Omit it for a pool
+	// that builds nothing; an empty value takes the platform's defaults.
+	Builder *RunnerBuilder `json:"builder,omitempty"`
 
 	// Credential defaults to "platform" — the Fogpipe GitHub App, installed in
 	// one click, with nothing else to supply.
@@ -1368,13 +1376,35 @@ type UpdateRunnerRequest struct {
 	Image         *string `json:"image,omitempty"`
 	CPU           *string `json:"cpu,omitempty"`
 	Memory        *string `json:"memory,omitempty"`
-	Builds        *bool   `json:"builds,omitempty"`
 
 	Credential              *string `json:"credential,omitempty"`
 	GitHubAppID             *string `json:"github_app_id,omitempty"`
 	GitHubAppInstallationID *string `json:"github_app_installation_id,omitempty"`
 	GitHubAppPrivateKey     *string `json:"github_app_private_key,omitempty"`
 	GitHubToken             *string `json:"github_token,omitempty"`
+}
+
+// RunnerBuilder is the rootless image builder a pool runs alongside each job
+// (ADR-064), and what it costs (ADR-069).
+//
+// The runner and the builder are two processes with unrelated appetites — the
+// runner's memory follows the workflow's steps, the builder's follows the
+// Dockerfile — so the builder carries its own sizing rather than inheriting the
+// pool's. An unset field takes the platform's default for a builder, which is
+// not the pool's own size.
+type RunnerBuilder struct {
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
+}
+
+// UpdateRunnerBuilderRequest replaces a pool's builder. nil removes it, so the
+// pod goes back to a single container.
+//
+// Its own request rather than a field on UpdateRunnerRequest, matching
+// UpdateProbesRequest: a patch leaves an omitted field unchanged, which leaves
+// no way to say "remove".
+type UpdateRunnerBuilderRequest struct {
+	Builder *RunnerBuilder `json:"builder"`
 }
 
 // GitHubConnection is the GitHub account a project has proved it controls

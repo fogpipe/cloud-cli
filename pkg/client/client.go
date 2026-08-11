@@ -2334,6 +2334,21 @@ func (c *Client) UpdateRunner(ctx context.Context, id string, req UpdateRunnerRe
 	return &runner, nil
 }
 
+// UpdateRunnerBuilder replaces a pool's image builder, or removes it when
+// builder is nil. Separate from UpdateRunner for the same reason
+// UpdateAppProbes is separate from UpdateApp: a patch cannot express removal.
+func (c *Client) UpdateRunnerBuilder(ctx context.Context, id string, builder *RunnerBuilder) (*Runner, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/runners/"+id+"/builder", UpdateRunnerBuilderRequest{Builder: builder})
+	if err != nil {
+		return nil, err
+	}
+	var runner Runner
+	if err := c.do(httpReq, &runner); err != nil {
+		return nil, err
+	}
+	return &runner, nil
+}
+
 // DeleteRunner removes a runner pool and deregisters it from GitHub.
 func (c *Client) DeleteRunner(ctx context.Context, id string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/runners/"+id, nil)
