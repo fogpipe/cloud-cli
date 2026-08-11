@@ -16,11 +16,7 @@
         "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
-      # allowUnfree, because the fpcloud binary is proprietary.
-      pkgsFor = system: import nixpkgs {
-        inherit system;
-        config.allowUnfree = true;
-      };
+      pkgsFor = system: import nixpkgs { inherit system; };
     in
     {
       packages = forAllSystems (
