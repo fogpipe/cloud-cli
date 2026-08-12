@@ -10,18 +10,20 @@ import (
 
 // Project represents a Fogpipe project.
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	DisplayName string    `json:"display_name"`
-	Namespace   string    `json:"namespace"`
-	Egress      string    `json:"egress"`
-	MaxCPU      string    `json:"max_cpu"`
-	MaxMemory   string    `json:"max_memory"`
-	MaxPods     int       `json:"max_pods"`
-	MaxStorage  string    `json:"max_storage"`
-	IsPlatform  bool      `json:"is_platform,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	Name           string    `json:"name"`
+	DisplayName    string    `json:"display_name"`
+	Status         string    `json:"status"` // active, suspended, deleting
+	Namespace      string    `json:"namespace"`
+	Egress         string    `json:"egress"`
+	MaxCPU         string    `json:"max_cpu"`
+	MaxMemory      string    `json:"max_memory"`
+	MaxPods        int       `json:"max_pods"`
+	MaxStorage     string    `json:"max_storage"`
+	IsPlatform     bool      `json:"is_platform,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // CreateProjectRequest is the request body for creating a project.
@@ -253,40 +255,43 @@ type CreateTrustBindingRequest struct {
 
 // App represents a deployed application.
 type App struct {
-	ID                  string          `json:"id"`
-	ProjectID           string          `json:"project_id"`
-	Name                string          `json:"name"`
-	DisplayName         string          `json:"display_name"`
-	URLSlug             string          `json:"url_slug"`              // optional vanity host override (ADR-040); empty = derived host
-	DatabaseID          string          `json:"database_id,omitempty"` // database DATABASE_URL points at (#544); empty = the project's sole database, or none when it has several
-	Image               string          `json:"image"`
-	Release             string          `json:"release,omitempty"`         // user-named release currently live (#471)
-	Command             []string        `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
-	Args                []string        `json:"args,omitempty"`            // container arguments (empty = image CMD)
-	ReleaseCommand      []string        `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
-	Status              string          `json:"status"`
-	URL                 string          `json:"url"`
-	Domains             []string        `json:"domains"`
-	Replicas            int             `json:"replicas"`
-	MinScale            int32           `json:"min_scale"`
-	MaxScale            int32           `json:"max_scale"`
-	CPULimit            string          `json:"cpu_limit"`
-	MemoryLimit         string          `json:"memory_limit"`
-	Ingress             string          `json:"ingress"`
-	Routes              []Route         `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode                string          `json:"mode"`
-	Type                string          `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Storage             string          `json:"storage"`
-	KubeServiceAccount  string          `json:"kube_service_account,omitempty"`
-	StoragePath         string          `json:"storage_path"`
-	ServiceAccountID    string          `json:"service_account_id,omitempty"`
-	HealthCheckPath     string          `json:"health_check_path"`
-	HealthCheckTimeout  int             `json:"health_check_timeout"`
-	HealthCheckInterval int             `json:"health_check_interval"`
-	HealthCheckRetries  int             `json:"health_check_retries"`
-	Probes              *ProbeOverrides `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
+	ID                  string           `json:"id"`
+	ProjectID           string           `json:"project_id"`
+	Name                string           `json:"name"`
+	DisplayName         string           `json:"display_name"`
+	URLSlug             string           `json:"url_slug"`              // optional vanity host override (ADR-040); empty = derived host
+	DatabaseID          string           `json:"database_id,omitempty"` // database DATABASE_URL points at (#544); empty = the project's sole database, or none when it has several
+	Image               string           `json:"image"`
+	Release             string           `json:"release,omitempty"`         // user-named release currently live (#471)
+	Command             []string         `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
+	Args                []string         `json:"args,omitempty"`            // container arguments (empty = image CMD)
+	ReleaseCommand      []string         `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
+	Status              string           `json:"status"`
+	URL                 string           `json:"url"`
+	Domains             []string         `json:"domains"`
+	Replicas            int              `json:"replicas"`
+	MinScale            int32            `json:"min_scale"`
+	MaxScale            int32            `json:"max_scale"`
+	CPULimit            string           `json:"cpu_limit"`
+	MemoryLimit         string           `json:"memory_limit"`
+	Ingress             string           `json:"ingress"`
+	Routes              []Route          `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode                string           `json:"mode"`
+	Type                string           `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port                int              `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
+	Storage             string           `json:"storage"`
+	KubeServiceAccount  string           `json:"kube_service_account,omitempty"`
+	StoragePath         string           `json:"storage_path"`
+	ServiceAccountID    string           `json:"service_account_id,omitempty"`
+	HealthCheckPath     string           `json:"health_check_path"`
+	HealthCheckTimeout  int              `json:"health_check_timeout"`
+	HealthCheckInterval int              `json:"health_check_interval"`
+	HealthCheckRetries  int              `json:"health_check_retries"`
+	Probes              *ProbeOverrides  `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
+	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at"`
 }
 
 // ProbeOverrides lets liveness, readiness, and startup diverge from the shared

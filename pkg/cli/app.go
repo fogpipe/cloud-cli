@@ -567,6 +567,7 @@ var appGetCmd = &cobra.Command{
 		if app.Type != "worker" {
 			rows = append(rows,
 				[]string{"URL Slug", slugDisplay(app.URLSlug)},
+				[]string{"Port", fmt.Sprintf("%d", app.Port)},
 				[]string{"Ingress", app.Ingress},
 				[]string{"Routes", routesDisplay},
 				[]string{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
