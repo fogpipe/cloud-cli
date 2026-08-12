@@ -1330,6 +1330,12 @@ type Runner struct {
 	CurrentRunners int    `json:"current_runners,omitempty"`
 	Message        string `json:"message,omitempty"`
 
+	// Problems are failures on the pool's own pods — a runner killed for
+	// exceeding its memory above all. They do not make the pool unhealthy: the
+	// controller replaces the pod, so Status stays `running` while the job that
+	// was on it is the thing that died.
+	Problems []StatusProblem `json:"problems,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

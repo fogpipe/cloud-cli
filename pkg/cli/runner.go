@@ -325,6 +325,16 @@ func runnerInfoRows(r *client.Runner) [][]string {
 	if r.Message != "" {
 		rows = append(rows, []string{"Note", r.Message})
 	}
+	// Listed after the note rather than folded into it: a pool can have several,
+	// and the count is the difference between one unlucky job and a pool that is
+	// too small for the work being put through it.
+	for _, p := range r.Problems {
+		detail := p.Detail
+		if p.Count > 1 {
+			detail = fmt.Sprintf("%s (×%d)", detail, p.Count)
+		}
+		rows = append(rows, []string{"Problem", strings.TrimSpace(p.Reason + " — " + detail)})
+	}
 	return rows
 }
 
