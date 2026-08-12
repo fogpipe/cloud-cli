@@ -511,13 +511,18 @@ type Database struct {
 	// recorded at provisioning. Password is returned ONLY on create — CNPG owns
 	// the app role and rotates it out of band, so the live credential comes from
 	// the injected DATABASE_URL or `fpcloud db connect`, never from this record.
-	Host      string    `json:"host"`
-	Port      int32     `json:"port"`
-	Username  string    `json:"username"`
-	Password  string    `json:"password,omitempty"`
-	Pooler    bool      `json:"pooler"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Host     string `json:"host"`
+	Port     int32  `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+	Pooler   bool   `json:"pooler"`
+	// Extensions names the curated Postgres extensions installed in the
+	// database. Untrusted extensions are installed by the platform, because
+	// CREATE EXTENSION on one is superuser-only and a managed database hands
+	// out no superuser.
+	Extensions []string  `json:"extensions"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // DatabaseConnection is a database's live connection info (GET
@@ -546,6 +551,8 @@ type CreateDatabaseRequest struct {
 	Memory      string `json:"memory,omitempty"`
 	Storage     string `json:"storage,omitempty"`
 	Pooler      bool   `json:"pooler,omitempty"`
+	// Extensions names curated extensions to install at create.
+	Extensions []string `json:"extensions,omitempty"`
 }
 
 // UpdateDatabaseRequest is the request body for reconciling a database's spec.
@@ -558,6 +565,9 @@ type UpdateDatabaseRequest struct {
 	Version     string `json:"version,omitempty"`
 	Instances   *int64 `json:"instances,omitempty"`
 	Pooler      *bool  `json:"pooler,omitempty"`
+	// Extensions replaces the installed set; nil leaves it unchanged, an empty
+	// list uninstalls what the platform installed.
+	Extensions *[]string `json:"extensions,omitempty"`
 }
 
 // Bucket is a managed S3 object-storage bucket on the Garage store (ADR-039).

@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -57,6 +59,7 @@ var dbCreateCmd = &cobra.Command{
 		memory, _ := cmd.Flags().GetString("memory")
 		storage, _ := cmd.Flags().GetString("storage")
 		pooler, _ := cmd.Flags().GetBool("pooler")
+		extensions, _ := cmd.Flags().GetStringSlice("extension")
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
@@ -73,6 +76,7 @@ var dbCreateCmd = &cobra.Command{
 				Memory:      memory,
 				Storage:     storage,
 				Pooler:      pooler,
+				Extensions:  extensions,
 			})
 		}
 
@@ -96,6 +100,9 @@ var dbCreateCmd = &cobra.Command{
 			{"Engine", db.Engine},
 			{"Version", db.Version},
 			{"Status", renderStatus(db.Status)},
+		}
+		if len(db.Extensions) > 0 {
+			pairs = append(pairs, []string{"Extensions", strings.Join(db.Extensions, ", ")})
 		}
 		if addr := dbAddress(db); addr != "" {
 			pairs = append(pairs, []string{"Address", addr})
@@ -167,6 +174,7 @@ var dbGetCmd = &cobra.Command{
 			{"Display Name", db.DisplayName},
 			{"Engine", db.Engine},
 			{"Version", db.Version},
+			{"Extensions", orDash(strings.Join(db.Extensions, ", "))},
 			{"Status", renderStatus(db.Status)},
 			{"Address", addr},
 			{"Username", orDash(db.Username)},
@@ -672,9 +680,16 @@ var dbUpdateCmd = &cobra.Command{
 			p, _ := cmd.Flags().GetBool("pooler")
 			req.Pooler = &p
 		}
+		// The whole set is replaced, so `--extension ""` uninstalls everything
+		// the platform installed rather than being read as "no opinion".
+		if cmd.Flags().Changed("extension") {
+			e, _ := cmd.Flags().GetStringSlice("extension")
+			e = slices.DeleteFunc(e, func(name string) bool { return name == "" })
+			req.Extensions = &e
+		}
 		if req.CPU == "" && req.Memory == "" && req.Storage == "" && req.Version == "" &&
-			req.Instances == nil && req.Pooler == nil {
-			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --instances --storage --postgres-version --pooler")
+			req.Instances == nil && req.Pooler == nil && req.Extensions == nil {
+			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --instances --storage --postgres-version --pooler --extension")
 		}
 
 		db, err := c.UpdateDatabase(context.Background(), existing.ID, req)
@@ -691,9 +706,10 @@ var dbUpdateCmd = &cobra.Command{
 			{"Display Name", db.DisplayName},
 			{"Engine", db.Engine},
 			{"Version", db.Version},
+			{"Extensions", strings.Join(db.Extensions, ", ")},
 			{"Status", renderStatus(db.Status)},
 		}))
-		fmt.Println(mutedStyle.Render("CNPG is reconciling the change; instance/version changes roll the pods."))
+		fmt.Println(mutedStyle.Render("CNPG is reconciling the change; instance/version/extension changes roll the pods."))
 		return nil
 	},
 }
@@ -730,6 +746,7 @@ func init() {
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 1Gi")
 	dbCreateCmd.Flags().String("storage", "", "Persistent storage size (e.g. 20Gi); default 10Gi")
 	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (adds DATABASE_POOL_URL)")
+	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable (needs Postgres 18+)")
 
 	dbUpdateCmd.Flags().String("display-name", "", "New cosmetic label")
 	dbUpdateCmd.Flags().String("cpu", "", "New CPU request/limit per instance (e.g. 500m)")
@@ -738,6 +755,7 @@ func init() {
 	dbUpdateCmd.Flags().Int64("instances", 1, "Number of Postgres instances (HA)")
 	dbUpdateCmd.Flags().String("postgres-version", "", "New Postgres major version (forward only)")
 	dbUpdateCmd.Flags().Bool("pooler", false, "Enable/disable the PgBouncer pooler")
+	dbUpdateCmd.Flags().StringSlice("extension", nil, "Replace the installed extensions, repeatable (empty uninstalls them)")
 
 	dbDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
