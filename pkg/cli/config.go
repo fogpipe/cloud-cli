@@ -80,19 +80,35 @@ func saveConfig(cfg *Config) error {
 	return nil
 }
 
-// getClient builds an API client from the resolved configuration and flag
-// overrides. With no static API key it falls back to the Google OIDC token from
-// `fpcloud auth login` — the same identity kubectl uses — so interactive use
-// needs no separate key (gcloud-style). API keys remain for CI/service accounts.
+// getClient builds an API client from the resolved credential (resolveAPIKey)
+// and the API URL.
 func getClient() *client.Client {
 	apiURL := rootCmd.Flag("api-url").Value.String()
-	apiKey := rootCmd.Flag("api-key").Value.String()
-	if apiKey == "" {
-		if token, err := currentIDToken(); err == nil {
-			apiKey = token
-		}
+	return newClient(apiURL, resolveAPIKey())
+}
+
+// resolveAPIKey picks the credential every API call carries, in the same order
+// the Terraform provider uses so one variable means one thing whichever binary
+// reads it: an explicit --api-key, then FPCLOUD_API_KEY (what OIDC federation
+// mints in CI, and what the registry path has always honoured), then the key
+// stored in config.yaml, then the Google OIDC token from `fpcloud auth login`
+// — the same identity kubectl uses, so interactive use needs no separate key
+// (gcloud-style). Returns "" when nothing authenticates the caller.
+func resolveAPIKey() string {
+	flag := rootCmd.Flag("api-key")
+	if flag.Changed {
+		return flag.Value.String()
 	}
-	return newClient(apiURL, apiKey)
+	if key := os.Getenv("FPCLOUD_API_KEY"); key != "" {
+		return key
+	}
+	if key := flag.Value.String(); key != "" {
+		return key
+	}
+	if token, err := currentIDToken(); err == nil {
+		return token
+	}
+	return ""
 }
 
 // newClient builds an API client that reports this binary's version. pkg/client

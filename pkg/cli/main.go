@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -84,7 +85,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().String("api-url", defaultURL, "API server URL")
-	rootCmd.PersistentFlags().String("api-key", defaultKey, "API key for authentication")
+	rootCmd.PersistentFlags().String("api-key", defaultKey, "API key for authentication (else FPCLOUD_API_KEY, config.yaml, or the fpcloud login)")
 	rootCmd.PersistentFlags().String("org", defaultOrg, "Current organization")
 	rootCmd.PersistentFlags().String("project", defaultProject, "Current project")
 	rootCmd.PersistentFlags().StringP("output", "o", "table", "Output format (table, json, yaml)")
@@ -136,6 +137,14 @@ func Execute() {
 		// was typing. Suppress the usage hint in that case — the flags were fine.
 		if errors.Is(err, client.ErrClientTooOld) {
 			fmt.Fprintln(os.Stderr, "Run `fpcloud upgrade` to install the newest release.")
+			os.Exit(1)
+		}
+		// The API can only report the header it did not get; it cannot know we
+		// never found a credential to put there. Say so, or a caller reads a
+		// rejected request as a malformed one.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && resolveAPIKey() == "" {
+			fmt.Fprintln(os.Stderr, "No credential found — run `fpcloud login`, or set FPCLOUD_API_KEY (in CI, from the `fogpipe/cloud-actions/auth` step).")
 			os.Exit(1)
 		}
 		if isUsageError(err) {
