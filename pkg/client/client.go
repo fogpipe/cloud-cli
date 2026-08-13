@@ -1555,8 +1555,8 @@ func (c *Client) GetBackupConfig(ctx context.Context, dbID string) (*BackupConfi
 }
 
 // UpdateBackupConfig updates the backup configuration for a database.
-func (c *Client) UpdateBackupConfig(ctx context.Context, dbID string, config BackupConfig) error {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/databases/"+dbID+"/backup-config", config)
+func (c *Client) UpdateBackupConfig(ctx context.Context, dbID string, req UpdateBackupConfigRequest) error {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/databases/"+dbID+"/backup-config", req)
 	if err != nil {
 		return err
 	}
@@ -1578,8 +1578,8 @@ func (c *Client) GetBackupDestination(ctx context.Context, dbID string) (*Backup
 
 // SetBackupDestination configures (or replaces) a database's external backup
 // destination — the customer's own bucket, keyless.
-func (c *Client) SetBackupDestination(ctx context.Context, dbID string, dest BackupDestination) (*BackupDestination, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/databases/"+dbID+"/backup-destination", dest)
+func (c *Client) SetBackupDestination(ctx context.Context, dbID string, req SetBackupDestinationRequest) (*BackupDestination, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/databases/"+dbID+"/backup-destination", req)
 	if err != nil {
 		return nil, err
 	}

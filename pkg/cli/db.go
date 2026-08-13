@@ -384,7 +384,7 @@ func runDBBackupDestSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	dest := client.BackupDestination{
+	dest := client.SetBackupDestinationRequest{
 		Provider:        flagStr(cmd, "provider"),
 		Bucket:          flagStr(cmd, "bucket"),
 		Region:          flagStr(cmd, "region"),
@@ -561,7 +561,7 @@ func runDBBackupConfigSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	config := client.BackupConfig{
+	config := client.UpdateBackupConfigRequest{
 		Enabled:   !disabled,
 		Schedule:  schedule,
 		Retention: retention,

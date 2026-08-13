@@ -1058,6 +1058,36 @@ type BackupProblem struct {
 	Since  string `json:"since,omitempty"`
 }
 
+// SetBackupDestinationRequest is what configures a database's external backup
+// target. It is a separate type from BackupDestination on purpose: that one is
+// the server's answer and carries fields the server owns (`enabled`, the last
+// run), which a write neither sets nor is allowed to send.
+type SetBackupDestinationRequest struct {
+	Provider        string `json:"provider"` // "aws" | "gcp" | "s3"
+	Bucket          string `json:"bucket"`
+	Region          string `json:"region,omitempty"`
+	Prefix          string `json:"prefix,omitempty"`
+	FlatLayout      bool   `json:"flat_layout,omitempty"` // skip the <project>/<database> nesting under prefix
+	RoleARN         string `json:"role_arn,omitempty"`
+	WIFProvider     string `json:"wif_provider,omitempty"`
+	ServiceAccount  string `json:"service_account,omitempty"`
+	Audience        string `json:"audience,omitempty"`
+	Endpoint        string `json:"endpoint,omitempty"`          // s3
+	AccessKeyID     string `json:"access_key_id,omitempty"`     // s3
+	SecretAccessKey string `json:"secret_access_key,omitempty"` // s3 (write-only)
+	Schedule        string `json:"schedule,omitempty"`
+}
+
+// UpdateBackupConfigRequest is what turns managed backups on or off and sets
+// their schedule and retention. Separate from BackupConfig for the same reason:
+// the read carries derived state (the recoverability point, the problems) that
+// is the server's to report and nobody's to send.
+type UpdateBackupConfigRequest struct {
+	Enabled   bool   `json:"enabled"`
+	Schedule  string `json:"schedule,omitempty"`
+	Retention string `json:"retention,omitempty"`
+}
+
 // BackupDestination is an opt-in, per-database external backup target (issue #130,
 // #394): the customer's own bucket the database backs up directly to. Two auth
 // models — keyless via OIDC federation (provider "aws" RoleARN, "gcp" WIFProvider
