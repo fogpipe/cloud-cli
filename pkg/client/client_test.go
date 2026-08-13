@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -170,13 +171,48 @@ func TestClientDeleteProject(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
 		assert.Equal(t, "/api/v1/projects/proj-1", r.URL.Path)
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(Project{ID: "proj-1", Name: "demo", Status: "deleting"})
 	}))
 	defer server.Close()
 
 	c := New(server.URL, "key")
-	err := c.DeleteProject(context.Background(), "proj-1")
+	project, err := c.DeleteProject(context.Background(), "proj-1")
 	require.NoError(t, err)
+	assert.Equal(t, "deleting", project.Status, "the delete is accepted, not finished")
+}
+
+// The teardown outlives the request, so "deleted" is something a caller observes
+// rather than something the delete call returns (#865).
+func TestWaitProjectDeletedReturnsWhenTheProjectIsGone(t *testing.T) {
+	reads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads++
+		if reads < 2 {
+			_ = json.NewEncoder(w).Encode(Project{ID: "proj-1", Status: "deleting"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"message": "project not found"}})
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "key")
+	require.NoError(t, c.WaitProjectDeleted(context.Background(), "proj-1", time.Millisecond))
+	assert.Equal(t, 2, reads, "it keeps reading while the project is still there")
+}
+
+// The teardown takes the project's IAM bindings with it, so the read that used
+// to answer 200 answers 403 rather than 404 — which is the same news.
+func TestWaitProjectDeletedTreatsALostBindingAsGone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "forbidden"})
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "key")
+	require.NoError(t, c.WaitProjectDeleted(context.Background(), "proj-1", time.Millisecond))
 }
 
 func TestAPIError_Error(t *testing.T) {

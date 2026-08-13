@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -321,14 +322,32 @@ var projectDeleteCmd = &cobra.Command{
 				return err
 			}
 			if !ok {
-				fmt.Println(mutedStyle.Render("Aborted."))
 				return nil
 			}
 		}
 
 		c := getClient()
-		if err := c.DeleteProject(context.Background(), args[0]); err != nil {
+		if _, err := c.DeleteProject(context.Background(), args[0]); err != nil {
 			return err
+		}
+
+		// The API accepts the delete and tears the project down behind it, so
+		// this waits for the teardown rather than announcing a deletion that is
+		// still running (#865). --no-wait returns as soon as it is accepted.
+		if noWait, _ := cmd.Flags().GetBool("no-wait"); noWait {
+			fmt.Println(successBox.Render(
+				lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+					fmt.Sprintf(" Project %q is being deleted.", args[0]),
+			))
+			return nil
+		}
+
+		var waitErr error
+		withSpinner("Deleting project...", func() {
+			waitErr = c.WaitProjectDeleted(context.Background(), args[0], 2*time.Second)
+		})
+		if waitErr != nil {
+			return waitErr
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
@@ -527,6 +546,7 @@ func init() {
 	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted', 'https' (443 only), or 'all' (open)")
 	projectListCmd.Flags().Bool("apps", false, "List each project's app names instead of just the count")
 	projectDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
+	projectDeleteCmd.Flags().Bool("no-wait", false, "Return once the deletion is accepted, without waiting for the teardown")
 	projectMoveCmd.Flags().Bool("force", false, "Proceed even if the project has stateful resources (data is not migrated)")
 	projectMoveCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
