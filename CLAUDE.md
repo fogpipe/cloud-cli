@@ -46,6 +46,16 @@ instead. If a change here **breaks the wire**, the platform raises its minimum
 to this tag and every older client is refused with 426 rather than failing on
 whatever the request happens to hit (ADR-073 in `cloud-platform`).
 
+**The tag is not cut here.** This repo, the platform and the provider carry one
+shared version, pushed to all three at once by `just release vX.Y.Z` at the
+workspace root (`/release-semver`). Tagging this repo alone is what pulled the
+three numbers apart before — it releases fastest, so it runs ahead and the
+number stops meaning the same thing anywhere else.
+
+To move a merged client change downstream without releasing everything,
+consumers can pin its commit — `go get github.com/fogpipe/cloud-cli@<commit>`
+resolves a pseudo-version with no tag involved.
+
 ## Working across repos
 
 `just tree <name>` at the workspace root gives a session an isolated copy of
