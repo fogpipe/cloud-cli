@@ -112,6 +112,19 @@ func ingressDisplay(app *client.App) string {
 	return app.Ingress
 }
 
+// missingAppFields names what `app create` was going to ask for, so the refusal
+// is specific to the call that hit it.
+func missingAppFields(name, image string) string {
+	switch {
+	case name == "" && image == "":
+		return "name the app and its image: fpcloud app create <name> --image <image>"
+	case name == "":
+		return "name the app: fpcloud app create <name>"
+	default:
+		return "pass --image"
+	}
+}
+
 var appCreateCmd = &cobra.Command{
 	Use:   "create [name]",
 	Short: "Create a new app",
@@ -137,6 +150,9 @@ var appCreateCmd = &cobra.Command{
 
 		// Prompt for missing required fields.
 		if name == "" || image == "" {
+			if err := requirePrompt(missingAppFields(name, image)); err != nil {
+				return err
+			}
 			fields := []huh.Field{}
 			if name == "" {
 				fields = append(fields, huh.NewInput().Title("App name").Value(&name).Validate(func(s string) error {

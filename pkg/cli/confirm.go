@@ -23,6 +23,18 @@ func confirm(title, description, affirmative string) (bool, error) {
 	return confirmOn(os.Stdin, title, description, affirmative)
 }
 
+// requirePrompt refuses a command that is about to ask for a value it was not
+// given, when there is no terminal to ask on. Same failure as confirm above —
+// huh opens /dev/tty and reports that it could not — on the prompts that fill in
+// a missing argument rather than gate a destructive one, so `project create`
+// under CI names the argument instead (fogpipe/cloud-workspace#26).
+func requirePrompt(instruction string) error {
+	if isTerminal(os.Stdin) {
+		return nil
+	}
+	return fmt.Errorf("no terminal to prompt on: %s", instruction)
+}
+
 func confirmOn(in *os.File, title, description, affirmative string) (bool, error) {
 	if !isTerminal(in) {
 		return false, errors.New("no terminal to confirm on: pass --yes to proceed without the prompt")

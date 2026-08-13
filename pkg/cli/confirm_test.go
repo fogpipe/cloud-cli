@@ -26,6 +26,15 @@ func TestConfirmWithoutATerminalNamesTheFlag(t *testing.T) {
 	assert.NotContains(t, strings.ToLower(err.Error()), "tty")
 }
 
+// `app create` asks for whichever of the two it was not given, so the refusal
+// says which one — "pass --image" is not the answer when the name is missing too.
+func TestMissingAppFieldsNamesWhatWasNotGiven(t *testing.T) {
+	assert.Contains(t, missingAppFields("", ""), "--image")
+	assert.Contains(t, missingAppFields("", ""), "<name>")
+	assert.NotContains(t, missingAppFields("web", ""), "<name>")
+	assert.NotContains(t, missingAppFields("", "nginx"), "--image")
+}
+
 func TestNotATerminalWhenRedirected(t *testing.T) {
 	devNull, err := os.Open(os.DevNull)
 	require.NoError(t, err)

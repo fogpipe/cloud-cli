@@ -31,6 +31,9 @@ var projectCreateCmd = &cobra.Command{
 			name = args[0]
 		}
 		if name == "" {
+			if err := requirePrompt("give the project a name: fpcloud project create <name>"); err != nil {
+				return err
+			}
 			form := huh.NewForm(
 				huh.NewGroup(
 					huh.NewInput().Title("Project name").Value(&name).Validate(func(s string) error {
@@ -449,6 +452,11 @@ var projectUseCmd = &cobra.Command{
 // pickProject prompts the user to choose a project, returning its name (or ""
 // if cancelled). It uses fzf when available, falling back to a huh select.
 func pickProject(projects []*client.Project) (string, error) {
+	// Before the fzf branch: fzf draws on the terminal too, so neither picker
+	// has anything to draw on.
+	if err := requirePrompt("name the project: fpcloud project use <name>"); err != nil {
+		return "", err
+	}
 	if fzf, err := exec.LookPath("fzf"); err == nil {
 		return pickProjectFzf(fzf, projects)
 	}
