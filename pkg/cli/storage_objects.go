@@ -97,15 +97,24 @@ func addFilterFlags(cmd *cobra.Command) *[]filterRule {
 
 // --- credential acquisition + caching ---------------------------------------
 
-// cachedS3Creds is the on-disk scoped key + endpoint for a bucket, stored under
-// <stateDir>/storage/<bucketID>.json (mode 0600).
+// cachedS3Creds is the on-disk session credential + endpoint for a bucket,
+// stored under <stateDir>/storage/<bucketID>.json (mode 0600). It expires, so
+// what is cached here is worth little for long — and the file is the only place
+// the secret ever lands.
 type cachedS3Creds struct {
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-	Endpoint        string `json:"endpoint"`
-	Region          string `json:"region"`
-	BucketName      string `json:"bucket_name"`
+	AccessKeyID     string    `json:"access_key_id"`
+	SecretAccessKey string    `json:"secret_access_key"`
+	Endpoint        string    `json:"endpoint"`
+	Region          string    `json:"region"`
+	BucketName      string    `json:"bucket_name"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }
+
+// credsExpiryMargin is how long a cached credential must still be good for to be
+// reused. A transfer started against a credential expiring in seconds fails
+// mid-flight instead of at the first call, so the margin buys the whole command
+// rather than its first request.
+const credsExpiryMargin = 2 * time.Minute
 
 func storageCredsDir() string {
 	return filepath.Join(stateDir(), "storage")
@@ -127,6 +136,9 @@ func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
 	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" || creds.Endpoint == "" || creds.BucketName == "" {
 		return nil, false
 	}
+	if time.Now().Add(credsExpiryMargin).After(creds.ExpiresAt) {
+		return nil, false
+	}
 	return &creds, true
 }
 
@@ -141,25 +153,25 @@ func saveCachedS3Creds(bucketID string, creds *cachedS3Creds) error {
 	return os.WriteFile(storageCredsPath(bucketID), data, 0o600)
 }
 
-// mintS3Creds mints a fresh scoped read+write key and reads the bucket's
-// endpoint/region/name, caching the result for reuse.
+// mintS3Creds mints a fresh expiring session credential for the bucket and
+// caches it until it expires.
+//
+// It asks for no particular permissions: the credential carries whatever the
+// caller may already do to the bucket's objects (ADR-074), so a read-only member
+// gets a read-only credential rather than a refusal, and shipping a site needs
+// no more than the role that may change what it serves.
 func mintS3Creds(ctx context.Context, c *client.Client, bucketID string) (*cachedS3Creds, error) {
-	key, err := c.CreateBucketKey(ctx, bucketID, client.CreateBucketKeyRequest{
-		Name: "fpcloud-cli", Read: true, Write: true,
-	})
+	session, err := c.MintBucketSessionCredentials(ctx, bucketID)
 	if err != nil {
-		return nil, fmt.Errorf("mint scoped key: %w", err)
-	}
-	meta, err := c.GetBucketCredentials(ctx, bucketID)
-	if err != nil {
-		return nil, fmt.Errorf("read bucket endpoint: %w", err)
+		return nil, fmt.Errorf("mint session credential: %w", err)
 	}
 	creds := &cachedS3Creds{
-		AccessKeyID:     key.AccessKeyID,
-		SecretAccessKey: key.SecretAccessKey,
-		Endpoint:        meta.Endpoint,
-		Region:          meta.Region,
-		BucketName:      meta.Bucket,
+		AccessKeyID:     session.AccessKeyID,
+		SecretAccessKey: session.SecretAccessKey,
+		Endpoint:        session.Endpoint,
+		Region:          session.Region,
+		BucketName:      session.Bucket,
+		ExpiresAt:       session.ExpiresAt,
 	}
 	if creds.BucketName == "" {
 		if b, err := c.GetBucket(ctx, bucketID); err == nil {

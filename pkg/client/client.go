@@ -1258,6 +1258,23 @@ func (c *Client) GetBucketCredentials(ctx context.Context, id string) (*BucketCr
 	return &creds, nil
 }
 
+// MintBucketSessionCredentials mints an expiring S3 credential for this
+// caller's own data-plane traffic, carrying whatever the caller may already do
+// to the bucket's objects. This — not CreateBucketKey — is how a client reaches
+// the S3 plane: a scoped key is a durable credential handed to someone else, and
+// creating one is bucket administration (ADR-074).
+func (c *Client) MintBucketSessionCredentials(ctx context.Context, id string) (*BucketSessionCredentials, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/buckets/"+id+"/credentials", nil)
+	if err != nil {
+		return nil, err
+	}
+	var creds BucketSessionCredentials
+	if err := c.do(httpReq, &creds); err != nil {
+		return nil, err
+	}
+	return &creds, nil
+}
+
 // SetBucketQuota updates a bucket's quotas (bytes / object count; 0 = unlimited).
 func (c *Client) SetBucketQuota(ctx context.Context, id string, maxSize, maxObjects int64) (*Bucket, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+id+"/quota", SetBucketQuotaRequest{QuotaMaxSize: maxSize, QuotaMaxObjects: maxObjects})
