@@ -40,7 +40,7 @@ var versionCmd = &cobra.Command{
 		if clientOnly, _ := cmd.Flags().GetBool("client"); clientOnly {
 			return nil
 		}
-		apiURL := cmd.Flag("api-url").Value.String()
+		apiURL := resolveAPIURL()
 		server, err := fetchServerVersion(apiURL)
 		if err != nil {
 			fmt.Printf("Server Version: unreachable (%s)\n", apiURL)

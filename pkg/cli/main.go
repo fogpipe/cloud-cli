@@ -84,7 +84,7 @@ func init() {
 		defaultOrg = cfg.CurrentOrg
 	}
 
-	rootCmd.PersistentFlags().String("api-url", defaultURL, "API server URL")
+	rootCmd.PersistentFlags().String("api-url", defaultURL, "API server URL (else FPCLOUD_API_URL, or config.yaml)")
 	rootCmd.PersistentFlags().String("api-key", defaultKey, "API key for authentication (else FPCLOUD_API_KEY, config.yaml, or the fpcloud login)")
 	rootCmd.PersistentFlags().String("org", defaultOrg, "Current organization")
 	rootCmd.PersistentFlags().String("project", defaultProject, "Current project")

@@ -80,11 +80,29 @@ func saveConfig(cfg *Config) error {
 	return nil
 }
 
-// getClient builds an API client from the resolved credential (resolveAPIKey)
-// and the API URL.
+// getClient builds an API client from the resolved API URL and credential.
 func getClient() *client.Client {
-	apiURL := rootCmd.Flag("api-url").Value.String()
-	return newClient(apiURL, resolveAPIKey())
+	return newClient(resolveAPIURL(), resolveAPIKey())
+}
+
+// resolveAPIURL picks the control plane every command talks to: an explicit
+// --api-url, then FPCLOUD_API_URL, then the api_url in config.yaml, then the
+// built-in default (prod for a release, localhost for a `dev` build) — the
+// last two both reached through the flag's default. Same order as the
+// Terraform provider, and as resolveAPIKey.
+//
+// Every surface that names the API resolves through here, `fpcloud context`
+// included: a CLI that printed one control plane and called another would be
+// worse than one that ignored the variable outright.
+func resolveAPIURL() string {
+	flag := rootCmd.Flag("api-url")
+	if flag.Changed {
+		return flag.Value.String()
+	}
+	if url := os.Getenv("FPCLOUD_API_URL"); url != "" {
+		return url
+	}
+	return flag.Value.String()
 }
 
 // resolveAPIKey picks the credential every API call carries, in the same order

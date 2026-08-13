@@ -29,7 +29,7 @@ or {identity} appears in --format, so prompt use stays fast.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		org := rootCmd.Flag("org").Value.String()
 		project := rootCmd.Flag("project").Value.String()
-		apiURL := rootCmd.Flag("api-url").Value.String()
+		apiURL := resolveAPIURL()
 
 		if format, _ := cmd.Flags().GetString("format"); format != "" {
 			out := format

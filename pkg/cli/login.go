@@ -138,7 +138,7 @@ func oauthConfig(ctx context.Context) (*oauth2.Config, error) {
 	// in both cases talking to it directly is correct — routing it through our
 	// platform would put a third party in the middle of someone else's login.
 	if usingGoogleDefaults() && os.Getenv("FPCLOUD_OIDC_CLIENT_ID") == "" {
-		endpoint.TokenURL = strings.TrimSuffix(rootCmd.Flag("api-url").Value.String(), "/") + brokerTokenPath
+		endpoint.TokenURL = strings.TrimSuffix(resolveAPIURL(), "/") + brokerTokenPath
 	}
 	if secret == "" {
 		// Public client: send client_id in the request body and don't attempt HTTP

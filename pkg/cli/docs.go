@@ -39,7 +39,7 @@ do need to reach the platform. For a dense reference of every command and flag
 with no network at all, use --help-llm on any command.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		apiURL := cmd.Flag("api-url").Value.String()
+		apiURL := resolveAPIURL()
 
 		all, _ := cmd.Flags().GetBool("all")
 		if all {

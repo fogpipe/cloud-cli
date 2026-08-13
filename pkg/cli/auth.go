@@ -41,7 +41,7 @@ var authLoginCmd = &cobra.Command{
 		// reported as "saved (server may be unreachable)" with exit 0 — so the user
 		// was told their credentials were fine, had lost the ones that were, and
 		// was pointed at the network instead of the key (#568).
-		apiURL := cmd.Flag("api-url").Value.String()
+		apiURL := resolveAPIURL()
 		me, err := newClient(apiURL, apiKey).GetMe(context.Background())
 		if err != nil {
 			// A rejected key and an unreachable server are different answers and
@@ -72,7 +72,7 @@ var authStatusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Resolve the credential the same way getClient() does: a static API key
 		// if set, otherwise the Google OIDC token from `fpcloud auth login`.
-		apiURL := cmd.Flag("api-url").Value.String()
+		apiURL := resolveAPIURL()
 		cred := cmd.Flag("api-key").Value.String()
 		credType := "API key"
 		if cred == "" {
