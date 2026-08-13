@@ -739,7 +739,10 @@ func addBackupDestSetFlags(cmd *cobra.Command) {
 }
 
 func init() {
-	dbCreateCmd.Flags().String("version", "17", "Database version")
+	// Empty, not a pinned major: the platform's current default is the server's
+	// to state, and a default baked in here silently overrode it — a CLI still
+	// sending 17 kept every new database off the version extensions need.
+	dbCreateCmd.Flags().String("version", "", "Database major version; empty = the platform's current default")
 	dbCreateCmd.Flags().String("display-name", "", "Cosmetic label (defaults to the name)")
 	dbCreateCmd.Flags().String("cpu", "", "CPU request/limit per instance (e.g. 500m); default 250m")
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 1Gi")
