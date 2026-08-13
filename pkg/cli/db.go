@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -176,6 +177,10 @@ var dbGetCmd = &cobra.Command{
 			{"Version", db.Version},
 			{"Extensions", orDash(strings.Join(db.Extensions, ", "))},
 			{"Status", renderStatus(db.Status)},
+			{"CPU", orDash(db.CPU)},
+			{"Memory", orDash(db.Memory)},
+			{"Storage", orDash(db.Storage)},
+			{"Instances", orDash(instanceCount(db.Instances))},
 			{"Address", addr},
 			{"Username", orDash(db.Username)},
 		}))
@@ -804,6 +809,16 @@ func dbAddress(db *client.Database) string {
 }
 
 // orDash renders an empty value as a muted dash.
+// instanceCount renders an instance count the way orDash renders a string: a
+// database whose cluster could not be read reports nothing rather than "0",
+// which would read as a database that is scaled to zero.
+func instanceCount(n int64) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.FormatInt(n, 10)
+}
+
 func orDash(v string) string {
 	if v == "" {
 		return mutedStyle.Render("—")

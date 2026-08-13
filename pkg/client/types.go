@@ -516,6 +516,14 @@ type Database struct {
 	Username string `json:"username"`
 	Password string `json:"password,omitempty"`
 	Pooler   bool   `json:"pooler"`
+	// CPU/Memory/Storage/Instances are the spec the database is running under —
+	// the same four UpdateDatabaseRequest changes. They are read from the live
+	// cluster rather than from a stored copy, so they report what is actually
+	// running; all four are empty/zero when the cluster cannot be reached.
+	CPU       string `json:"cpu,omitempty"`
+	Memory    string `json:"memory,omitempty"`
+	Storage   string `json:"storage,omitempty"`
+	Instances int64  `json:"instances,omitempty"`
 	// Extensions names the curated Postgres extensions installed in the
 	// database. Untrusted extensions are installed by the platform, because
 	// CREATE EXTENSION on one is superuser-only and a managed database hands
