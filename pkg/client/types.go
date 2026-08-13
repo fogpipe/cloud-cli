@@ -1166,10 +1166,24 @@ func (e *APIError) Error() string {
 // that lacks the FKE credentials endpoint.
 var ErrNotFound = errors.New("not found")
 
-// Is reports whether target is ErrNotFound and this error carries HTTP 404, so
-// errors.Is(err, client.ErrNotFound) works on responses from do().
+// ErrClientTooOld is a sentinel matched via errors.Is against an *APIError with
+// a 426 status: this client is older than the deployment serves, and no request
+// it makes will be answered until it is upgraded. Every other reading of the
+// same failure — a bad flag, a malformed body, a missing resource — is wrong,
+// which is the whole reason the deployment states a minimum rather than letting
+// the request fail on its own terms.
+var ErrClientTooOld = errors.New("client too old")
+
+// Is reports whether target is one of this package's sentinels and this error
+// carries the matching status, so errors.Is works on responses from do().
 func (e *APIError) Is(target error) bool {
-	return target == ErrNotFound && e.StatusCode == http.StatusNotFound
+	switch target {
+	case ErrNotFound:
+		return e.StatusCode == http.StatusNotFound
+	case ErrClientTooOld:
+		return e.StatusCode == http.StatusUpgradeRequired
+	}
+	return false
 }
 
 // ClusterCredentials is the cluster connection facts for assembling a kubeconfig

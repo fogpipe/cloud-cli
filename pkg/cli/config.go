@@ -92,7 +92,18 @@ func getClient() *client.Client {
 			apiKey = token
 		}
 	}
-	return client.New(apiURL, apiKey)
+	return newClient(apiURL, apiKey)
+}
+
+// newClient builds an API client that reports this binary's version. pkg/client
+// reads its own module version out of the caller's build info, which is empty
+// for the binary that module ships itself — so the CLI is the one caller that
+// has to state it, from the same ldflags-injected value `fpcloud version`
+// prints.
+func newClient(apiURL, cred string) *client.Client {
+	c := client.New(apiURL, cred)
+	c.Version = version
+	return c
 }
 
 // requireProject returns the current project, failing if none is set.

@@ -8,17 +8,30 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
+// ClientVersionHeader carries the caller's client-library version on every
+// request. A deployment states the oldest client it serves and refuses anything
+// below it with 426, so a stale binary is diagnosed by name instead of failing
+// somewhere downstream as a request the API cannot parse.
+const ClientVersionHeader = "X-Fpcloud-Client-Version"
+
 // Client is the Fogpipe API client.
 type Client struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
+	// Version is what this caller reports as its client-library version. It
+	// defaults to the version of this module recorded in the caller's build
+	// info, which is right for anything importing pkg/client as a dependency.
+	// The CLI ships as this module's own main package, where build info carries
+	// no tag, and sets its ldflags-injected version instead.
+	Version string
 }
 
 // New creates a new API client.
@@ -29,7 +42,32 @@ func New(baseURL, apiKey string) *Client {
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		Version: moduleVersion(),
 	}
+}
+
+// modulePath is this module — the import path the version is read back out of.
+const modulePath = "github.com/fogpipe/cloud-cli"
+
+// moduleVersion reports the version of this module the caller was built
+// against, or "" when the build carries no version (a `go run`, a workspace
+// build, or this module's own binaries). An empty version sends no header,
+// which a deployment treats as an unidentified caller rather than as an old
+// one: claiming a version we cannot substantiate is worse than claiming none.
+func moduleVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == modulePath {
+			if dep.Replace != nil {
+				return ""
+			}
+			return dep.Version
+		}
+	}
+	return ""
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
@@ -51,6 +89,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any) 
 	req.Header.Set("Accept", "application/json")
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	if c.Version != "" {
+		req.Header.Set(ClientVersionHeader, c.Version)
 	}
 
 	return req, nil
@@ -1100,6 +1141,9 @@ func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.
 	header := http.Header{}
 	if c.APIKey != "" {
 		header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	if c.Version != "" {
+		header.Set(ClientVersionHeader, c.Version)
 	}
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if err != nil {

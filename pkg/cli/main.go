@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -130,6 +131,13 @@ func Execute() {
 	registerCompletions()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		// A deployment that refuses this binary has already said why; what it
+		// cannot say is how to fix it, and the fix is never the command the user
+		// was typing. Suppress the usage hint in that case — the flags were fine.
+		if errors.Is(err, client.ErrClientTooOld) {
+			fmt.Fprintln(os.Stderr, "Run `fpcloud upgrade` to install the newest release.")
+			os.Exit(1)
+		}
 		if isUsageError(err) {
 			fmt.Fprintln(os.Stderr, errorHelpHint)
 		}

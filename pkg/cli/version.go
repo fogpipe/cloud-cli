@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 )
@@ -45,7 +46,16 @@ var versionCmd = &cobra.Command{
 			fmt.Printf("Server Version: unreachable (%s)\n", apiURL)
 			return nil
 		}
-		fmt.Printf("Server Version: %s\n", server)
+		fmt.Printf("Server Version: %s\n", server.Version)
+		if server.MinClientVersion == "" {
+			return nil
+		}
+		fmt.Printf("Minimum Client Version: %s\n", server.MinClientVersion)
+		if semver.IsValid(version) && semver.IsValid(server.MinClientVersion) &&
+			semver.Compare(version, server.MinClientVersion) < 0 {
+			fmt.Printf("\n%s\n", lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render(
+				"This deployment refuses fpcloud "+version+". Run `fpcloud upgrade`."))
+		}
 		return nil
 	},
 }
@@ -71,34 +81,39 @@ func versionCachePath() string {
 	return filepath.Join(stateDir(), "version-check.json")
 }
 
+// serverVersion is what GET /version reports: the deployment's own build
+// version, and the oldest client it will answer.
+type serverVersion struct {
+	Version          string `json:"version"`
+	MinClientVersion string `json:"min_client_version"`
+}
+
 // fetchServerVersion asks the control plane for its build version (GET /version,
 // unauthenticated). Short timeout so it never noticeably blocks a command.
-func fetchServerVersion(apiURL string) (string, error) {
+func fetchServerVersion(apiURL string) (serverVersion, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	var body serverVersion
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"/version", nil)
 	if err != nil {
-		return "", err
+		return body, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return body, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("version endpoint returned %d", resp.StatusCode)
-	}
-	var body struct {
-		Version string `json:"version"`
+		return body, fmt.Errorf("version endpoint returned %d", resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
+		return body, err
 	}
 	if body.Version == "" {
-		return "", fmt.Errorf("empty version")
+		return body, fmt.Errorf("empty version")
 	}
-	return body.Version, nil
+	return body, nil
 }
 
 // latestVersion returns the latest *released* CLI version, using the on-disk

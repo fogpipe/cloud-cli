@@ -42,7 +42,7 @@ var authLoginCmd = &cobra.Command{
 		// was told their credentials were fine, had lost the ones that were, and
 		// was pointed at the network instead of the key (#568).
 		apiURL := cmd.Flag("api-url").Value.String()
-		me, err := client.New(apiURL, apiKey).GetMe(context.Background())
+		me, err := newClient(apiURL, apiKey).GetMe(context.Background())
 		if err != nil {
 			// A rejected key and an unreachable server are different answers and
 			// need different next steps; the old code folded them into one.
@@ -93,7 +93,7 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 
-		c := client.New(apiURL, cred)
+		c := newClient(apiURL, cred)
 		me, err := c.GetMe(context.Background())
 		if err != nil {
 			if jsonOut {

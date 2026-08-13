@@ -38,6 +38,14 @@ Pushing a `v*` tag builds the binaries, publishes the release and bumps the
 version in the Homebrew formula and the Nix package. No secrets are needed for
 a release, so a tag is all it takes.
 
+The tag is also what a deployment judges a caller by. `pkg/client` states its
+version on every request (`X-Fpcloud-Client-Version`), read from the caller's
+build info — so a consumer states it by depending on the module, and the CLI,
+which is this module's own binary and has no such entry, sets its ldflags value
+instead. If a change here **breaks the wire**, the platform raises its minimum
+to this tag and every older client is refused with 426 rather than failing on
+whatever the request happens to hit (ADR-073 in `cloud-platform`).
+
 ## Working across repos
 
 `just tree <name>` at the workspace root gives a session an isolated copy of
