@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
@@ -305,19 +304,14 @@ var registryRetentionApplyCmd = &cobra.Command{
 		}
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title("Apply retention policies now?").
-				Description("Selected tags are deleted from the registry. Run `retention preview` first to see them.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				"Apply retention policies now?",
+				"Selected tags are deleted from the registry. Run `retention preview` first to see them.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}

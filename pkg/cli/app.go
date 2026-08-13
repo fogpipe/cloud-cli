@@ -1329,18 +1329,12 @@ var appRollbackCmd = &cobra.Command{
 		// acknowledged; show what it said and let the user decide here rather than
 		// making them re-run the command.
 		if crossesMigrations(rollbackErr) && !isStructured(outputFormat) {
-			var confirm bool
 			fmt.Println(warnBox.Render(rollbackErr.Error()))
-			if err := huh.NewConfirm().
-				Title("Roll back anyway?").
-				Affirmative("Yes, roll back").
-				Negative("Cancel").
-				Value(&confirm).
-				Run(); err != nil {
+			ok, err := confirm("Roll back anyway?", "", "Yes, roll back")
+			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 			req.ConfirmMigrations = true
@@ -1506,19 +1500,14 @@ var appDeleteCmd = &cobra.Command{
 		ref := appRefFrom(cmd, args)
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Delete app %q?", ref)).
-				Description("This action cannot be undone.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Delete app %q?", ref),
+				"This action cannot be undone.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}

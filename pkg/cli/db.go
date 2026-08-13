@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
@@ -197,19 +196,14 @@ var dbDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Delete database %q?", args[0])).
-				Description("This action cannot be undone. All data will be lost.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Delete database %q?", args[0]),
+				"This action cannot be undone. All data will be lost.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}

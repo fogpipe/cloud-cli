@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
@@ -259,19 +258,14 @@ var storageBucketDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Delete bucket %q?", args[0])).
-				Description("This action cannot be undone.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Delete bucket %q?", args[0]),
+				"This action cannot be undone.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}
@@ -424,19 +418,14 @@ var storageBucketWebsiteEnableCmd = &cobra.Command{
 		errorDoc, _ := cmd.Flags().GetString("error")
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Serve bucket %q as a public website?", args[0])).
-				Description("Its objects become world-readable over HTTP — anyone with the URL can fetch them.").
-				Affirmative("Yes, publish").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Serve bucket %q as a public website?", args[0]),
+				"Its objects become world-readable over HTTP — anyone with the URL can fetch them.",
+				"Yes, publish")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}
@@ -716,19 +705,14 @@ var storageKeysDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Revoke access key %q?", args[1])).
-				Description("This action cannot be undone. Anything using it will lose access.").
-				Affirmative("Yes, revoke").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Revoke access key %q?", args[1]),
+				"This action cannot be undone. Anything using it will lose access.",
+				"Yes, revoke")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 // withSpinner runs action while animating a progress line.
@@ -52,12 +53,12 @@ func withSpinner(title string, action func()) {
 }
 
 // isTerminal reports whether f is an interactive terminal.
+//
+// The question is answered by asking the file descriptor, not by its mode: a
+// character device is not a terminal, and the redirect a script reaches for
+// first — `< /dev/null` — is one.
 func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // Color palette

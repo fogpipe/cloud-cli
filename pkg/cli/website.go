@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
@@ -441,19 +440,14 @@ var websiteDeleteCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Delete website %q?", args[0])).
-				Description("The site goes offline and its content is deleted. This cannot be undone.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Delete website %q?", args[0]),
+				"The site goes offline and its content is deleted. This cannot be undone.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			if !ok {
 				return nil
 			}
 		}

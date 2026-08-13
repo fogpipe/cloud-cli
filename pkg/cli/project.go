@@ -308,20 +308,16 @@ var projectDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title(fmt.Sprintf("Delete project %q?", args[0])).
-				Description("Deletes its apps, databases, and its buckets INCLUDING every object in them\n" +
-					"(website files included), plus the backups of its databases.\n" +
-					"This action cannot be undone.").
-				Affirmative("Yes, delete").
-				Negative("Cancel").
-				Value(&confirm).
-				Run()
+			ok, err := confirm(
+				fmt.Sprintf("Delete project %q?", args[0]),
+				"Deletes its apps, databases, and its buckets INCLUDING every object in them\n"+
+					"(website files included), plus the backups of its databases.\n"+
+					"This action cannot be undone.",
+				"Yes, delete")
 			if err != nil {
 				return err
 			}
-			if !confirm {
+			if !ok {
 				fmt.Println(mutedStyle.Render("Aborted."))
 				return nil
 			}
@@ -350,17 +346,14 @@ var projectMoveCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
-			var confirm bool
-			if err := huh.NewConfirm().
-				Title(fmt.Sprintf("Move project %q to its org-prefixed namespace?", args[0])).
-				Description("Recreates the namespace and redeploys apps (brief downtime).").
-				Affirmative("Yes, move").
-				Negative("Cancel").
-				Value(&confirm).
-				Run(); err != nil {
+			ok, err := confirm(
+				fmt.Sprintf("Move project %q to its org-prefixed namespace?", args[0]),
+				"Recreates the namespace and redeploys apps (brief downtime).",
+				"Yes, move")
+			if err != nil {
 				return err
-			} else if !confirm {
-				fmt.Println(mutedStyle.Render("Aborted."))
+			}
+			if !ok {
 				return nil
 			}
 		}
