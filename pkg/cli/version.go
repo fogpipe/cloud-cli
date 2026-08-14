@@ -156,8 +156,14 @@ func latestVersion() (string, error) {
 // warnIfOutdated prints a one-line upgrade hint to stderr when the running CLI is
 // older than the newest published release. It never errors or blocks meaningful
 // work: any failure (offline, dev build, unparseable version) is silently skipped.
+//
+// Only a build stamped with a bare release tag is judged. `git describe` decorates
+// a local build with the commits since that tag (v0.134.0-3-gf9054f2, -dirty), and
+// semver orders that below the tag it is built past — so the release it is ahead of
+// would read as an upgrade, and `fpcloud upgrade` would install older code.
 func warnIfOutdated() {
-	if version == "dev" || !semver.IsValid(version) {
+	if version == "dev" || !semver.IsValid(version) ||
+		semver.Prerelease(version) != "" || semver.Build(version) != "" {
 		return
 	}
 	if cfg, err := loadConfig(); err == nil && cfg.SuppressVersionWarning {
