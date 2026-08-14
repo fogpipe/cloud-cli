@@ -1377,6 +1377,45 @@ func (c *Client) ClearBucketLifecycleRules(ctx context.Context, id string) error
 	return c.do(httpReq, nil)
 }
 
+// ListBucketCORSRules lists a bucket's cross-origin rules (#887). The platform's
+// own console rule is not among them — it is applied to every bucket and is not
+// the tenant's to see or remove.
+func (c *Client) ListBucketCORSRules(ctx context.Context, id string) ([]*BucketCORSRule, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/buckets/"+id+"/cors", nil)
+	if err != nil {
+		return nil, err
+	}
+	var rules []*BucketCORSRule
+	if err := c.do(httpReq, &rules); err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+// SetBucketCORSRules replaces a bucket's whole CORS configuration and returns
+// what was written.
+func (c *Client) SetBucketCORSRules(ctx context.Context, id string, req SetBucketCORSRequest) ([]*BucketCORSRule, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+id+"/cors", req)
+	if err != nil {
+		return nil, err
+	}
+	var rules []*BucketCORSRule
+	if err := c.do(httpReq, &rules); err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+// ClearBucketCORSRules removes every rule; no browser origin reaches the bucket
+// afterwards.
+func (c *Client) ClearBucketCORSRules(ctx context.Context, id string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+id+"/cors", nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
 // SetBucketWebsite toggles static-website serving on a bucket (#342). Enabling
 // serves the bucket anonymously over HTTP at the returned WebsiteURL.
 func (c *Client) SetBucketWebsite(ctx context.Context, id string, req SetBucketWebsiteRequest) (*Bucket, error) {

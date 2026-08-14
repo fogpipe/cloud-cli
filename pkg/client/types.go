@@ -663,6 +663,45 @@ type SetBucketLifecycleRuleRequest struct {
 	AbortIncompleteUploadDays int    `json:"abort_incomplete_upload_days,omitempty"`
 }
 
+// BucketCORSRule is one cross-origin rule on a bucket (#887) — the S3 CORSRule
+// shape, which is also what R2 and the Terraform providers for both expose.
+//
+// It governs what a browser may do against the bucket directly, and only that:
+// a request made from a server is not cross-origin and never sends a preflight.
+// A presigned url is no substitute — the preflight carries no signature, so the
+// browser is refused before authorization is consulted.
+//
+// The set is ordered and the order matters: the store answers with the first
+// rule whose origin matches.
+type BucketCORSRule struct {
+	ID             string    `json:"id"`
+	BucketID       string    `json:"bucket_id"`
+	Position       int       `json:"position"`
+	AllowedOrigins []string  `json:"allowed_origins"`
+	AllowedMethods []string  `json:"allowed_methods"`
+	AllowedHeaders []string  `json:"allowed_headers"`
+	ExposeHeaders  []string  `json:"expose_headers"`
+	MaxAgeSeconds  int       `json:"max_age_seconds"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// SetBucketCORSRequest replaces a bucket's whole CORS configuration. Whole-set
+// rather than per-rule because a rule has no key to address it by, and the
+// object store's own PutBucketCors replaces the entire document too. An empty
+// list means "allow no cross-origin access".
+type SetBucketCORSRequest struct {
+	Rules []BucketCORSRuleRequest `json:"rules"`
+}
+
+// BucketCORSRuleRequest is one rule in that configuration.
+type BucketCORSRuleRequest struct {
+	AllowedOrigins []string `json:"allowed_origins"`
+	AllowedMethods []string `json:"allowed_methods"`
+	AllowedHeaders []string `json:"allowed_headers,omitempty"`
+	ExposeHeaders  []string `json:"expose_headers,omitempty"`
+	MaxAgeSeconds  int      `json:"max_age_seconds,omitempty"`
+}
+
 // BucketKey is a scoped S3 access key for a bucket. SecretAccessKey is only
 // populated when the key is created.
 type BucketKey struct {

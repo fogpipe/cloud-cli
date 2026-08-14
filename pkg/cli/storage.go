@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -809,6 +810,14 @@ func init() {
 	storageBucketLifecycleDeleteCmd.Flags().Bool("all", false, "Remove every expiry rule on the bucket")
 	storageBucketLifecycleCmd.AddCommand(storageBucketLifecycleListCmd, storageBucketLifecycleSetCmd, storageBucketLifecycleDeleteCmd)
 
+	storageBucketCORSSetCmd.Flags().StringArray("origin", nil, "Origin allowed to call the bucket from a browser, e.g. https://example.com (repeatable, * for any)")
+	storageBucketCORSSetCmd.Flags().StringArray("method", nil, "HTTP method the origin may use (repeatable): GET, PUT, HEAD, POST, DELETE")
+	storageBucketCORSSetCmd.Flags().StringArray("header", nil, "Request header the browser may send (repeatable, * for any)")
+	storageBucketCORSSetCmd.Flags().StringArray("expose-header", nil, "Response header the page may read (repeatable) — an upload needs ETag")
+	storageBucketCORSSetCmd.Flags().Int("max-age", 0, "Seconds the browser may cache the preflight (0 = its own default)")
+	storageBucketCORSSetCmd.Flags().String("from-file", "", "JSON file holding the whole rule list, for configurations one rule cannot express")
+	storageBucketCORSCmd.AddCommand(storageBucketCORSListCmd, storageBucketCORSSetCmd, storageBucketCORSClearCmd)
+
 	storageBucketBindCmd.Flags().String("app", "", "App to bind the bucket to (name or id, required)")
 	storageBucketBindCmd.Flags().Bool("read-only", false, "Bind with a read-only scoped key")
 
@@ -830,6 +839,7 @@ func init() {
 		storageBucketSetQuotaCmd,
 		storageBucketWebsiteCmd,
 		storageBucketLifecycleCmd,
+		storageBucketCORSCmd,
 		storageBucketBindCmd,
 		storageBucketUnbindCmd,
 		storageBucketBindingsCmd,
@@ -956,6 +966,165 @@ var storageBucketLifecycleDeleteCmd = &cobra.Command{
 		))
 		return nil
 	},
+}
+
+var storageBucketCORSCmd = &cobra.Command{
+	Use:   "cors",
+	Short: "Let a browser call the bucket directly (cross-origin rules)",
+	Long: "A page on your own domain cannot upload to or read from a bucket until the\n" +
+		"bucket says its origin is allowed. The browser asks first, with an OPTIONS\n" +
+		"preflight, and refuses the real request if the answer does not name the origin.\n\n" +
+		"A presigned url does not remove the need for this. The preflight carries no\n" +
+		"signature, so it is answered before any credential is looked at — a correctly\n" +
+		"signed upload still fails without a rule here, and the browser reports it as a\n" +
+		"CORS error rather than as anything about permissions.\n\n" +
+		"You only need this when the browser talks to the bucket. An app that uploads\n" +
+		"through its own backend never sends a preflight and needs no rule.",
+}
+
+var storageBucketCORSListCmd = &cobra.Command{
+	Use:     "list <bucket>",
+	Aliases: []string{"ls"},
+	Short:   "List a bucket's cross-origin rules",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		bucketID, err := resolveBucketID(c, args[0])
+		if err != nil {
+			return err
+		}
+		rules, err := c.ListBucketCORSRules(context.Background(), bucketID)
+		if err != nil {
+			return err
+		}
+		rows := make([][]string, len(rules))
+		for i, r := range rules {
+			rows[i] = []string{
+				strings.Join(r.AllowedOrigins, ", "),
+				strings.Join(r.AllowedMethods, ", "),
+				corsHeaderList(r.AllowedHeaders),
+				corsHeaderList(r.ExposeHeaders),
+				corsMaxAge(r.MaxAgeSeconds),
+			}
+		}
+		render([]string{"ORIGINS", "METHODS", "HEADERS", "EXPOSES", "MAX AGE"}, rows, rules)
+		return nil
+	},
+}
+
+var storageBucketCORSSetCmd = &cobra.Command{
+	Use:   "set <bucket>",
+	Short: "Replace a bucket's cross-origin rules",
+	Long: "Declare which browser origins may call the bucket, and how.\n\n" +
+		"This replaces the WHOLE configuration — there is no way to address one rule,\n" +
+		"because a rule has no name and two rules can differ only in their order. What\n" +
+		"you pass is what the bucket will have.\n\n" +
+		"The flags describe one rule, which is what almost every site needs:\n\n" +
+		"  fpcloud storage bucket cors set photos \\\n" +
+		"      --origin https://example.com --method GET --method PUT \\\n" +
+		"      --header '*' --expose-header ETag --max-age 3600\n\n" +
+		"--expose-header is easy to leave out and hard to diagnose: without ETag the\n" +
+		"upload succeeds and the page cannot read what it uploaded.\n\n" +
+		"For anything one rule cannot express — different methods per origin — pass\n" +
+		"--from-file with a JSON list of rules, the same shape `list -o json` prints.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fromFile, _ := cmd.Flags().GetString("from-file")
+		origins, _ := cmd.Flags().GetStringArray("origin")
+		methods, _ := cmd.Flags().GetStringArray("method")
+		headers, _ := cmd.Flags().GetStringArray("header")
+		exposes, _ := cmd.Flags().GetStringArray("expose-header")
+		maxAge, _ := cmd.Flags().GetInt("max-age")
+
+		var rules []client.BucketCORSRuleRequest
+		switch {
+		case fromFile != "" && len(origins) > 0:
+			return fmt.Errorf("--from-file already carries the whole configuration; drop the per-rule flags")
+		case fromFile != "":
+			raw, err := os.ReadFile(fromFile)
+			if err != nil {
+				return err
+			}
+			if err := json.Unmarshal(raw, &rules); err != nil {
+				return fmt.Errorf("parse %s: %w", fromFile, err)
+			}
+		case len(origins) == 0:
+			return fmt.Errorf("nothing to set: pass --origin (and --method), or --from-file; to remove every rule use `cors clear`")
+		default:
+			rules = []client.BucketCORSRuleRequest{{
+				AllowedOrigins: origins,
+				AllowedMethods: methods,
+				AllowedHeaders: headers,
+				ExposeHeaders:  exposes,
+				MaxAgeSeconds:  maxAge,
+			}}
+		}
+
+		c := getClient()
+		bucketID, err := resolveBucketID(c, args[0])
+		if err != nil {
+			return err
+		}
+		written, err := c.SetBucketCORSRules(context.Background(), bucketID, client.SetBucketCORSRequest{Rules: rules})
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(written)
+		}
+		rows := [][]string{}
+		for _, r := range written {
+			rows = append(rows,
+				[]string{"Origins", strings.Join(r.AllowedOrigins, ", ")},
+				[]string{"Methods", strings.Join(r.AllowedMethods, ", ")},
+				[]string{"Exposes", corsHeaderList(r.ExposeHeaders)},
+				[]string{"Max age", corsMaxAge(r.MaxAgeSeconds)},
+			)
+		}
+		rows = append(rows, []string{"", mutedStyle.Render("This is now the bucket's entire cross-origin configuration.")})
+		fmt.Println(renderInfoBox("CORS Rules Set", rows))
+		return nil
+	},
+}
+
+var storageBucketCORSClearCmd = &cobra.Command{
+	Use:   "clear <bucket>",
+	Short: "Remove every cross-origin rule",
+	Long: "Removes the whole configuration. No browser origin can reach the bucket\n" +
+		"afterwards; anything reaching it from a server is unaffected.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		bucketID, err := resolveBucketID(c, args[0])
+		if err != nil {
+			return err
+		}
+		if err := c.ClearBucketCORSRules(context.Background(), bucketID); err != nil {
+			return err
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+				fmt.Sprintf(" All cross-origin rules on %q removed. No browser origin reaches it now.", args[0]),
+		))
+		return nil
+	},
+}
+
+// corsHeaderList renders an optional header list; empty reads as nothing set
+// rather than as an empty set someone declared.
+func corsHeaderList(h []string) string {
+	if len(h) == 0 {
+		return "—"
+	}
+	return strings.Join(h, ", ")
+}
+
+// corsMaxAge renders the preflight cache lifetime, with 0 left to the browser.
+func corsMaxAge(secs int) string {
+	if secs <= 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%ds", secs)
 }
 
 // lifecyclePrefixLabel names the scope a rule covers; the empty prefix is the
