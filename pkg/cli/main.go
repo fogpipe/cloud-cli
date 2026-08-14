@@ -48,7 +48,7 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("invalid output format %q (valid: %s)", format, strings.Join(outputFormats, ", "))
 		}
 		switch cmd.Name() {
-		case "get-token", "upgrade", "version":
+		case "get-token", "upgrade":
 			return nil
 		}
 		warnIfOutdated()
