@@ -129,6 +129,10 @@ func Execute() {
 		return
 	}
 
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd == rootCmd && hasVersionFlag(os.Args[1:]) {
+		warnIfOutdated()
+	}
+
 	registerCompletions()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

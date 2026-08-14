@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -64,6 +65,15 @@ func init() {
 	versionCmd.Flags().Bool("suppress", false, "Suppress the 'new version available' notice on every command")
 	versionCmd.Flags().Bool("client", false, "Show only the client version, without contacting the control plane")
 	rootCmd.AddCommand(versionCmd)
+}
+
+func hasVersionFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--version" || a == "-v" || strings.HasPrefix(a, "--version=") {
+			return true
+		}
+	}
+	return false
 }
 
 // versionCheckTTL is how long a fetched "latest version" is trusted before the
