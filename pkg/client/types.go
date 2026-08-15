@@ -1080,10 +1080,23 @@ type BackupConfig struct {
 	Schedule                 string `json:"schedule"`
 	Retention                string `json:"retention"`
 	FirstRecoverabilityPoint string `json:"first_recoverability_point,omitempty"`
+	// RecoverableTo is the newest point a restore can reach — the ceiling of the
+	// window whose floor is FirstRecoverabilityPoint. It is the read time while
+	// WAL is reaching the archive, and the moment archiving broke while it is
+	// not. Reporting only the floor made a window with a 32h hole in it read as
+	// continuous (#896).
+	RecoverableTo string `json:"recoverable_to,omitempty"`
+	// Archiving reports whether WAL is currently reaching the archive, which is
+	// what decides whether RecoverableTo is still advancing or frozen.
+	Archiving bool `json:"archiving"`
+	// Healthy is the verdict, stated rather than inferred. It used to be derived
+	// client-side from len(Problems)==0, which meant an old server, a dropped
+	// key and a working database were the same bytes to a monitor (#896).
+	Healthy bool `json:"healthy"`
 	// Problems are the reasons this database's backups are not producing restore
-	// points, derived from live cluster state on every read. Empty means the
-	// pipeline is working.
-	Problems []BackupProblem `json:"problems,omitempty"`
+	// points, derived from live cluster state on every read. Always serialised —
+	// `[]` when there are none — so absence never has to be read as health.
+	Problems []BackupProblem `json:"problems"`
 }
 
 // BackupProblem is one reason a database's backups are not producing restore
