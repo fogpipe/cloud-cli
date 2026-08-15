@@ -522,14 +522,31 @@ func runDBBackupConfigShow(cmd *cobra.Command, args []string) error {
 		recoverability = mutedStyle.Render("unknown")
 	}
 
+	// Both ends of the window, never just the floor. "Recoverable from
+	// 2026-08-10" beside "producing backups" reads as a continuous window, and
+	// during #891 it stayed correct and unchanged while the ceiling was frozen
+	// 32 hours in the past. The end that moves is the end worth showing.
+	window := recoverability
+	switch {
+	case config.RecoverableTo == "":
+	case config.Archiving:
+		window = recoverability + "  →  now"
+	default:
+		window = recoverability + "  →  " +
+			lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render(config.RecoverableTo)
+	}
+
 	rows := [][]string{
 		{"Enabled", enabledStr},
 		{"Schedule", schedule},
 		{"Retention", config.Retention},
-		{"Recoverable from", recoverability},
+		{"Recoverable", window},
 	}
+	// The server's verdict, not a count re-derived here. A client that decides
+	// health from an empty list calls an old server, a dropped field and a
+	// working database all healthy (#896).
 	health := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("producing backups")
-	if len(config.Problems) > 0 {
+	if !config.Healthy {
 		health = lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render(fmt.Sprintf("%d problem(s)", len(config.Problems)))
 	}
 	rows = append(rows, []string{"Health", health})
