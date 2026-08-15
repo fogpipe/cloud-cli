@@ -89,6 +89,12 @@ func renderStatus(status string) string {
 		return lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render("● " + status)
 	case "failed":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
+	// A scheduled run that never happened, reconstructed from the reaper's audit
+	// record (#896). Marked distinctly from `failed` on purpose: nothing failed,
+	// which is exactly why a list of `completed` rows with a date quietly absent
+	// read as a healthy history during a 32-hour outage.
+	case "missed":
+		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("✗ " + status)
 	case "stopped":
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("○ " + status)
 	case "pending", "provisioning":
