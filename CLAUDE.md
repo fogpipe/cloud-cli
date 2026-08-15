@@ -44,7 +44,7 @@ build info — so a consumer states it by depending on the module, and the CLI,
 which is this module's own binary and has no such entry, sets its ldflags value
 instead. If a change here **breaks the wire**, the platform raises its minimum
 to this tag and every older client is refused with 426 rather than failing on
-whatever the request happens to hit (ADR-073 in `cloud-platform`).
+whatever the request happens to hit (ADR-073).
 
 **The tag is not cut here.** This repo, the platform and the provider carry one
 shared version, pushed to all three at once by `just release vX.Y.Z` at the
