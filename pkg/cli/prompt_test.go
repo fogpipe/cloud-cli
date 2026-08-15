@@ -13,7 +13,7 @@ import (
 // only test that means anything is one that executes it.
 func renderSegment(t *testing.T, dir string) string {
 	t.Helper()
-	cmd := exec.Command("/bin/sh", "-c", promptSegmentScript+"\nprompt_segment")
+	cmd := exec.Command("/bin/sh", "-c", promptSegmentScript("bash")+"\nprompt_segment")
 	cmd.Env = append(os.Environ(), "FPCLOUD_CONFIG_DIR="+dir, "FPCLOUD_STATE_DIR="+dir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -83,9 +83,28 @@ func TestPromptSegmentUnquotesValues(t *testing.T) {
 	}
 }
 
+// The zsh variant colours with prompt escapes, not raw ANSI: dropped into
+// RPROMPT, an escape sequence zsh has not been told to skip is counted as
+// printable and the prompt is drawn at the wrong width.
+func TestPromptSegmentZshUsesPromptEscapes(t *testing.T) {
+	dir := writePromptConfig(t, "current_org: acme\ncurrent_project: web\n")
+	cmd := exec.Command("/bin/sh", "-c", promptSegmentScript("zsh")+"\nprompt_segment")
+	cmd.Env = append(os.Environ(), "FPCLOUD_CONFIG_DIR="+dir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("running snippet: %v\n%s", err, out)
+	}
+	if got, want := string(out), "%F{244}fp%f %F{37}acme%f%F{244}:%f%F{208}web%f"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if strings.ContainsRune(string(out), 0x1b) {
+		t.Fatalf("zsh variant emitted a raw escape sequence: %q", out)
+	}
+}
+
 func TestPromptSegmentHonoursSymbolOverride(t *testing.T) {
 	dir := writePromptConfig(t, "current_org: acme\ncurrent_project: web\n")
-	cmd := exec.Command("/bin/sh", "-c", promptSegmentScript+"\nprompt_segment")
+	cmd := exec.Command("/bin/sh", "-c", promptSegmentScript("bash")+"\nprompt_segment")
 	cmd.Env = append(os.Environ(), "FPCLOUD_CONFIG_DIR="+dir, "FPCLOUD_PROMPT_SYMBOL=☁")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
