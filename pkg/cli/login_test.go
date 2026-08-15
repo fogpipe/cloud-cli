@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"net"
+	"strings"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -13,7 +15,7 @@ func TestOAuthConfig_PublicClientWhenNoSecret(t *testing.T) {
 	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "public-client")
 	t.Setenv("FPCLOUD_OIDC_CLIENT_SECRET", "")
 
-	conf, err := oauthConfig(context.Background())
+	conf, err := oauthConfig(context.Background(), "http://127.0.0.1:1234")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -31,7 +33,7 @@ func TestOAuthConfig_ConfidentialClientKeepsSecret(t *testing.T) {
 	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "conf-client")
 	t.Setenv("FPCLOUD_OIDC_CLIENT_SECRET", "shh")
 
-	conf, err := oauthConfig(context.Background())
+	conf, err := oauthConfig(context.Background(), "http://127.0.0.1:1234")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,6 +42,57 @@ func TestOAuthConfig_ConfidentialClientKeepsSecret(t *testing.T) {
 	}
 	if conf.Endpoint.AuthStyle != oauth2.AuthStyleAutoDetect {
 		t.Errorf("expected AuthStyleAutoDetect for a confidential client, got %v", conf.Endpoint.AuthStyle)
+	}
+}
+
+// The redirect URI names the port actually bound, so an ephemeral port is a
+// complete configuration rather than something the OAuth client had to agree to
+// in advance.
+func TestListenLoopback_RedirectNamesTheBoundPort(t *testing.T) {
+	ln, redirect, err := listenLoopback(0)
+	if err != nil {
+		t.Fatalf("listenLoopback: %v", err)
+	}
+	defer ln.Close()
+	if want := "http://" + ln.Addr().String(); redirect != want {
+		t.Errorf("redirect = %q, want %q", redirect, want)
+	}
+	if strings.HasSuffix(redirect, ":0") {
+		t.Errorf("redirect %q still names the placeholder port", redirect)
+	}
+}
+
+// Two logins at once used to be a bind collision on one fixed port.
+func TestListenLoopback_ConcurrentLoginsGetDistinctPorts(t *testing.T) {
+	first, firstRedirect, err := listenLoopback(0)
+	if err != nil {
+		t.Fatalf("first listener: %v", err)
+	}
+	defer first.Close()
+	second, secondRedirect, err := listenLoopback(0)
+	if err != nil {
+		t.Fatalf("second listener while the first holds a port: %v", err)
+	}
+	defer second.Close()
+	if firstRedirect == secondRedirect {
+		t.Errorf("both logins claimed %q", firstRedirect)
+	}
+}
+
+// A pinned port is a promise the CLI cannot keep silently: it fails rather than
+// falling back to one the IdP has not registered.
+func TestListenLoopback_PinnedPortInUseFails(t *testing.T) {
+	held, _, err := listenLoopback(0)
+	if err != nil {
+		t.Fatalf("listenLoopback: %v", err)
+	}
+	defer held.Close()
+	port := held.Addr().(*net.TCPAddr).Port
+
+	if _, _, err := listenLoopback(port); err == nil {
+		t.Fatal("expected an error binding a port already held")
+	} else if !strings.Contains(err.Error(), "login callback") {
+		t.Errorf("error %q does not say what failed to bind", err)
 	}
 }
 

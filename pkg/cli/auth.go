@@ -28,7 +28,11 @@ var authLoginCmd = &cobra.Command{
 		apiKey := cmd.Flag("api-key").Value.String()
 		if apiKey == "" {
 			// gcloud-style browser login; the OIDC token also authenticates the API.
-			return loginCmd.RunE(loginCmd, args)
+			port, err := cmd.Flags().GetInt("port")
+			if err != nil {
+				return err
+			}
+			return runLogin(context.Background(), port)
 		}
 
 		cfg, err := loadConfig()
@@ -204,6 +208,7 @@ var authLogoutCmd = &cobra.Command{
 
 func init() {
 	authStatusCmd.Flags().Bool("wide", false, "Show the detailed boxed view")
+	authLoginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
 	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authConfigureDockerCmd)
 	rootCmd.AddCommand(authCmd)
 }

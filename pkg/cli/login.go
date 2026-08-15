@@ -43,10 +43,23 @@ var (
 	oidcTokenURL = "https://oauth2.googleapis.com/token"
 )
 
-const (
-	loopbackAddr = "localhost:61847"
-	redirectURL  = "http://localhost:61847"
-)
+// listenLoopback binds the OAuth callback listener and returns it with the
+// redirect URI naming the port it actually got. port 0 takes an ephemeral one:
+// the loopback redirect is built from the bound address rather than agreed in
+// advance, so nothing has to be free before login starts and two logins can run
+// side by side. Google's desktop-app client accepts any loopback port, which is
+// what makes that legal; --port pins one for an IdP that registers an exact URI.
+//
+// 127.0.0.1 rather than localhost, on both sides: a listener on the name binds
+// whichever family resolves first, and a browser that picks the other one gets
+// connection refused with no way to tell why.
+func listenLoopback(port int) (net.Listener, string, error) {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return nil, "", fmt.Errorf("cannot bind 127.0.0.1:%d for the login callback: %w", port, err)
+	}
+	return ln, "http://" + ln.Addr().String(), nil
+}
 
 func resolveOIDCClient() (string, string, error) {
 	// The committed Google Desktop client is the default (public, no secret —
@@ -124,7 +137,9 @@ func idpName() string {
 // the CLI's behalf, holding the Google client secret this binary does not.
 const brokerTokenPath = "/api/v1/auth/oauth/token"
 
-func oauthConfig(ctx context.Context) (*oauth2.Config, error) {
+// oauthConfig builds the OAuth client. redirectURL names the loopback callback
+// this login is listening on; a refresh grant sends no redirect_uri and passes "".
+func oauthConfig(ctx context.Context, redirectURL string) (*oauth2.Config, error) {
 	id, secret, err := resolveOIDCClient()
 	if err != nil {
 		return nil, err
@@ -193,82 +208,89 @@ var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in via OIDC (authentication only; kubectl access is `fpcloud fke get-credentials`)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		conf, err := oauthConfig(ctx)
+		port, err := cmd.Flags().GetInt("port")
 		if err != nil {
 			return err
 		}
-		verifier := oauth2.GenerateVerifier()
-		state, err := randomString()
-		if err != nil {
-			return err
-		}
-
-		ln, err := net.Listen("tcp", loopbackAddr)
-		if err != nil {
-			return fmt.Errorf("cannot bind %s for the login callback: %w", loopbackAddr, err)
-		}
-		defer ln.Close()
-
-		codeCh := make(chan string, 1)
-		errCh := make(chan error, 1)
-		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			q := r.URL.Query()
-			if e := q.Get("error"); e != "" {
-				fmt.Fprint(w, "Login failed. You can close this tab.")
-				errCh <- fmt.Errorf("authorization failed: %s", e)
-				return
-			}
-			if q.Get("state") != state {
-				fmt.Fprint(w, "Login failed (state mismatch). You can close this tab.")
-				errCh <- fmt.Errorf("state mismatch in callback")
-				return
-			}
-			fmt.Fprint(w, "Login successful — you can close this tab and return to your terminal.")
-			codeCh <- q.Get("code")
-		})}
-		go srv.Serve(ln)
-		defer srv.Close()
-
-		authURL := conf.AuthCodeURL(state,
-			oauth2.AccessTypeOffline,
-			oauth2.S256ChallengeOption(verifier),
-			oauth2.SetAuthURLParam("prompt", "consent"),
-		)
-		fmt.Printf("Opening your browser to sign in with %s…\n", idpName())
-		fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
-		_ = openBrowser(authURL)
-
-		var code string
-		select {
-		case code = <-codeCh:
-		case err = <-errCh:
-			return err
-		case <-time.After(3 * time.Minute):
-			return fmt.Errorf("timed out waiting for browser login")
-		}
-
-		tok, err := conf.Exchange(ctx, code, oauth2.VerifierOption(verifier))
-		if err != nil {
-			return fmt.Errorf("token exchange failed: %w", err)
-		}
-		idToken, _ := tok.Extra("id_token").(string)
-		if idToken == "" {
-			return fmt.Errorf("no id_token returned by %s", idpName())
-		}
-		if err := saveToken(&cachedToken{
-			AccessToken:  tok.AccessToken,
-			RefreshToken: tok.RefreshToken,
-			IDToken:      idToken,
-			Expiry:       tok.Expiry,
-		}); err != nil {
-			return err
-		}
-		fmt.Println()
-		fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
-		fmt.Println(mutedStyle.Render("  For kubectl access, run:  fpcloud fke get-credentials [--project <name>]"))
-		return nil
+		return runLogin(context.Background(), port)
 	},
+}
+
+func runLogin(ctx context.Context, port int) error {
+	ln, redirectURL, err := listenLoopback(port)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	conf, err := oauthConfig(ctx, redirectURL)
+	if err != nil {
+		return err
+	}
+	verifier := oauth2.GenerateVerifier()
+	state, err := randomString()
+	if err != nil {
+		return err
+	}
+
+	codeCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if e := q.Get("error"); e != "" {
+			fmt.Fprint(w, "Login failed. You can close this tab.")
+			errCh <- fmt.Errorf("authorization failed: %s", e)
+			return
+		}
+		if q.Get("state") != state {
+			fmt.Fprint(w, "Login failed (state mismatch). You can close this tab.")
+			errCh <- fmt.Errorf("state mismatch in callback")
+			return
+		}
+		fmt.Fprint(w, "Login successful — you can close this tab and return to your terminal.")
+		codeCh <- q.Get("code")
+	})}
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	authURL := conf.AuthCodeURL(state,
+		oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(verifier),
+		oauth2.SetAuthURLParam("prompt", "consent"),
+	)
+	fmt.Printf("Opening your browser to sign in with %s…\n", idpName())
+	fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
+	_ = openBrowser(authURL)
+
+	var code string
+	select {
+	case code = <-codeCh:
+	case err = <-errCh:
+		return err
+	case <-time.After(3 * time.Minute):
+		return fmt.Errorf("timed out waiting for browser login")
+	}
+
+	tok, err := conf.Exchange(ctx, code, oauth2.VerifierOption(verifier))
+	if err != nil {
+		return fmt.Errorf("token exchange failed: %w", err)
+	}
+	idToken, _ := tok.Extra("id_token").(string)
+	if idToken == "" {
+		return fmt.Errorf("no id_token returned by %s", idpName())
+	}
+	if err := saveToken(&cachedToken{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		IDToken:      idToken,
+		Expiry:       tok.Expiry,
+	}); err != nil {
+		return err
+	}
+	fmt.Println()
+	fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
+	fmt.Println(mutedStyle.Render("  For kubectl access, run:  fpcloud fke get-credentials [--project <name>]"))
+	return nil
 }
 
 // currentIDToken returns a valid Google OIDC ID token, transparently
@@ -284,7 +306,8 @@ func currentIDToken() (string, error) {
 	exp := idTokenExpiry(idToken)
 	if idToken == "" || time.Now().After(exp.Add(-60*time.Second)) {
 		ctx := context.Background()
-		conf, err := oauthConfig(ctx)
+		// A refresh grant carries no redirect_uri — there is no callback to come back to.
+		conf, err := oauthConfig(ctx, "")
 		if err != nil {
 			return "", err
 		}
@@ -433,5 +456,6 @@ func parseJWTClaims(jwt string) map[string]any {
 }
 
 func init() {
+	loginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
 	rootCmd.AddCommand(loginCmd, getTokenCmd)
 }

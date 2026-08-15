@@ -15,7 +15,7 @@ func TestGoogleExchangeGoesThroughTheBroker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conf, err := oauthConfig(context.Background())
+	conf, err := oauthConfig(context.Background(), "http://127.0.0.1:1234")
 	if err != nil {
 		t.Fatalf("oauthConfig: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestOwnIdPSkipsTheBroker(t *testing.T) {
 	t.Setenv("FPCLOUD_OIDC_TOKEN_URL", "https://idp.example.test/token")
 	_ = os.Unsetenv("FPCLOUD_OIDC_ISSUER")
 
-	conf, err := oauthConfig(context.Background())
+	conf, err := oauthConfig(context.Background(), "http://127.0.0.1:1234")
 	if err != nil {
 		t.Fatalf("oauthConfig: %v", err)
 	}
