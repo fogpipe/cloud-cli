@@ -589,6 +589,22 @@ func runDBBackupConfigSet(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func validateRestoreFlags(external bool, target, pit string) error {
+	if !external {
+		if target == "" {
+			return fmt.Errorf("--target is required")
+		}
+		return nil
+	}
+	if target != "" {
+		return fmt.Errorf("--external overwrites this database in place; it cannot restore into --target %q. Drop --external to restore into a new database from the platform's own backups", target)
+	}
+	if pit != "" {
+		return fmt.Errorf("--external restores one dump from your bucket; it cannot restore to a point in time. Drop --external for point-in-time recovery, or name the dump with --from")
+	}
+	return nil
+}
+
 var dbRestoreCmd = &cobra.Command{
 	Use:   "restore <name>",
 	Short: "Restore a database from backup",
@@ -597,6 +613,9 @@ var dbRestoreCmd = &cobra.Command{
 		target, _ := cmd.Flags().GetString("target")
 		pit, _ := cmd.Flags().GetString("point-in-time")
 		external, _ := cmd.Flags().GetBool("external")
+		if err := validateRestoreFlags(external, target, pit); err != nil {
+			return err
+		}
 
 		c := getClient()
 		id, err := resolveDatabaseID(c, args[0])
@@ -610,6 +629,19 @@ var dbRestoreCmd = &cobra.Command{
 		// the latest backup).
 		if external {
 			object, _ := cmd.Flags().GetString("from")
+			yes, _ := cmd.Flags().GetBool("yes")
+			if !yes {
+				ok, err := confirm(
+					fmt.Sprintf("Overwrite database %q from the external bucket?", args[0]),
+					"The dump is restored over this database. Everything it holds now is replaced and cannot be recovered.",
+					"Yes, overwrite")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
 			var run *client.BackupDestinationRun
 			var runErr error
 			action := func() { run, runErr = c.RestoreBackupDestination(context.Background(), id, object) }
@@ -630,10 +662,6 @@ var dbRestoreCmd = &cobra.Command{
 				{"Identity", run.Subject},
 			}))
 			return nil
-		}
-
-		if target == "" {
-			return fmt.Errorf("--target is required")
 		}
 
 		var restored *client.Database
@@ -778,10 +806,11 @@ func init() {
 
 	dbDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
-	dbRestoreCmd.Flags().String("target", "", "Name for the restored database")
-	dbRestoreCmd.Flags().String("point-in-time", "", "Point-in-time to restore to (RFC3339)")
-	dbRestoreCmd.Flags().Bool("external", false, "Restore in place from the external (BYOB) bucket")
+	dbRestoreCmd.Flags().String("target", "", "Name for the restored database (not valid with --external)")
+	dbRestoreCmd.Flags().String("point-in-time", "", "Point-in-time to restore to (RFC3339; not valid with --external)")
+	dbRestoreCmd.Flags().Bool("external", false, "Overwrite this database from the external (BYOB) bucket — its current data is replaced")
 	dbRestoreCmd.Flags().String("from", "", "External backup object to restore (default: latest)")
+	dbRestoreCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt on --external")
 
 	addBackupExternalFlag(dbBackupCreateCmd)
 	addBackupConfigSetFlags(dbBackupConfigSetCmd)
