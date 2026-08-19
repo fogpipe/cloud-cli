@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -287,6 +288,36 @@ func TestAPIError_UnmarshalJSON(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantCode, apiErr.Code)
 			assert.Equal(t, tt.wantMessage, apiErr.Message)
+		})
+	}
+}
+
+func TestClientGetAppLogs_Query(t *testing.T) {
+	cases := []struct {
+		name string
+		req  LogsRequest
+		want string
+	}{
+		{"default", LogsRequest{}, ""},
+		{"follow", LogsRequest{Follow: true}, "follow=true"},
+		{"tail", LogsRequest{Tail: 500}, "tail=500"},
+		{"both", LogsRequest{Follow: true, Tail: 500}, "follow=true&tail=500"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/api/v1/apps/app-1/logs", r.URL.Path)
+				assert.Equal(t, tc.want, r.URL.RawQuery)
+				_, _ = w.Write([]byte("line\n"))
+			}))
+			defer server.Close()
+
+			body, err := New(server.URL, "test-key").GetAppLogs(context.Background(), "app-1", tc.req)
+			require.NoError(t, err)
+			defer body.Close()
+			out, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.Equal(t, "line\n", string(out))
 		})
 	}
 }

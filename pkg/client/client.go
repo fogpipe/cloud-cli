@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1061,12 +1062,19 @@ func (c *Client) DeleteApp(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// GetAppLogs retrieves logs for an app. If follow is true, the returned
+// GetAppLogs retrieves logs for an app. If req.Follow is true, the returned
 // ReadCloser streams logs until closed.
-func (c *Client) GetAppLogs(ctx context.Context, id string, follow bool) (io.ReadCloser, error) {
+func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsRequest) (io.ReadCloser, error) {
+	q := url.Values{}
+	if req.Follow {
+		q.Set("follow", "true")
+	}
+	if req.Tail > 0 {
+		q.Set("tail", strconv.Itoa(req.Tail))
+	}
 	path := "/api/v1/apps/" + id + "/logs"
-	if follow {
-		path += "?follow=true"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
 	}
 
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)

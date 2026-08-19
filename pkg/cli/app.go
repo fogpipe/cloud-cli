@@ -1696,13 +1696,14 @@ var appLogsCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
+		tail, _ := cmd.Flags().GetInt("tail")
 
 		c := getClient()
 		appID, err := appIDFrom(c, cmd, args)
 		if err != nil {
 			return err
 		}
-		body, err := c.GetAppLogs(context.Background(), appID, follow)
+		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{Follow: follow, Tail: tail})
 		if err != nil {
 			return err
 		}
@@ -1768,6 +1769,7 @@ func init() {
 	appDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	appLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	appLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
 
 	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
 	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas (serverless mode)")

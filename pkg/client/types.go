@@ -393,6 +393,13 @@ type DeployRequest struct {
 	NoTraffic bool   `json:"no_traffic,omitempty"`
 }
 
+// LogsRequest selects what GetAppLogs returns. Tail is the number of most
+// recent lines; zero leaves the choice to the server, which also bounds it.
+type LogsRequest struct {
+	Follow bool
+	Tail   int
+}
+
 // TrafficTarget represents a traffic routing target.
 type TrafficTarget struct {
 	Revision string `json:"revision"`
