@@ -41,7 +41,7 @@ func resolveDatabaseID(c *client.Client, ref string) (string, error) {
 			return d.ID, nil
 		}
 	}
-	return "", fmt.Errorf("database %q not found in project %q", ref, project)
+	return "", notFoundf("database %q not found in project %q", ref, project)
 }
 
 var dbCreateCmd = &cobra.Command{

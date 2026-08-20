@@ -38,6 +38,7 @@ func renderLLMHelp(scope *cobra.Command) string {
 	})
 	b.WriteString("  --help bool  human-readable help for a command\n")
 	b.WriteString("  --help-llm bool  this dense help for a command and its subtree\n\n")
+	b.WriteString(exitCodeHelp + "\n")
 
 	b.WriteString("COMMANDS:\n\n")
 	writeCmdLLM(&b, scope, globals)

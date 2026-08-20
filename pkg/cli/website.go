@@ -373,7 +373,7 @@ var websiteShowCmd = &cobra.Command{
 			return err
 		}
 		if b == nil {
-			return fmt.Errorf("website %q not found in the current project", args[0])
+			return notFoundf("website %q not found in the current project", args[0])
 		}
 		outputFormat := rootCmd.Flag("output").Value.String()
 		if isStructured(outputFormat) {
@@ -403,7 +403,7 @@ var websiteUpdateCmd = &cobra.Command{
 			return err
 		}
 		if b == nil {
-			return fmt.Errorf("website %q not found in the current project", args[0])
+			return notFoundf("website %q not found in the current project", args[0])
 		}
 		if conventionsChanged {
 			index, errorDoc, _ := websiteFlags(cmd)
@@ -458,7 +458,7 @@ var websiteDeleteCmd = &cobra.Command{
 			return err
 		}
 		if b == nil {
-			return fmt.Errorf("website %q not found in the current project", args[0])
+			return notFoundf("website %q not found in the current project", args[0])
 		}
 		if force {
 			if err := emptyBucket(c, b.Name); err != nil {
@@ -493,7 +493,7 @@ func requireWebsite(c *client.Client, name string) (*client.Bucket, error) {
 		return nil, err
 	}
 	if b == nil {
-		return nil, fmt.Errorf("website %q not found in the current project", name)
+		return nil, notFoundf("website %q not found in the current project", name)
 	}
 	return b, nil
 }

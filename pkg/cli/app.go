@@ -45,7 +45,7 @@ func resolveAppID(c *client.Client, ref string) (string, error) {
 			return a.ID, nil
 		}
 	}
-	return "", fmt.Errorf("app %q not found in project %q", ref, project)
+	return "", notFoundf("app %q not found in project %q", ref, project)
 }
 
 // appRefFrom returns the app reference (name or id) for a command that accepts

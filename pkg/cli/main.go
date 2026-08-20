@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const errorHelpHint = "Run with --help for usage, or --help-llm for dense, machine-readable help (LLM/agent-oriented)."
@@ -101,6 +102,42 @@ func init() {
 	})
 }
 
+// unknownSubcommand reports a typo under a group: `fpcloud project show` names
+// no command, and cobra answers it with the group's help and a nil error — a
+// usage error that exits 0 — because it rejects unknown subcommands only at the
+// root and a non-runnable command is helped before its Args are checked. Found
+// before cobra runs, from the first positional word left after the group.
+func unknownSubcommand(args []string) (group *cobra.Command, word string, ok bool) {
+	cmd, rest, err := rootCmd.Find(args)
+	if err != nil || cmd == rootCmd || cmd.Runnable() || !cmd.HasSubCommands() {
+		return nil, "", false
+	}
+	flags := cmd.Flags()
+	flags.AddFlagSet(cmd.InheritedFlags())
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		if a == "--" {
+			return nil, "", false
+		}
+		if !strings.HasPrefix(a, "-") {
+			return cmd, a, true
+		}
+		if strings.Contains(a, "=") {
+			continue
+		}
+		var f *pflag.Flag
+		if strings.HasPrefix(a, "--") {
+			f = flags.Lookup(strings.TrimPrefix(a, "--"))
+		} else if len(a) == 2 {
+			f = flags.ShorthandLookup(a[1:])
+		}
+		if f != nil && f.NoOptDefVal == "" {
+			i++ // the flag's value
+		}
+	}
+	return nil, "", false
+}
+
 // NewRootCommand returns the fully registered command tree.
 //
 // Exported so the docs pool can be validated against the real cobra
@@ -134,6 +171,10 @@ func Execute() {
 	}
 
 	registerCompletions()
+	if group, word, ok := unknownSubcommand(os.Args[1:]); ok {
+		fmt.Fprintf(os.Stderr, "unknown command %q for %q\n%s\n", word, group.CommandPath(), errorHelpHint)
+		os.Exit(exitUsage)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		// A deployment that refuses this binary has already said why; what it
@@ -141,7 +182,7 @@ func Execute() {
 		// was typing. Suppress the usage hint in that case — the flags were fine.
 		if errors.Is(err, client.ErrClientTooOld) {
 			fmt.Fprintln(os.Stderr, "Run `fpcloud upgrade` to install the newest release.")
-			os.Exit(1)
+			os.Exit(exitCode(err))
 		}
 		// The API can only report the header it did not get; it cannot know we
 		// never found a credential to put there. Say so, or a caller reads a
@@ -149,11 +190,11 @@ func Execute() {
 		var apiErr *client.APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && resolveAPIKey() == "" {
 			fmt.Fprintln(os.Stderr, "No credential found — run `fpcloud login`, or set FPCLOUD_API_KEY (in CI, from the `fogpipe/cloud-actions/auth` step).")
-			os.Exit(1)
+			os.Exit(exitCode(err))
 		}
 		if isUsageError(err) {
 			fmt.Fprintln(os.Stderr, errorHelpHint)
 		}
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }

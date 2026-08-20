@@ -256,7 +256,7 @@ func resolveOrgRef(ctx context.Context, ref string) (string, error) {
 			return o.ID, nil
 		}
 	}
-	return "", fmt.Errorf("org %q not found", ref)
+	return "", notFoundf("org %q not found", ref)
 }
 
 func renderRole(role string) string {

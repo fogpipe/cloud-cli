@@ -59,7 +59,7 @@ func resolveRunnerID(c *client.Client, ref string) (string, error) {
 			return r.ID, nil
 		}
 	}
-	return "", fmt.Errorf("runner %q not found in project %q", ref, project)
+	return "", notFoundf("runner %q not found in project %q", ref, project)
 }
 
 // runnerCredential reads the credential flags, loading the App private key from

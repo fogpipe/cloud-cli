@@ -59,7 +59,7 @@ func resolveBucketID(c *client.Client, ref string) (string, error) {
 			return b.ID, nil
 		}
 	}
-	return "", fmt.Errorf("bucket %q not found in project %q", ref, project)
+	return "", notFoundf("bucket %q not found in project %q", ref, project)
 }
 
 // parseSize parses a byte count that may carry a binary suffix (Ki/Mi/Gi/Ti). An

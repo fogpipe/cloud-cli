@@ -53,7 +53,7 @@ func resolveJobID(c *client.Client, ref string) (string, error) {
 			return j.ID, nil
 		}
 	}
-	return "", fmt.Errorf("job %q not found in project %q", ref, project)
+	return "", notFoundf("job %q not found in project %q", ref, project)
 }
 
 // parseHeaderFlags turns repeated --header "Name: value" (or "Name=value")

@@ -209,7 +209,7 @@ func resolveTargets(cmd *cobra.Command, c *client.Client, orgID string, refs []s
 		case byName[r] != "":
 			out = append(out, byName[r])
 		default:
-			return nil, fmt.Errorf("target project %q not found in org", r)
+			return nil, notFoundf("target project %q not found in org", r)
 		}
 	}
 	return out, nil
