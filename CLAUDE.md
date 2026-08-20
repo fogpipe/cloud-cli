@@ -15,8 +15,16 @@ The Fogpipe Cloud CLI and its Go SDK. Public, Apache-2.0.
 
 ## It is public
 
-Nothing operator-internal goes here. Operator-only API paths live under
-`/api/v1/admin/*` and are not part of the tenant CLI; keep it that way.
+Nothing operator-internal goes here. Operator **mutations** live under
+`/api/v1/admin/*` and are not part of this binary; keep it that way. What made
+`fke get-credentials --staff` wrong was that it *hid* an operator capability
+inside a tenant command, and a hidden flag is not a boundary.
+
+`fpcloud admin` is the exception the rule was always compatible with (ADR-084):
+the reachable operator reads under `/api/v1/operator/*`, in a visible command
+group that a tenant is refused with 403. A capability whose whole purpose is to
+work from anywhere has to be in the binary that is already everywhere. Nothing
+that changes state goes in it.
 
 No credential belongs in this binary, and none is in it. The Google client
 secret the token exchange needs lives on the platform, which brokers the

@@ -492,7 +492,7 @@ func appAge(a client.AppStatus) string {
 	if a.Pods == nil || a.Pods.RunningSeconds == 0 {
 		return mutedStyle.Render("—")
 	}
-	return shortDuration(a.Pods.RunningSeconds)
+	return shortDuration(time.Duration(a.Pods.RunningSeconds) * time.Second)
 }
 
 // podMovement renders what is coming up and going away right now. Empty when
@@ -503,10 +503,10 @@ func podMovement(p *client.PodPhases) string {
 	}
 	parts := []string{}
 	if p.Starting > 0 {
-		parts = append(parts, fmt.Sprintf("%d starting (%s)", p.Starting, shortDuration(p.StartingSeconds)))
+		parts = append(parts, fmt.Sprintf("%d starting (%s)", p.Starting, shortDuration(time.Duration(p.StartingSeconds)*time.Second)))
 	}
 	if p.Terminating > 0 {
-		parts = append(parts, fmt.Sprintf("%d terminating (%s)", p.Terminating, shortDuration(p.TerminatingSeconds)))
+		parts = append(parts, fmt.Sprintf("%d terminating (%s)", p.Terminating, shortDuration(time.Duration(p.TerminatingSeconds)*time.Second)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -520,8 +520,14 @@ func podKey(p *client.PodPhases) string {
 	return fmt.Sprintf("%d/%d/%d", p.Running, p.Starting, p.Terminating)
 }
 
-// shortDuration renders a second count the way an age column wants it.
-func shortDuration(seconds int64) string {
+// shortDuration renders a span at one unit of precision — the way an age or a
+// duration column wants it.
+//
+// A time.Duration rather than a second count: the API reports some spans as
+// seconds and others as a pair of timestamps, and a helper taking seconds makes
+// every caller of the second kind do the conversion at the call site.
+func shortDuration(d time.Duration) string {
+	seconds := int64(d.Seconds())
 	switch {
 	case seconds < 60:
 		return fmt.Sprintf("%ds", seconds)

@@ -2587,3 +2587,39 @@ func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch strin
 	}
 	return &status, resp.Header.Get("ETag"), nil
 }
+
+// AlertHistory returns the alerts that fired over a window — what fired, when,
+// and for how long.
+//
+// Operator-only: it lives under /operator, gated on administrate over the
+// platform-operator org — reachable, unlike /admin, because a diagnostic is
+// asked from wherever the person is and often with no cluster credential at all
+// (ADR-084). window takes the Prometheus/Grafana forms
+// (30m, 24h, 7d, 2w) and empty means the server's default; name filters by
+// alertname as a case-insensitive substring.
+//
+// The record itself is Prometheus's ALERTS series, which has no ingress — the
+// control plane reading it is what keeps alert history off cluster-admin and off
+// any credential the platform does not issue (fogpipe/cloud-workspace#101).
+func (c *Client) AlertHistory(ctx context.Context, window, name string) (*AlertHistory, error) {
+	q := url.Values{}
+	if window != "" {
+		q.Set("window", window)
+	}
+	if name != "" {
+		q.Set("name", name)
+	}
+	path := "/api/v1/operator/alerts"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var history AlertHistory
+	if err := c.do(req, &history); err != nil {
+		return nil, err
+	}
+	return &history, nil
+}

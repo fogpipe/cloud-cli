@@ -1747,3 +1747,37 @@ type RunnerStatus struct {
 	MaxRunners     int    `json:"max_runners"`
 	Message        string `json:"message,omitempty"`
 }
+
+// AlertEpisode is one continuous stretch of one alert firing, as the control
+// plane derives it from Prometheus's ALERTS series.
+//
+// Nothing stores this: Alertmanager keeps no history and Slack keeps only what
+// was delivered, so an episode is reconstructed per request from the samples
+// Prometheus wrote on each rule evaluation.
+type AlertEpisode struct {
+	Alert    string `json:"alert"`
+	Severity string `json:"severity,omitempty"`
+	// Namespace and Target locate what fired. Empty means the rule carried no
+	// such label — an alert about the node or the cluster is scoped to neither.
+	Namespace string            `json:"namespace,omitempty"`
+	Target    string            `json:"target,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
+
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
+	// Firing means the episode was still open when observation stopped, so
+	// EndedAt is the end of the window and not where the alert cleared.
+	Firing bool `json:"firing"`
+}
+
+// AlertHistory is what fired over one window.
+//
+// From/To describe the observation rather than the request: a window longer than
+// Prometheus retention comes back as the part that still exists, which is what
+// keeps an empty answer from reading as "this never fired".
+type AlertHistory struct {
+	From        time.Time      `json:"from"`
+	To          time.Time      `json:"to"`
+	StepSeconds int            `json:"step_seconds"`
+	Episodes    []AlertEpisode `json:"episodes"`
+}
