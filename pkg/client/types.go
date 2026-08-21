@@ -395,11 +395,11 @@ type DeployRequest struct {
 
 // LogsRequest selects what GetAppLogs returns.
 //
-// Without Follow the read is answered from the platform's log store, so it
+// Every read is answered from the platform's log store, Follow included, so it
 // reaches past the pod that printed the lines and merges every replica
-// (ADR-085): Since/Until bound the window and Tail caps how much of it comes
-// back. With Follow the running pod is streamed live instead, and the window is
-// not applicable.
+// (ADR-086). Since/Until bound the window and Tail caps how much of it comes
+// back; with Follow the window is replayed and then followed, so Until is
+// refused — a follow has no far end.
 //
 // Since and Until each take a Go duration meaning "ago" (e.g. "24h") or an
 // RFC3339 timestamp. Empty Since reaches as far back as the store retains;

@@ -1695,15 +1695,18 @@ var appLogsCmd = &cobra.Command{
 	Short: "Read app logs",
 	Long: `Read an app's logs.
 
-Without --follow the lines come from the platform's log store, so they reach
-past the pod that printed them — a restart, a redeploy or a scale-to-zero no
-longer erases the history — and every replica appears in one timeline.
+Every read comes from the platform's log store, following included, so the
+lines reach past the pod that printed them — a restart, a redeploy or a
+scale-to-zero no longer erases them — and every replica appears in one
+timeline.
 
   fpcloud app logs web --since 24h
   fpcloud app logs web --since 2h --until 1h --timestamps
-  fpcloud app logs web --follow
+  fpcloud app logs web --follow --since 10m
 
---follow streams the running pod instead, which is where a line appears first.`,
+--follow replays the window, then keeps printing. A restart is a gap in the
+output rather than the end of it. --until has no meaning while following and is
+refused.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
@@ -1712,8 +1715,8 @@ longer erases the history — and every replica appears in one timeline.
 		until, _ := cmd.Flags().GetString("until")
 		timestamps, _ := cmd.Flags().GetBool("timestamps")
 
-		if follow && (since != "" || until != "") {
-			return fmt.Errorf("--since/--until read stored history and --follow streams the live pod; pick one")
+		if follow && until != "" {
+			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
 		}
 
 		c := getClient()
@@ -1788,10 +1791,10 @@ func init() {
 
 	appDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
-	appLogsCmd.Flags().BoolP("follow", "f", false, "Stream the running pod live instead of reading stored history")
+	appLogsCmd.Flags().BoolP("follow", "f", false, "Keep printing new lines as they arrive")
 	appLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
-	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains)")
-	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now)")
+	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
+	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now). Not valid with --follow")
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 
 	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
