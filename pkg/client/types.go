@@ -1214,12 +1214,15 @@ type Deployment struct {
 	Trigger        string   `json:"trigger"`
 	CommitSHA      string   `json:"commit_sha,omitempty"`
 	Message        string   `json:"message,omitempty"`
-	ReleaseLogs    string   `json:"release_logs,omitempty"` // output of the release-command Job for this deploy
-	StartedAt      string   `json:"started_at"`
-	FinishedAt     *string  `json:"finished_at,omitempty"`
-	DurationMs     *int     `json:"duration_ms,omitempty"`
-	CreatedBy      string   `json:"created_by,omitempty"`
-	CreatedAt      string   `json:"created_at"`
+	// ReleaseLogs is the release-command Job's output for this deploy, read by the
+	// API from the log store rather than stored on the record. Empty once the
+	// store's retention has passed, or before it has ingested the last lines.
+	ReleaseLogs string  `json:"release_logs,omitempty"`
+	StartedAt   string  `json:"started_at"`
+	FinishedAt  *string `json:"finished_at,omitempty"`
+	DurationMs  *int    `json:"duration_ms,omitempty"`
+	CreatedBy   string  `json:"created_by,omitempty"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 // SetIAMBindingRequest is the request body for setting an IAM binding.
@@ -1384,7 +1387,6 @@ type JobRun struct {
 	Trigger    string     `json:"trigger"`
 	Status     string     `json:"status"`
 	ExitCode   *int       `json:"exit_code,omitempty"`
-	Logs       string     `json:"logs,omitempty"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	DurationMs *int       `json:"duration_ms,omitempty"`
