@@ -393,11 +393,24 @@ type DeployRequest struct {
 	NoTraffic bool   `json:"no_traffic,omitempty"`
 }
 
-// LogsRequest selects what GetAppLogs returns. Tail is the number of most
-// recent lines; zero leaves the choice to the server, which also bounds it.
+// LogsRequest selects what GetAppLogs returns.
+//
+// Without Follow the read is answered from the platform's log store, so it
+// reaches past the pod that printed the lines and merges every replica
+// (ADR-085): Since/Until bound the window and Tail caps how much of it comes
+// back. With Follow the running pod is streamed live instead, and the window is
+// not applicable.
+//
+// Since and Until each take a Go duration meaning "ago" (e.g. "24h") or an
+// RFC3339 timestamp. Empty Since reaches as far back as the store retains;
+// empty Until means now. Zero Tail leaves the count to the server, which also
+// bounds it.
 type LogsRequest struct {
-	Follow bool
-	Tail   int
+	Follow     bool
+	Tail       int
+	Since      string
+	Until      string
+	Timestamps bool
 }
 
 // TrafficTarget represents a traffic routing target.

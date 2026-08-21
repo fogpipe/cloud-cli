@@ -302,6 +302,9 @@ func TestClientGetAppLogs_Query(t *testing.T) {
 		{"follow", LogsRequest{Follow: true}, "follow=true"},
 		{"tail", LogsRequest{Tail: 500}, "tail=500"},
 		{"both", LogsRequest{Follow: true, Tail: 500}, "follow=true&tail=500"},
+		{"window", LogsRequest{Since: "24h", Until: "1h"}, "since=24h&until=1h"},
+		{"absolute window", LogsRequest{Since: "2026-08-20T00:00:00Z"}, "since=2026-08-20T00%3A00%3A00Z"},
+		{"timestamps", LogsRequest{Timestamps: true}, "timestamps=true"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

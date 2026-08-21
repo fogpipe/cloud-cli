@@ -1692,18 +1692,38 @@ func renderDeploymentStatus(status string) string {
 
 var appLogsCmd = &cobra.Command{
 	Use:   "logs <name>",
-	Short: "Stream app logs",
-	Args:  cobra.MaximumNArgs(1),
+	Short: "Read app logs",
+	Long: `Read an app's logs.
+
+Without --follow the lines come from the platform's log store, so they reach
+past the pod that printed them — a restart, a redeploy or a scale-to-zero no
+longer erases the history — and every replica appears in one timeline.
+
+  fpcloud app logs web --since 24h
+  fpcloud app logs web --since 2h --until 1h --timestamps
+  fpcloud app logs web --follow
+
+--follow streams the running pod instead, which is where a line appears first.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
 		tail, _ := cmd.Flags().GetInt("tail")
+		since, _ := cmd.Flags().GetString("since")
+		until, _ := cmd.Flags().GetString("until")
+		timestamps, _ := cmd.Flags().GetBool("timestamps")
+
+		if follow && (since != "" || until != "") {
+			return fmt.Errorf("--since/--until read stored history and --follow streams the live pod; pick one")
+		}
 
 		c := getClient()
 		appID, err := appIDFrom(c, cmd, args)
 		if err != nil {
 			return err
 		}
-		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{Follow: follow, Tail: tail})
+		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{
+			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
+		})
 		if err != nil {
 			return err
 		}
@@ -1768,8 +1788,11 @@ func init() {
 
 	appDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
-	appLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	appLogsCmd.Flags().BoolP("follow", "f", false, "Stream the running pod live instead of reading stored history")
 	appLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
+	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains)")
+	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now)")
+	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 
 	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
 	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas (serverless mode)")
