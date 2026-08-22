@@ -621,19 +621,6 @@ func (c *Client) OrgPrices(ctx context.Context, orgID string) (*OrgPriceList, er
 	return &out, nil
 }
 
-// ListPriceBooks returns every rate card the platform holds. Operator-only.
-func (c *Client) ListPriceBooks(ctx context.Context) ([]*PriceBook, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/admin/price-books", nil)
-	if err != nil {
-		return nil, err
-	}
-	var books []*PriceBook
-	if err := c.do(httpReq, &books); err != nil {
-		return nil, err
-	}
-	return books, nil
-}
-
 // OrgPriceBook returns which book an org is billed against. Operator-only, and
 // the read half of UpdateOrgPriceBook — a field that can be written and not read
 // is one a declarative client cannot refresh.

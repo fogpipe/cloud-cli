@@ -125,17 +125,6 @@ type Price struct {
 	EffectiveFrom time.Time `json:"effective_from"`
 }
 
-// PriceBook is a named set of rates.
-//
-// It grants nothing: no base fee, no committed capacity, no entitlement. It is
-// the rate card a billing account is priced against and nothing more.
-type PriceBook struct {
-	Name        string    `json:"name"`
-	DisplayName string    `json:"display_name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
 // OrgPriceList is the rates one org's own invoices will use, and the book they
 // came from — as opposed to the published list, which every caller sees.
 type OrgPriceList struct {
