@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -149,7 +149,11 @@ var websiteDeployCmd = &cobra.Command{
 		// atomic: nothing is served from the new version until PublishWebsiteVersion
 		// flips the Ingress rewrite + Garage error_document onto it. The version
 		// never appears in the public URL.
-		next := b.WebsiteVersion + 1
+		present, err := listWebsiteVersions(context.Background(), c, b.Name)
+		if err != nil {
+			return err
+		}
+		next := nextWebsiteVersion(present, b.WebsiteVersion)
 		// Web cache defaults are on here and nowhere else: this is the path whose
 		// objects are served over HTTP, so a policy is wanted. A plain
 		// `storage cp` of a data object should not silently acquire one.
@@ -223,6 +227,30 @@ func listWebsiteVersions(ctx context.Context, c *client.Client, name string) ([]
 	return versions, nil
 }
 
+// nextWebsiteVersion picks the prefix a deploy uploads into: one past the
+// highest that EXISTS, not one past the version that is live (#475).
+//
+// Counting from the live pointer reuses a number whenever a deploy uploads
+// v<N>/ and then fails to publish it — the site stays at N-1, and the retry
+// writes a second build into the prefix the abandoned one already occupies.
+// With --keep-extra (no prune) the two trees merge, and the prefix then holds a
+// mixture of builds that never existed together, which is exactly the
+// immutability rollback depends on.
+//
+// Allocating from what is there burns the number instead: the abandoned prefix
+// is left alone, retention prunes it later, and every version prefix stays a
+// faithful snapshot of one deploy. The live pointer is still consulted, because
+// it can legitimately run ahead of the store after a partly-failed flip (#554).
+func nextWebsiteVersion(present []int, live int) int {
+	highest := live
+	for _, v := range present {
+		if v > highest {
+			highest = v
+		}
+	}
+	return highest + 1
+}
+
 // pruneWebsiteVersions deletes version prefixes beyond the newest keep, never
 // touching the currently-served version (which may be older than newest after a
 // rollback).
@@ -291,8 +319,9 @@ var websiteRollbackCmd = &cobra.Command{
 	Use:   "rollback <name>",
 	Short: "Roll back a website to a previously deployed version",
 	Long: "Instantly re-point a website at a retained prior version — no re-upload,\n" +
-		"no rebuild. Defaults to the version before the current one; --to picks a\n" +
-		"specific version. See available versions with `website show`.",
+		"no rebuild. Defaults to the previous published version; --to picks a\n" +
+		"specific one. Only versions this site has actually served are offered;\n" +
+		"see them with `website versions`.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
@@ -303,22 +332,29 @@ var websiteRollbackCmd = &cobra.Command{
 		if b.WebsiteVersion < 1 {
 			return fmt.Errorf("website %q has no deployed version to roll back from", args[0])
 		}
+		// Roll back to what was PUBLISHED, never to what is merely present in the
+		// bucket (#476). A deploy uploads its prefix before the flip that makes it
+		// live, so a failed publish leaves a complete tree behind that has never
+		// served a request — and this is the command reached for after something
+		// has already gone wrong, by someone assuming every version offered was
+		// once in production.
+		versions, err := c.ListWebsiteVersions(context.Background(), b.ID)
+		if err != nil {
+			return err
+		}
 		target, _ := cmd.Flags().GetInt("to")
 		if target == 0 {
-			target = b.WebsiteVersion - 1
-		}
-		if target < 1 {
-			return fmt.Errorf("no earlier version to roll back to (current is v%d)", b.WebsiteVersion)
+			prev := previousWebsiteVersion(versions, b.WebsiteVersion)
+			if prev == 0 {
+				return fmt.Errorf("no earlier version to roll back to (current is v%d)", b.WebsiteVersion)
+			}
+			target = prev
 		}
 		if target == b.WebsiteVersion {
 			return fmt.Errorf("website is already serving v%d", target)
 		}
-		versions, err := listWebsiteVersions(context.Background(), c, b.Name)
-		if err != nil {
+		if err := checkRollbackTarget(versions, target); err != nil {
 			return err
-		}
-		if !slices.Contains(versions, target) {
-			return fmt.Errorf("version v%d is not available (retained: %v)", target, versions)
 		}
 		b, err = c.PublishWebsiteVersion(context.Background(), b.ID, target)
 		if err != nil {
@@ -330,6 +366,46 @@ var websiteRollbackCmd = &cobra.Command{
 		))
 		return nil
 	},
+}
+
+// previousWebsiteVersion is the version a bare `website rollback` returns to:
+// the most recent one published before the live version that the bucket still
+// holds. Not live-minus-one — version numbers have gaps wherever a publish
+// failed, and the number below the live one is as likely to be an abandoned
+// upload as a build that ever served traffic.
+func previousWebsiteVersion(versions []*client.WebsiteVersion, live int) int {
+	for _, v := range versions {
+		if v.Version < live && v.Retained {
+			return v.Version
+		}
+	}
+	return 0
+}
+
+// checkRollbackTarget explains a target the site cannot return to. The two
+// refusals are different facts and read as different problems: a version that
+// was never live is not a version at all, while one whose files retention has
+// pruned was real and is simply gone.
+func checkRollbackTarget(versions []*client.WebsiteVersion, target int) error {
+	for _, v := range versions {
+		if v.Version != target {
+			continue
+		}
+		if !v.Retained {
+			return fmt.Errorf("version v%d is no longer retained — its files were pruned, so there is nothing left to serve", target)
+		}
+		return nil
+	}
+	available := []string{}
+	for _, v := range versions {
+		if v.Retained {
+			available = append(available, fmt.Sprintf("v%d", v.Version))
+		}
+	}
+	if len(available) == 0 {
+		return fmt.Errorf("version v%d was never published, and this site has no other published version to roll back to", target)
+	}
+	return fmt.Errorf("version v%d was never published — a prefix with that name may exist in the bucket from a deploy that failed to go live, but the site has never served it (published: %s)", target, strings.Join(available, ", "))
 }
 
 var websiteListCmd = &cobra.Command{
@@ -357,6 +433,39 @@ var websiteListCmd = &cobra.Command{
 			rows[i] = []string{b.Name, dashIfEmpty(b.WebsiteURL), renderStatus(b.Status)}
 		}
 		render([]string{"NAME", "URL", "STATUS"}, rows, sites)
+		return nil
+	},
+}
+
+var websiteVersionsCmd = &cobra.Command{
+	Use:   "versions <name>",
+	Short: "List a website's published versions",
+	Long: "Every version this site has served, newest first — what `website rollback`\n" +
+		"can return to. A version appears here because it went live, not because\n" +
+		"its files are in the bucket: a deploy that failed to publish leaves those\n" +
+		"behind too, and they were never served. RETAINED says the files are still\n" +
+		"there; retention prunes older ones after each deploy.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		b, err := requireWebsite(c, args[0])
+		if err != nil {
+			return err
+		}
+		versions, err := c.ListWebsiteVersions(context.Background(), b.ID)
+		if err != nil {
+			return err
+		}
+		rows := make([][]string, len(versions))
+		for i, v := range versions {
+			rows[i] = []string{
+				fmt.Sprintf("v%d", v.Version),
+				v.PublishedAt.Local().Format("2006-01-02 15:04"),
+				yesNo(v.Retained),
+				yesNo(v.Live),
+			}
+		}
+		render([]string{"VERSION", "PUBLISHED", "RETAINED", "LIVE"}, rows, versions)
 		return nil
 	},
 }
@@ -646,7 +755,7 @@ func init() {
 	websiteDeployCmd.Flags().Int("keep", defaultWebsiteVersionsKept, "Number of recent versions to retain for rollback (older ones are pruned after deploy)")
 	websiteDeployCmd.Flags().StringArray("cache-control", nil, cacheControlFlagHelp+
 		" — overrides the defaults (fingerprinted assets immutable, HTML no-cache)")
-	websiteRollbackCmd.Flags().Int("to", 0, "Specific version to roll back to (default: the version before current)")
+	websiteRollbackCmd.Flags().Int("to", 0, "Specific version to roll back to (default: the previous published version)")
 	deployFilters := addFilterFlags(websiteDeployCmd)
 	websiteDeployCmd.PreRun = func(cmd *cobra.Command, args []string) {
 		cmd.SetContext(context.WithValue(cmd.Context(), filterCtxKey, deployFilters))
@@ -656,6 +765,6 @@ func init() {
 	websiteDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	websiteDomainCmd.AddCommand(websiteDomainAddCmd, websiteDomainListCmd, websiteDomainStatusCmd, websiteDomainRemoveCmd)
-	websiteCmd.AddCommand(websiteCreateCmd, websiteDeployCmd, websiteListCmd, websiteShowCmd, websiteUpdateCmd, websiteRollbackCmd, websiteDeleteCmd, websiteDomainCmd)
+	websiteCmd.AddCommand(websiteCreateCmd, websiteDeployCmd, websiteListCmd, websiteShowCmd, websiteUpdateCmd, websiteRollbackCmd, websiteVersionsCmd, websiteDeleteCmd, websiteDomainCmd)
 	rootCmd.AddCommand(websiteCmd)
 }

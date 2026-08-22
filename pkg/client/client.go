@@ -1462,6 +1462,23 @@ func (c *Client) PublishWebsiteVersion(ctx context.Context, id string, version i
 	return &b, nil
 }
 
+// ListWebsiteVersions returns the versions of a site that were published,
+// newest first (#476) — what it can be rolled back to. This is not the set of
+// v<N>/ prefixes in the bucket: a deploy whose publish failed leaves one behind
+// that was never served, and promoting it would put a never-live build into
+// production.
+func (c *Client) ListWebsiteVersions(ctx context.Context, id string) ([]*WebsiteVersion, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/buckets/"+id+"/website/versions", nil)
+	if err != nil {
+		return nil, err
+	}
+	var versions []*WebsiteVersion
+	if err := c.do(httpReq, &versions); err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
 // SetBucketURLSlug sets (or clears, with "") a bucket website's vanity host
 // label; the site moves to <slug>.web.<platform domain>.
 func (c *Client) SetBucketURLSlug(ctx context.Context, id, slug string) (*Bucket, error) {

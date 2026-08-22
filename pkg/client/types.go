@@ -626,6 +626,17 @@ type Bucket struct {
 	WebsiteVersion       int    `json:"website_version"`
 }
 
+// WebsiteVersion is one published version of a static site (#476). It exists
+// because the site was flipped onto it, not because its files are in the
+// bucket — an upload whose publish never completed leaves those behind too.
+// Retained says the files are still there to serve; Live is the current one.
+type WebsiteVersion struct {
+	Version     int       `json:"version"`
+	PublishedAt time.Time `json:"published_at"`
+	Retained    bool      `json:"retained"`
+	Live        bool      `json:"live"`
+}
+
 // SetBucketURLSlugRequest is the request body for setting (or clearing, with
 // "") a bucket website's vanity host label.
 type SetBucketURLSlugRequest struct {
