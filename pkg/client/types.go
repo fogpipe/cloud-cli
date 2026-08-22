@@ -1549,8 +1549,28 @@ type Runner struct {
 	// was on it is the thing that died.
 	Problems []StatusProblem `json:"problems,omitempty"`
 
+	// Instances are the pool's live runners, one row each, with the job each
+	// is serving — the platform's own answer to "is my pool working?"
+	// (fogpipe/cloud-workspace#129).
+	Instances []RunnerInstance `json:"instances,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RunnerInstance is one live runner in a pool. A busy runner names the job it
+// serves; an idle one names none.
+type RunnerInstance struct {
+	Name string `json:"name"`
+	// State is starting, idle, busy, or failed.
+	State string `json:"state"`
+	// Repository (owner/repo) and Job (the job's display name) identify what a
+	// busy runner is serving; empty otherwise.
+	Repository string `json:"repository,omitempty"`
+	Job        string `json:"job,omitempty"`
+	// WorkflowRunID is the GitHub Actions run the job belongs to; 0 unless busy.
+	WorkflowRunID int64     `json:"workflow_run_id,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
 }
 
 // CreateRunnerRequest is the request body for declaring a runner pool.

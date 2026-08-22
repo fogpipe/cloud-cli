@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -335,7 +336,24 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		}
 		rows = append(rows, []string{"Problem", strings.TrimSpace(p.Reason + " — " + detail)})
 	}
+	// One row per live runner: what each is doing, from the platform itself —
+	// never reconstructed from GitHub's API (fogpipe/cloud-workspace#129).
+	for _, in := range r.Instances {
+		rows = append(rows, []string{"Runner", runnerInstanceLine(in)})
+	}
 	return rows
+}
+
+// runnerInstanceLine renders one live runner: its state, how long it has run,
+// and — for a busy one — the job it is serving and the run it belongs to.
+func runnerInstanceLine(in client.RunnerInstance) string {
+	age := time.Since(in.StartedAt).Round(time.Second)
+	switch in.State {
+	case "busy":
+		return fmt.Sprintf("%s — %q on %s (run %d), %s", in.Name, in.Job, in.Repository, in.WorkflowRunID, age)
+	default:
+		return fmt.Sprintf("%s — %s, %s", in.Name, in.State, age)
+	}
 }
 
 // runnerBuilderFromFlags reads the builder a create asked for, or nil for a pool
