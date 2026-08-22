@@ -560,6 +560,10 @@ type Database struct {
 	Username string `json:"username"`
 	Password string `json:"password,omitempty"`
 	Pooler   bool   `json:"pooler"`
+	// BackupsDisabled records a deliberate opt-out from the default-on backup
+	// schedule every new database gets (fogpipe/cloud-workspace#82). Set by
+	// disabling backups in the backup config, cleared by enabling them.
+	BackupsDisabled bool `json:"backups_disabled"`
 	// CPU/Memory/Storage/Instances are the spec the database is running under —
 	// the same four UpdateDatabaseRequest changes. They are read from the live
 	// cluster rather than from a stored copy, so they report what is actually
