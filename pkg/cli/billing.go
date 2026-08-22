@@ -123,14 +123,28 @@ This needs no account and no billing role: a price is a published fact.`,
 }
 
 var billingInvoicesCmd = &cobra.Command{
-	Use:   "invoices",
-	Short: "List invoices for closed periods",
+	Use:   "invoices [invoice-id]",
+	Short: "List invoices for closed periods, or show one of them",
+	Long: `An invoice per closed period, or one invoice in full.
+
+Named without an argument this lists the periods, which carry a total and
+nothing else. Name an invoice and it is shown with the line items the total is
+made of — that is the only place they are readable, and the only way to tell a
+period rated to zero from one with no lines rated yet.
+
+  fpcloud billing invoices
+  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		orgID, err := resolveOrgID(cmd)
 		if err != nil {
 			return err
 		}
 		c := getClient()
+		if len(args) == 1 {
+			return showInvoice(cmd, c, orgID, args[0])
+		}
+
 		var invoices []*client.Invoice
 		withSpinner("Fetching invoices...", func() {
 			invoices, err = c.ListInvoices(cmd.Context(), orgID)
@@ -152,42 +166,33 @@ var billingInvoicesCmd = &cobra.Command{
 	},
 }
 
-var billingInvoiceShowCmd = &cobra.Command{
-	Use:   "show <invoice-id>",
-	Short: "Show an invoice's line items",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-		c := getClient()
-		var inv *client.Invoice
-		withSpinner("Fetching invoice...", func() {
-			inv, err = c.GetInvoice(cmd.Context(), orgID, args[0])
-		})
-		if err != nil {
-			return err
-		}
+func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) error {
+	var inv *client.Invoice
+	var err error
+	withSpinner("Fetching invoice...", func() {
+		inv, err = c.GetInvoice(cmd.Context(), orgID, invoiceID)
+	})
+	if err != nil {
+		return err
+	}
 
-		rows := make([][]string, len(inv.Lines))
-		for i, l := range inv.Lines {
-			project := l.ProjectName
-			if project == "" {
-				project = "(org)"
-			}
-			rows[i] = []string{project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
+	rows := make([][]string, len(inv.Lines))
+	for i, l := range inv.Lines {
+		project := l.ProjectName
+		if project == "" {
+			project = "(org)"
 		}
-		// The unit price is a column, not a footnote: it is the rate this line
-		// was BILLED at, stored on the invoice, and it is what a dispute is
-		// settled against. A period spanning a price change shows the same
-		// resource twice, once per rate.
-		render([]string{"PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, inv)
+		rows[i] = []string{project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
+	}
+	// The unit price is a column, not a footnote: it is the rate this line
+	// was BILLED at, stored on the invoice, and it is what a dispute is
+	// settled against. A period spanning a price change shows the same
+	// resource twice, once per rate.
+	render([]string{"PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, inv)
 
-		fmt.Printf("\n  %s — %s\n", inv.PeriodStart.UTC().Format("2006-01-02"), inv.PeriodEnd.UTC().Format("2006-01-02"))
-		fmt.Printf("  Total: %s %s (%s)\n", inv.Total, inv.Currency, inv.Status)
-		return nil
-	},
+	fmt.Printf("\n  %s — %s\n", inv.PeriodStart.UTC().Format("2006-01-02"), inv.PeriodEnd.UTC().Format("2006-01-02"))
+	fmt.Printf("  Total: %s %s (%s)\n", inv.Total, inv.Currency, inv.Status)
+	return nil
 }
 
 var billingRolesCmd = &cobra.Command{
@@ -395,7 +400,6 @@ func init() {
 	billingRolesGrantCmd.Flags().String("member-type", "", "user (default) or serviceAccount")
 	billingRolesRevokeCmd.Flags().String("member-type", "", "user (default) or serviceAccount")
 
-	billingInvoicesCmd.AddCommand(billingInvoiceShowCmd)
 	billingRolesCmd.AddCommand(billingRolesListCmd, billingRolesGrantCmd, billingRolesRevokeCmd)
 
 	billingBudgetSetCmd.Flags().String("amount", "", "Target spend for the period, e.g. 250 (required)")
