@@ -211,10 +211,18 @@ func renderDomainVerification(vr *client.DomainVerification) {
 		}
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("✗")
 	}
+	// A check this mode does not run is neither a tick nor a cross — printing
+	// either claimed something about a lookup that never happened (#574).
+	state := func(s client.CheckState, label string) string {
+		if s == client.CheckNotRequired {
+			return mutedStyle.Render("–  " + label + " — not required for this mode")
+		}
+		return check(s == client.CheckVerified) + " " + label
+	}
 
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("  Verification:"))
-	fmt.Printf("    %s Domain ownership (TXT)\n", check(vr.TXTVerified))
-	fmt.Printf("    %s DNS pointing (%s)\n", check(vr.DNSPointing), vr.PointingType)
+	fmt.Printf("    %s\n", state(vr.TXTOwnership, "Domain ownership (TXT)"))
+	fmt.Printf("    %s\n", state(vr.DNSPointing, fmt.Sprintf("DNS pointing (%s)", vr.PointingType)))
 	certLine := "TLS certificate"
 	if !vr.CertReady && vr.CertReason != "" {
 		certLine += " (" + vr.CertReason + ")"
@@ -228,7 +236,10 @@ func renderDomainVerification(vr *client.DomainVerification) {
 	isWildcard := vr.Domain != nil && vr.Domain.Mode == client.DomainModeWildcard
 	renderDomainRoutes(vr.Domain)
 
-	if vr.TXTVerified && vr.DNSPointing && !isWildcard {
+	txtPending := vr.TXTOwnership == client.CheckPending
+	pointingPending := vr.DNSPointing == client.CheckPending
+
+	if !txtPending && !pointingPending && !isWildcard {
 		fmt.Println(mutedStyle.Render("  DNS verified. TLS certificate will be issued automatically."))
 		fmt.Println()
 		return
@@ -236,17 +247,17 @@ func renderDomainVerification(vr *client.DomainVerification) {
 
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("  Add these DNS records:"))
 	fmt.Println()
-	if !vr.TXTVerified {
+	if txtPending {
 		fmt.Println(mutedStyle.Render("  Ownership (TXT):"))
 		fmt.Printf("    %s  TXT  → %q\n", vr.TXTRecordName, vr.TXTRecordValue)
 		fmt.Println()
 	}
-	if !vr.DNSPointing {
+	if pointingPending {
 		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Pointing (%s):", vr.PointingType)))
 		fmt.Printf("    %s  %s  → %s\n", vr.PointingName, vr.PointingType, vr.PointingValue)
 		fmt.Println()
 	}
-	// Wildcard mode needs no pointing record (DNSPointing is trivially true), but
+	// Wildcard mode needs no pointing record (DNSPointing is not_required), but
 	// does need this one-time ACME DNS-01 delegation — shown unconditionally since
 	// fpcloud can't verify it live; cert-manager just retries silently until it's
 	// there (#412).

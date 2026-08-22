@@ -911,20 +911,42 @@ const (
 	DomainModeWildcard = "wildcard"
 )
 
+// CheckState is the outcome of one verification check on a custom domain.
+type CheckState string
+
+// Verification check outcomes (#574).
+const (
+	// CheckVerified means the check ran and passed.
+	CheckVerified CheckState = "verified"
+	// CheckNotRequired means the domain's mode exempts it from the check, so
+	// nothing was looked up and there is no record for the tenant to add.
+	CheckNotRequired CheckState = "not_required"
+	// CheckPending means the check ran and has not passed yet.
+	CheckPending CheckState = "pending"
+)
+
+// CheckStates is every value CheckState can take. Declaring the set — rather
+// than leaving it implied by the constants — is what lets the console's
+// generated types spell the field as a union instead of a bare string.
+var CheckStates = []CheckState{CheckVerified, CheckNotRequired, CheckPending}
+
 // DomainVerification is the ownership/pointing/cert breakdown for a custom
 // domain plus the exact DNS records the tenant still needs to configure.
 type DomainVerification struct {
-	Domain         *Domain `json:"domain"`
-	TXTVerified    bool    `json:"txt_verified"`
-	DNSPointing    bool    `json:"dns_pointing"`
-	CertReady      bool    `json:"cert_ready"`
-	CertReason     string  `json:"cert_reason,omitempty"`
-	CertExpiry     string  `json:"cert_expiry,omitempty"`
-	TXTRecordName  string  `json:"txt_record_name"`
-	TXTRecordValue string  `json:"txt_record_value"`
-	PointingType   string  `json:"pointing_type"`
-	PointingName   string  `json:"pointing_name"`
-	PointingValue  string  `json:"pointing_value"`
+	Domain *Domain `json:"domain"`
+	// TXTOwnership and DNSPointing are tri-state (#574): a mode that skips a
+	// check (ADR-044) reports CheckNotRequired, so "we never looked at this"
+	// is no longer spelled the same way as a pass or a failure.
+	TXTOwnership   CheckState `json:"txt_ownership"`
+	DNSPointing    CheckState `json:"dns_pointing"`
+	CertReady      bool       `json:"cert_ready"`
+	CertReason     string     `json:"cert_reason,omitempty"`
+	CertExpiry     string     `json:"cert_expiry,omitempty"`
+	TXTRecordName  string     `json:"txt_record_name"`
+	TXTRecordValue string     `json:"txt_record_value"`
+	PointingType   string     `json:"pointing_type"`
+	PointingName   string     `json:"pointing_name"`
+	PointingValue  string     `json:"pointing_value"`
 	// AcmeCNAMEName/AcmeCNAMEValue are the one-time ACME DNS-01 delegation CNAME
 	// a wildcard-mode domain must add (ADR-044); empty for every other mode.
 	AcmeCNAMEName  string `json:"acme_cname_name,omitempty"`
