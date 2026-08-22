@@ -603,6 +603,67 @@ func (c *Client) ListPrices(ctx context.Context) ([]*Price, error) {
 	return prices, nil
 }
 
+// OrgPrices returns the rates one org's own invoices will use, and the book
+// they come from.
+//
+// Different from ListPrices, which always answers the published list. An org
+// granted another book is billed at rates the public list does not show, and
+// quoting the public one at it is how a console and an invoice come to disagree.
+func (c *Client) OrgPrices(ctx context.Context, orgID string) (*OrgPriceList, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/prices", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out OrgPriceList
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPriceBooks returns every rate card the platform holds. Operator-only.
+func (c *Client) ListPriceBooks(ctx context.Context) ([]*PriceBook, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/admin/price-books", nil)
+	if err != nil {
+		return nil, err
+	}
+	var books []*PriceBook
+	if err := c.do(httpReq, &books); err != nil {
+		return nil, err
+	}
+	return books, nil
+}
+
+// OrgPriceBook returns which book an org is billed against. Operator-only, and
+// the read half of UpdateOrgPriceBook — a field that can be written and not read
+// is one a declarative client cannot refresh.
+func (c *Client) OrgPriceBook(ctx context.Context, orgID string) (*BillingAccount, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/admin/orgs/"+orgID+"/price-book", nil)
+	if err != nil {
+		return nil, err
+	}
+	var account BillingAccount
+	if err := c.do(httpReq, &account); err != nil {
+		return nil, err
+	}
+	return &account, nil
+}
+
+// UpdateOrgPriceBook moves an org's billing account onto a price book.
+// Operator-only: which rates an org is billed at is a commercial grant, not
+// something a tenant sets for itself.
+func (c *Client) UpdateOrgPriceBook(ctx context.Context, orgID, book string) (*BillingAccount, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+orgID+"/price-book", SetPriceBookRequest{PriceBook: book})
+	if err != nil {
+		return nil, err
+	}
+	var account BillingAccount
+	if err := c.do(httpReq, &account); err != nil {
+		return nil, err
+	}
+	return &account, nil
+}
+
 // ListInvoices returns an org's invoices, newest period first.
 func (c *Client) ListInvoices(ctx context.Context, orgID string) ([]*Invoice, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/invoices", nil)

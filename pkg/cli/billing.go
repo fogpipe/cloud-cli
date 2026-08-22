@@ -88,6 +88,12 @@ cover the same hours.
 			// understatement as complete.
 			fmt.Printf("  Excludes unpriced: %s\n", strings.Join(rated.UnpricedTypes, ", "))
 		}
+		// Which book produced these rates, next to the total they produced. An
+		// org on a card other than the published one otherwise has no way to see
+		// why its figures differ from the price page.
+		if rated.PriceBook != "" {
+			fmt.Println(mutedStyle.Render("  Price book: " + rated.PriceBook))
+		}
 		fmt.Println(mutedStyle.Render("  Estimate for the period so far — not an invoice."))
 		return nil
 	},
@@ -96,15 +102,54 @@ cover the same hours.
 var billingPricesCmd = &cobra.Command{
 	Use:   "prices",
 	Short: "Show what each resource costs",
-	Long: `The platform's current price list.
+	Long: `What a unit of each metered resource costs.
 
 Rates are per unit of whatever the resource is metered in — a core-hour of CPU,
 a GiB-hour of memory or storage. Multiply by what ` + "`fpcloud usage`" + ` reports to
 get what ` + "`fpcloud billing cost`" + ` will say.
 
-This needs no account and no billing role: a price is a published fact.`,
+By default this shows YOUR rates: an org can be billed against a rate card other
+than the published one, and its invoices use that card rather than the price
+page. ` + "`--published`" + ` shows the public list instead, which needs no account and no
+billing role — a price is a published fact, and you have to be able to cost a
+database before running one.
+
+The book is printed with the rates. The two are one fact: the same usage totals
+differently under a different card, so a rate quoted without its book cannot be
+checked against anything.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		published, _ := cmd.Flags().GetBool("published")
 		c := getClient()
+
+		show := func(book string, prices []*client.Price, payload any) {
+			rows := make([][]string, len(prices))
+			for i, p := range prices {
+				rows[i] = []string{p.ResourceType, p.UnitPrice + " " + p.Currency}
+			}
+			render([]string{"RESOURCE", "UNIT PRICE"}, rows, payload)
+			if !isStructured(rootCmd.Flag("output").Value.String()) {
+				fmt.Println(mutedStyle.Render("  Price book: " + book))
+			}
+		}
+
+		if !published {
+			// A caller with no org — not logged in, or logged in with none yet —
+			// still gets an answer, because the published list is a fair one for
+			// someone who has no book of their own. The label says which it is.
+			if orgID, err := resolveOrgID(cmd); err == nil {
+				var own *client.OrgPriceList
+				withSpinner("Fetching prices...", func() {
+					own, err = c.OrgPrices(cmd.Context(), orgID)
+				})
+				if err != nil {
+					return err
+				}
+				show(own.PriceBook, own.Prices, own)
+				return nil
+			}
+		}
+
 		var prices []*client.Price
 		var err error
 		withSpinner("Fetching prices...", func() {
@@ -113,11 +158,7 @@ This needs no account and no billing role: a price is a published fact.`,
 		if err != nil {
 			return err
 		}
-		rows := make([][]string, len(prices))
-		for i, p := range prices {
-			rows[i] = []string{p.ResourceType, p.UnitPrice + " " + p.Currency}
-		}
-		render([]string{"RESOURCE", "UNIT PRICE"}, rows, prices)
+		show("list (published)", prices, prices)
 		return nil
 	},
 }
@@ -407,6 +448,7 @@ func init() {
 	billingBudgetSetCmd.Flags().IntSlice("alert-at", nil, "Percentages to alert at (default 50,90,100)")
 	billingBudgetCmd.AddCommand(billingBudgetShowCmd, billingBudgetSetCmd, billingBudgetUnsetCmd)
 
+	billingPricesCmd.Flags().Bool("published", false, "Show the public price list rather than your org's own rates")
 	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingRolesCmd, billingBudgetCmd)
 	rootCmd.AddCommand(billingCmd)
 }

@@ -99,10 +99,14 @@ type RatedLine struct {
 // A non-empty UnpricedTypes means Total is an understatement and a surface
 // showing it has to say so.
 type RatedPeriod struct {
-	Lines         []*RatedLine `json:"lines"`
-	Total         string       `json:"total"`
-	Currency      string       `json:"currency"`
-	UnpricedTypes []string     `json:"unpriced_types,omitempty"`
+	Lines    []*RatedLine `json:"lines"`
+	Total    string       `json:"total"`
+	Currency string       `json:"currency"`
+	// PriceBook is the rate card these lines were priced against. The same usage
+	// totals differently depending on it, so a figure quoted without it cannot be
+	// reconciled against the published price list.
+	PriceBook     string   `json:"price_book"`
+	UnpricedTypes []string `json:"unpriced_types,omitempty"`
 }
 
 // Price is what one unit of a metered resource costs.
@@ -112,10 +116,48 @@ type RatedPeriod struct {
 // carry more precision than a cent (EUR 0.00005 per gib-hour is real) and JSON
 // numbers are floats.
 type Price struct {
+	// PriceBook is the rate card this rate belongs to. A rate is a function of
+	// who is billed as well as of when.
+	PriceBook     string    `json:"price_book"`
 	ResourceType  string    `json:"resource_type"`
 	Currency      string    `json:"currency"`
 	UnitPrice     string    `json:"unit_price"`
 	EffectiveFrom time.Time `json:"effective_from"`
+}
+
+// PriceBook is a named set of rates.
+//
+// It grants nothing: no base fee, no committed capacity, no entitlement. It is
+// the rate card a billing account is priced against and nothing more.
+type PriceBook struct {
+	Name        string    `json:"name"`
+	DisplayName string    `json:"display_name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// OrgPriceList is the rates one org's own invoices will use, and the book they
+// came from — as opposed to the published list, which every caller sees.
+type OrgPriceList struct {
+	PriceBook string   `json:"price_book"`
+	Prices    []*Price `json:"prices"`
+}
+
+// BillingAccount is what settles an org's usage. PriceBook and Currency are one
+// pair — a rate cannot be read without both.
+type BillingAccount struct {
+	ID        string    `json:"id"`
+	OrgID     string    `json:"org_id"`
+	PriceBook string    `json:"price_book"`
+	Currency  string    `json:"currency"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SetPriceBookRequest points an org's billing account at a price book.
+// Operator-only.
+type SetPriceBookRequest struct {
+	PriceBook string `json:"price_book"`
 }
 
 // Invoice is what an org owed for one closed period (#111). Amounts are decimal
