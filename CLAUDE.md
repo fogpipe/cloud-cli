@@ -15,16 +15,21 @@ The Fogpipe Cloud CLI and its Go SDK. Public, Apache-2.0.
 
 ## It is public
 
-Nothing operator-internal goes here. Operator **mutations** live under
-`/api/v1/admin/*` and are not part of this binary; keep it that way. What made
-`fke get-credentials --staff` wrong was that it *hid* an operator capability
-inside a tenant command, and a hidden flag is not a boundary.
+Nothing operator-internal goes here — no command, and no `pkg/client` method for
+a route only an operator may call. Operator capability lives in `fpadmin`, built
+from `cloud-platform` and released to nobody (ADR-089).
 
-`fpcloud admin` is the exception the rule was always compatible with (ADR-084):
-the reachable operator reads under `/api/v1/operator/*`, in a visible command
-group that a tenant is refused with 403. A capability whose whole purpose is to
-work from anywhere has to be in the binary that is already everywhere. Nothing
-that changes state goes in it.
+The rule takes no exception, in either direction. What made
+`fke get-credentials --staff` wrong was that it *hid* an operator capability
+inside a tenant command, and a hidden flag is not a boundary. A *visible* group
+a tenant is refused with 403 is no better: the boundary holds, and the surface,
+its flags and its client methods still ship to every machine that installs this
+binary.
+
+Two `pkg/client` methods still reach an operator route — `UpdateOrgFKE` and
+`UpdateProjectQuota`, which the Terraform provider's `fke_enabled` and quota
+attributes call. They are the open end of this rule, not a precedent
+(`fogpipe/cloud-workspace#121`); nothing new joins them.
 
 No credential belongs in this binary, and none is in it. The Google client
 secret the token exchange needs lives on the platform, which brokers the
