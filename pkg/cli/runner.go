@@ -247,17 +247,15 @@ var runnerUpdateCmd = &cobra.Command{
 			req.GitHubToken = &token
 		}
 
+		// The builder rides along in the same patch as the runner's own size:
+		// the project's caps weigh the two together, so a pool over its cap can
+		// only come back under if one request carries both.
+		if err := setRunnerBuilder(c, id, cmd, &req); err != nil {
+			return err
+		}
 		runner, err := c.UpdateRunner(context.Background(), id, req)
 		if err != nil {
 			return err
-		}
-		// The builder is its own call, so it is only made when the command said
-		// something about one — otherwise every unrelated update would remove it.
-		if builder, said := runnerBuilderChange(cmd, runner.Builder); said {
-			runner, err = c.UpdateRunnerBuilder(context.Background(), id, builder)
-			if err != nil {
-				return err
-			}
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(runner)
@@ -368,31 +366,40 @@ func runnerBuilderFromFlags(cmd *cobra.Command) *client.RunnerBuilder {
 	return &client.RunnerBuilder{CPU: cpu, Memory: memory}
 }
 
-// runnerBuilderChange reports what an update said about the builder, and whether
-// it said anything at all. Silence is not "remove it": a pool updated for its
-// display name keeps the builder it has.
+// setRunnerBuilder fills in what an update said about the builder, and leaves
+// the patch alone when it said nothing. Silence is not "remove it": a pool
+// updated for its display name keeps the builder it has.
 //
-// The endpoint replaces the builder rather than patching it, so a size the
-// command did not name is carried over from current rather than dropped —
-// `--builder-memory 8Gi` changes the memory and leaves the CPU where the tenant
-// put it.
-func runnerBuilderChange(cmd *cobra.Command, current *client.RunnerBuilder) (*client.RunnerBuilder, bool) {
+// The field replaces the builder rather than patching it, so a size the command
+// did not name is read back off the pool rather than dropped — `--builder-memory
+// 8Gi` changes the memory and leaves the CPU where the tenant put it. That read
+// is the only reason this needs the pool at all, so it happens only when a size
+// was named and left half-stated.
+func setRunnerBuilder(c *client.Client, id string, cmd *cobra.Command, req *client.UpdateRunnerRequest) error {
 	if mustBool(cmd, "no-builder") {
-		return nil, true
+		req.NoBuilder = true
+		return nil
 	}
 	builder := runnerBuilderFromFlags(cmd)
 	if builder == nil {
-		return nil, false
+		return nil
 	}
-	if current != nil {
-		if builder.CPU == "" {
-			builder.CPU = current.CPU
+	if builder.CPU == "" || builder.Memory == "" {
+		current, err := c.GetRunner(context.Background(), id)
+		if err != nil {
+			return err
 		}
-		if builder.Memory == "" {
-			builder.Memory = current.Memory
+		if current.Builder != nil {
+			if builder.CPU == "" {
+				builder.CPU = current.Builder.CPU
+			}
+			if builder.Memory == "" {
+				builder.Memory = current.Builder.Memory
+			}
 		}
 	}
-	return builder, true
+	req.Builder = builder
+	return nil
 }
 
 // runnerSpecFlags are the knobs shared by create and update.

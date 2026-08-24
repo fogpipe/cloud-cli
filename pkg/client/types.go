@@ -1625,6 +1625,19 @@ type UpdateRunnerRequest struct {
 	GitHubAppInstallationID *string `json:"github_app_installation_id,omitempty"`
 	GitHubAppPrivateKey     *string `json:"github_app_private_key,omitempty"`
 	GitHubToken             *string `json:"github_token,omitempty"`
+
+	// Builder replaces the pool's builder whole; NoBuilder removes it. Both are
+	// part of this patch rather than an operation of their own because the
+	// project's resource caps are checked against the runner and the builder
+	// together — split across two requests, neither one can express a change
+	// that has to shrink both, and an over-cap pool can never come back under.
+	//
+	// Two fields because a patch cannot otherwise say "remove": an omitted
+	// builder means "leave it alone", and there is no value of Builder that
+	// means "there is none". They mirror the CLI's own --builder-* and
+	// --no-builder, and setting both is refused.
+	Builder   *RunnerBuilder `json:"builder,omitempty"`
+	NoBuilder bool           `json:"no_builder,omitempty"`
 }
 
 // RunnerBuilder is the rootless image builder a pool runs alongside each job
@@ -1638,16 +1651,6 @@ type UpdateRunnerRequest struct {
 type RunnerBuilder struct {
 	CPU    string `json:"cpu,omitempty"`
 	Memory string `json:"memory,omitempty"`
-}
-
-// UpdateRunnerBuilderRequest replaces a pool's builder. nil removes it, so the
-// pod goes back to a single container.
-//
-// Its own request rather than a field on UpdateRunnerRequest, matching
-// UpdateProbesRequest: a patch leaves an omitted field unchanged, which leaves
-// no way to say "remove".
-type UpdateRunnerBuilderRequest struct {
-	Builder *RunnerBuilder `json:"builder"`
 }
 
 // GitHubConnection is the GitHub account a project has proved it controls
