@@ -17,10 +17,6 @@ type Project struct {
 	Status         string    `json:"status"` // active, suspended, deleting
 	Namespace      string    `json:"namespace"`
 	Egress         string    `json:"egress"`
-	MaxCPU         string    `json:"max_cpu"`
-	MaxMemory      string    `json:"max_memory"`
-	MaxPods        int       `json:"max_pods"`
-	MaxStorage     string    `json:"max_storage"`
 	IsPlatform     bool      `json:"is_platform,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -254,8 +250,8 @@ type UpdateProjectRequest struct {
 	Egress      string `json:"egress,omitempty"`
 }
 
-// SetQuotaRequest carries the ADR-035 resource caps. Operator-only: it targets
-// PUT /admin/projects/{id}/quota, not the tenant PATCH (#710).
+// SetQuotaRequest carries an org's resource ceiling. Operator-only: it targets
+// PUT /admin/orgs/{id}/quota, not any tenant route (#710).
 type SetQuotaRequest struct {
 	MaxCPU     *string `json:"max_cpu,omitempty"`
 	MaxMemory  *string `json:"max_memory,omitempty"`
@@ -995,12 +991,22 @@ type User struct {
 
 // Organization represents a platform organization.
 type Organization struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	ShortID     string    `json:"short_id"`
-	DisplayName string    `json:"display_name"`
-	FKEEnabled  bool      `json:"fke_enabled"` // operator-granted entitlement gating FKE/kubectl access
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ShortID     string `json:"short_id"`
+	DisplayName string `json:"display_name"`
+	FKEEnabled  bool   `json:"fke_enabled"` // operator-granted entitlement gating FKE/kubectl access
+
+	// The org's resource ceiling, shared by every project it owns. A project
+	// carries no ceiling of its own: a tenant decides how many projects it has,
+	// so bounding each one bounded a number the tenant could raise by creating
+	// another.
+	MaxCPU     string `json:"max_cpu"`
+	MaxMemory  string `json:"max_memory"`
+	MaxPods    int    `json:"max_pods"`
+	MaxStorage string `json:"max_storage"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UpdateOrgRequest is the request body for updating an organization. FKEEnabled is
@@ -1695,7 +1701,11 @@ type ProjectStatus struct {
 	ObservedAt time.Time `json:"observed_at"`
 }
 
-// StatusProject is the project itself and the caps its namespace is held to.
+// StatusProject is the project itself and the ceiling its namespace is held to.
+//
+// The ceiling and the spend are the ORG's, shared with every other project it
+// owns — CeilingScope names whose. Empty means the platform could not read them,
+// which is not the same as a ceiling of nothing.
 type StatusProject struct {
 	ID             string `json:"id"`
 	OrganizationID string `json:"organization_id"`
@@ -1708,6 +1718,11 @@ type StatusProject struct {
 	MaxMemory      string `json:"max_memory,omitempty"`
 	MaxPods        int    `json:"max_pods,omitempty"`
 	MaxStorage     string `json:"max_storage,omitempty"`
+	UsedCPU        string `json:"used_cpu,omitempty"`
+	UsedMemory     string `json:"used_memory,omitempty"`
+	UsedPods       int64  `json:"used_pods,omitempty"`
+	UsedStorage    string `json:"used_storage,omitempty"`
+	CeilingScope   string `json:"ceiling_scope,omitempty"`
 }
 
 // StatusProblem is one thing wrong with one resource, in the same shape

@@ -139,26 +139,42 @@ type statusRow struct {
 	changed bool
 }
 
+// renderCeiling is the org's ceiling and what is spent against it, as one line.
+//
+// Spend and ceiling are shown together and named as the organization's, because
+// the number is shared with every other project it owns: shown alone it reads as
+// this project's budget, which is what the per-project caps this replaced
+// actually were.
+func renderCeiling(p client.StatusProject) string {
+	if p.CeilingScope == "" {
+		return ""
+	}
+	axes := []string{}
+	if p.MaxCPU != "" {
+		axes = append(axes, firstNonEmpty(p.UsedCPU, "?")+"/"+p.MaxCPU+" cpu")
+	}
+	if p.MaxMemory != "" {
+		axes = append(axes, firstNonEmpty(p.UsedMemory, "?")+"/"+p.MaxMemory+" mem")
+	}
+	if p.MaxPods > 0 {
+		axes = append(axes, fmt.Sprintf("%d/%d pods", p.UsedPods, p.MaxPods))
+	}
+	if len(axes) == 0 {
+		return ""
+	}
+	return p.CeilingScope + " " + strings.Join(axes, " / ")
+}
+
 // renderProjectStatus renders the whole document. prev, when non-nil, is the
 // previous observation: rows that differ from it are marked, so a watcher sees
 // what moved rather than re-reading the whole screen.
 func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) string {
 	var b strings.Builder
 
-	caps := []string{}
-	if s.Project.MaxCPU != "" {
-		caps = append(caps, s.Project.MaxCPU+" cpu")
-	}
-	if s.Project.MaxMemory != "" {
-		caps = append(caps, s.Project.MaxMemory+" mem")
-	}
-	if s.Project.MaxPods > 0 {
-		caps = append(caps, fmt.Sprintf("%d pods", s.Project.MaxPods))
-	}
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(s.Project.Name)
 	meta := []string{"ns " + s.Project.Namespace, "egress " + s.Project.Egress}
-	if len(caps) > 0 {
-		meta = append(meta, strings.Join(caps, " / "))
+	if ceiling := renderCeiling(s.Project); ceiling != "" {
+		meta = append(meta, ceiling)
 	}
 	b.WriteString(header + "  " + mutedStyle.Render(strings.Join(meta, "   ")) + "\n")
 	if !s.ObservedAt.IsZero() {

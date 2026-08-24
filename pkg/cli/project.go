@@ -99,7 +99,6 @@ var projectCreateCmd = &cobra.Command{
 			{"Name", project.Name},
 			{"Display Name", project.DisplayName},
 			{"Egress", egressLabel(project.Egress)},
-			{"Caps", fmt.Sprintf("%s CPU / %s mem / %d pods / %s disk", project.MaxCPU, project.MaxMemory, project.MaxPods, project.MaxStorage)},
 			{"Created", project.CreatedAt.Format("2006-01-02 15:04:05")},
 		}))
 		return nil
@@ -244,7 +243,6 @@ var projectGetCmd = &cobra.Command{
 			{"Name", project.Name},
 			{"Display Name", project.DisplayName},
 			{"Egress", egressLabel(project.Egress)},
-			{"Caps", fmt.Sprintf("%s CPU / %s mem / %d pods / %s disk", project.MaxCPU, project.MaxMemory, project.MaxPods, project.MaxStorage)},
 			{"Created", project.CreatedAt.Format("2006-01-02 15:04:05")},
 			{"Updated", project.UpdatedAt.Format("2006-01-02 15:04:05")},
 		}))
@@ -299,7 +297,6 @@ Resource caps (ADR-035) are set by the platform operator, not here.`,
 			{"Name", project.Name},
 			{"Display Name", project.DisplayName},
 			{"Egress", egressLabel(project.Egress)},
-			{"Caps", fmt.Sprintf("%s CPU / %s mem / %d pods / %s disk", project.MaxCPU, project.MaxMemory, project.MaxPods, project.MaxStorage)},
 		}))
 		return nil
 	},

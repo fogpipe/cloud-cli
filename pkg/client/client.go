@@ -493,18 +493,22 @@ func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*P
 	return &project, nil
 }
 
-// UpdateProjectQuota sets a project's operator-only resource caps; only the
-// non-nil caps are changed.
-func (c *Client) UpdateProjectQuota(ctx context.Context, id string, maxCPU, maxMemory *string, maxPods *int, maxStorage *string) (*Project, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/projects/"+id+"/quota", SetQuotaRequest{MaxCPU: maxCPU, MaxMemory: maxMemory, MaxPods: maxPods, MaxStorage: maxStorage})
+// UpdateOrgQuota sets an organization's operator-only resource ceiling; only the
+// non-nil axes are changed.
+//
+// The ceiling is the org's rather than a project's because a tenant decides how
+// many projects it has: bounding each one bounded a number the tenant could
+// raise by creating another.
+func (c *Client) UpdateOrgQuota(ctx context.Context, id string, maxCPU, maxMemory *string, maxPods *int, maxStorage *string) (*Organization, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+id+"/quota", SetQuotaRequest{MaxCPU: maxCPU, MaxMemory: maxMemory, MaxPods: maxPods, MaxStorage: maxStorage})
 	if err != nil {
 		return nil, err
 	}
-	var project Project
-	if err := c.do(httpReq, &project); err != nil {
+	var org Organization
+	if err := c.do(httpReq, &org); err != nil {
 		return nil, err
 	}
-	return &project, nil
+	return &org, nil
 }
 
 // ListAudit returns audit log entries, optionally filtered by query params
