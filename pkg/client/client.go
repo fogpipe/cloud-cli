@@ -2010,28 +2010,6 @@ func (c *Client) GetDeployment(ctx context.Context, appID, deploymentID string) 
 
 // --- Organization methods ---
 
-// CreateOrg creates a new organization (the caller becomes its owner). shortID
-// optionally sets an explicit org id (the platform-org override); empty = an
-// opaque random id is assigned server-side.
-//
-// Any authenticated caller may create one (#785): an account exists only because
-// its owner was invited or already held a binding, so admission is the gate.
-func (c *Client) CreateOrg(ctx context.Context, name, displayName, shortID string) (*Organization, error) {
-	body := map[string]string{"name": name, "display_name": displayName}
-	if shortID != "" {
-		body["short_id"] = shortID
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs", body)
-	if err != nil {
-		return nil, err
-	}
-	var org Organization
-	if err := c.do(httpReq, &org); err != nil {
-		return nil, err
-	}
-	return &org, nil
-}
-
 func (c *Client) ListOrgs(ctx context.Context) ([]*Organization, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs", nil)
 	if err != nil {

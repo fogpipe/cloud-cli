@@ -126,7 +126,7 @@ var projectListCmd = &cobra.Command{
 				return fmt.Errorf("no organization selected; run 'fpcloud org use <org>' or pass --org")
 			}
 			orgRef = me.Organization.ID
-			orgName = me.Organization.Name
+			orgName = me.Organization.DisplayName
 		}
 
 		projects, err := c.ListProjectsInOrg(ctx, orgRef)
@@ -138,7 +138,7 @@ var projectListCmd = &cobra.Command{
 		if !isStructured(rootCmd.Flag("output").Value.String()) {
 			if orgName == "" {
 				if org, gerr := c.GetOrg(ctx, orgRef); gerr == nil {
-					orgName = org.Name
+					orgName = org.DisplayName
 				} else {
 					orgName = orgRef
 				}

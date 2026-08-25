@@ -76,7 +76,7 @@ func completeOrgs(cmd *cobra.Command, args []string, toComplete string) ([]strin
 	}
 	out := make([]string, 0, len(orgs))
 	for _, o := range orgs {
-		out = append(out, o.Name+"\t"+o.DisplayName)
+		out = append(out, o.ShortID+"\t"+o.DisplayName)
 	}
 	return out, noFile
 }

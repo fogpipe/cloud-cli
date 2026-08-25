@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
@@ -30,16 +31,15 @@ var orgListCmd = &cobra.Command{
 		}
 
 		current := rootCmd.Flag("org").Value.String()
-		headers := []string{"", "NAME", "SHORT ID", "DISPLAY NAME", "CREATED"}
+		headers := []string{"", "ID", "NAME", "CREATED"}
 		var rows [][]string
 		for _, o := range orgs {
 			marker := " "
-			if current != "" && (current == o.ID || current == o.Name) {
+			if current != "" && (current == o.ID || current == o.ShortID || strings.EqualFold(current, o.DisplayName)) {
 				marker = "*"
 			}
 			rows = append(rows, []string{
 				marker,
-				o.Name,
 				o.ShortID,
 				o.DisplayName,
 				o.CreatedAt.Format("2006-01-02 15:04"),
@@ -252,7 +252,7 @@ func resolveOrgRef(ctx context.Context, ref string) (string, error) {
 		return "", fmt.Errorf("could not resolve org %q: %w", ref, err)
 	}
 	for _, o := range orgs {
-		if o.ID == ref || o.Name == ref {
+		if o.ID == ref || o.ShortID == ref || strings.EqualFold(o.DisplayName, ref) {
 			return o.ID, nil
 		}
 	}
@@ -270,31 +270,33 @@ func renderRole(role string) string {
 	}
 }
 
-var orgUpdateCmd = &cobra.Command{
-	Use:   "update <org>",
-	Short: "Update an organization's display name",
-	Long: "Change an organization's cosmetic display name. The frozen name and org id\n" +
-		"(which anchor namespaces and the registry path) are unchanged.",
+var orgRenameCmd = &cobra.Command{
+	Use:   "rename <org>",
+	Short: "Rename an organization",
+	Long: "Change an organization's readable name.\n\n" +
+		"Nothing is derived from it, so this moves no namespace, image path,\n" +
+		"hostname or credential — it is a label change and nothing else. The org id\n" +
+		"is frozen and is what those are built from.\n\n" +
+		"A name is never handed to a second organization, including one you give up,\n" +
+		"so a name you release stays yours and cannot start resolving to someone else.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		displayName, _ := cmd.Flags().GetString("display-name")
+		displayName, _ := cmd.Flags().GetString("name")
 		if displayName == "" {
-			return fmt.Errorf("--display-name is required")
+			return fmt.Errorf("--name is required")
 		}
 		c := getClient()
 		var org *client.Organization
 		var err error
-		withSpinner("Updating organization...", func() {
+		withSpinner("Renaming organization...", func() {
 			org, err = c.UpdateOrgDisplayName(cmd.Context(), args[0], displayName)
 		})
 		if err != nil {
 			return err
 		}
-		fmt.Println(renderInfoBox("Organization Updated", [][]string{
-			{"ID", mutedStyle.Render(org.ID)},
-			{"Name", org.Name},
-			{"Org ID", org.ShortID},
-			{"Display Name", org.DisplayName},
+		fmt.Println(renderInfoBox("Organization Renamed", [][]string{
+			{"ID", org.ShortID},
+			{"Name", org.DisplayName},
 		}))
 		return nil
 	},
@@ -319,7 +321,7 @@ var orgUseCmd = &cobra.Command{
 		}
 		var match *client.Organization
 		for _, o := range orgs {
-			if o.Name == ref || o.ID == ref || o.ShortID == ref {
+			if o.ID == ref || o.ShortID == ref || strings.EqualFold(o.DisplayName, ref) {
 				match = o
 				break
 			}
@@ -389,8 +391,8 @@ func init() {
 	orgAddUserCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
 	orgSetRoleCmd.Flags().String("role", "", "New role (owner, editor, viewer)")
 
-	orgUpdateCmd.Flags().String("display-name", "", "New display name")
-	orgCmd.AddCommand(orgUpdateCmd)
+	orgRenameCmd.Flags().String("name", "", "The organization's new readable name")
+	orgCmd.AddCommand(orgRenameCmd)
 	orgCmd.AddCommand(orgListCmd)
 	orgCmd.AddCommand(orgUseCmd)
 	orgCmd.AddCommand(orgMembersCmd)

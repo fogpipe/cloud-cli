@@ -990,9 +990,12 @@ type User struct {
 }
 
 // Organization represents a platform organization.
+//
+// Two identifiers, no more. ShortID is opaque and frozen and is what every
+// namespace, image path and hostname is built from; DisplayName is the readable
+// one and can be changed freely, precisely because nothing derives from it.
 type Organization struct {
 	ID          string `json:"id"`
-	Name        string `json:"name"`
 	ShortID     string `json:"short_id"`
 	DisplayName string `json:"display_name"`
 	FKEEnabled  bool   `json:"fke_enabled"` // operator-granted entitlement gating FKE/kubectl access
