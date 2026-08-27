@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -36,13 +37,39 @@ type Client struct {
 	Version string
 }
 
+// Bounds on getting to a first byte. Each one names a phase that can be waited
+// on without knowing anything about the response, so each can fail with a real
+// error the caller can read.
+//
+// There is deliberately no bound on the whole exchange. `http.Client.Timeout`
+// is a total deadline that covers reading the body, so it cannot tell a
+// response that is long from a server that is stuck: it cut `app logs --follow`
+// at 30 seconds, where ADR-086 promises thirty minutes, and it would do the
+// same to any future streamed or slow answer. That is the client-side shape of
+// what ADR-099 removed from the server, and it is removed here for the same
+// reason — a bound that cannot answer is not a bound.
+//
+// What remains: ResponseHeaderTimeout bounds the case the total deadline was
+// really guarding, a server that never answers at all, and the caller's context
+// ends anything longer. A response that has begun is bounded at the edge, which
+// answers 504.
+const (
+	dialTimeout           = 10 * time.Second
+	tlsHandshakeTimeout   = 10 * time.Second
+	responseHeaderTimeout = 30 * time.Second
+)
+
 // New creates a new API client.
 func New(baseURL, apiKey string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: dialTimeout}).DialContext
+	transport.TLSHandshakeTimeout = tlsHandshakeTimeout
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
 	return &Client{
 		BaseURL: baseURL,
 		APIKey:  apiKey,
 		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: transport,
 		},
 		Version: moduleVersion(),
 	}

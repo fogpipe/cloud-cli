@@ -324,3 +324,55 @@ func TestClientGetAppLogs_Query(t *testing.T) {
 		})
 	}
 }
+
+// A streamed response must outlive the bound that used to cut it. `app logs
+// --follow` asks for thirty minutes (ADR-086) and got thirty seconds, because
+// http.Client.Timeout covers reading the body and so cannot tell a long answer
+// from a stuck one. The phase bounds that replaced it each answer a question
+// that can be asked before the body exists.
+func TestClientDoesNotBoundTheWholeExchange(t *testing.T) {
+	c := New("http://example.invalid", "k")
+
+	require.Zero(t, c.HTTPClient.Timeout,
+		"a total deadline covers reading the body, so it bounds a stream by how long it is asked to run")
+
+	transport, ok := c.HTTPClient.Transport.(*http.Transport)
+	require.True(t, ok, "the client carries its own transport, so the phase bounds are its own")
+	assert.Equal(t, responseHeaderTimeout, transport.ResponseHeaderTimeout,
+		"a server that never answers is still bounded")
+	assert.Equal(t, tlsHandshakeTimeout, transport.TLSHandshakeTimeout)
+}
+
+// The caller's context is what ends a follow, now that nothing shorter does.
+func TestClientFollowEndsWithTheCallersContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		for {
+			if _, err := io.WriteString(w, "line\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	body, err := New(server.URL, "k").GetAppLogs(ctx, "app", LogsRequest{Follow: true})
+	require.NoError(t, err)
+	defer body.Close()
+
+	start := time.Now()
+	_, err = io.Copy(io.Discard, body)
+	assert.Error(t, err, "the stream ends because the context did, not because it succeeded")
+	assert.Less(t, time.Since(start), 5*time.Second,
+		"the context's deadline is what stops it")
+}
