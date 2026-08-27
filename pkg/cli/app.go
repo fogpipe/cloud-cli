@@ -600,7 +600,14 @@ var appGetCmd = &cobra.Command{
 var appDeployCmd = &cobra.Command{
 	Use:   "deploy [name]",
 	Short: "Deploy a new revision",
-	Args:  cobra.MaximumNArgs(1),
+	Long: "Deploys an image as a new revision of the app.\n\n" +
+		"--release-command states the release command this deploy runs, set as part of it: the " +
+		"deploy that introduces a migration is the deploy gated on it. Omit the flag and the app's " +
+		"own release command applies, as it does to every other deploy; pass it with no value to " +
+		"drop the release phase.",
+	Example: "  fpcloud app deploy web --image ghcr.io/me/web:v3\n" +
+		"  fpcloud app deploy web --image ghcr.io/me/web:v3 --release v3 --release-command \"npm run migrate\"",
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		image, _ := cmd.Flags().GetString("image")
 		if image == "" {
@@ -608,6 +615,14 @@ var appDeployCmd = &cobra.Command{
 		}
 		noTraffic, _ := cmd.Flags().GetBool("no-traffic")
 		release, _ := cmd.Flags().GetString("release")
+		// Set-if-changed, so this deploy states its own release command and the
+		// gate reads it — omitting the flag keeps whatever the app carries, and
+		// passing it with no value drops the release phase.
+		var releaseCommand *[]string
+		if cmd.Flags().Changed("release-command") {
+			v, _ := cmd.Flags().GetStringArray("release-command")
+			releaseCommand = &v
+		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
@@ -620,9 +635,10 @@ var appDeployCmd = &cobra.Command{
 		var deployErr error
 		action := func() {
 			app, deployErr = c.DeployApp(context.Background(), appID, client.DeployRequest{
-				Image:     image,
-				Release:   release,
-				NoTraffic: noTraffic,
+				Image:          image,
+				Release:        release,
+				NoTraffic:      noTraffic,
+				ReleaseCommand: releaseCommand,
 			})
 		}
 
@@ -1777,6 +1793,7 @@ func init() {
 	appDeployCmd.Flags().String("image", "", "Container image (required)")
 	appDeployCmd.Flags().Bool("no-traffic", false, "Deploy without routing traffic to the new revision")
 	appDeployCmd.Flags().String("release", "", "Name this release (e.g. v1.4.0) — reported by `app version` and targetable by `app rollback`")
+	appDeployCmd.Flags().StringArray("release-command", nil, "Release command this deploy runs, set as part of it (repeatable; pass with no value to drop the release phase). Omit to keep the app's own")
 
 	appReconcileCmd.Flags().Bool("all", false, "Reconcile every app in the current project")
 	appSetRoutesCmd.Flags().StringArray("route", nil, "Path prefix to carve out: 'path[:visibility]' (visibility defaults to internal). Repeatable")

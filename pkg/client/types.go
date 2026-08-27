@@ -418,6 +418,11 @@ type DeployRequest struct {
 	// Release names the version this deploy publishes (#471). Optional.
 	Release   string `json:"release,omitempty"`
 	NoTraffic bool   `json:"no_traffic,omitempty"`
+	// ReleaseCommand is the release command this deploy is deployed with
+	// (ADR-110). Nil leaves the app's stored command alone; non-nil sets it as
+	// part of the deploy, so the deploy that introduces a migration is the
+	// deploy that runs it. An empty slice drops the release phase.
+	ReleaseCommand *[]string `json:"release_command,omitempty"`
 }
 
 // LogsRequest selects what GetAppLogs returns.
