@@ -396,7 +396,11 @@ type CreateAppRequest struct {
 	// EnvVars seeds the app's config store with plain (non-secret) values —
 	// shorthand for a SetConfig per key. Use SetConfig to change them afterwards;
 	// there is no second env layer on the app itself.
-	EnvVars             map[string]string `json:"env_vars,omitempty"`
+	EnvVars map[string]string `json:"env_vars,omitempty"`
+	// Secrets seeds the same config store with secret values, so an app whose
+	// release command reads a secret is created with it already set (ADR-112).
+	// A key may appear in EnvVars or Secrets, never both.
+	Secrets             map[string]string `json:"secrets,omitempty"`
 	ServiceAccount      string            `json:"service_account,omitempty"` // SA email or ID
 	HealthCheckPath     string            `json:"health_check_path,omitempty"`
 	HealthCheckTimeout  int               `json:"health_check_timeout,omitempty"`

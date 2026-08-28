@@ -199,6 +199,16 @@ var appCreateCmd = &cobra.Command{
 			return err
 		}
 		secCtx := securityContextFromFlags(cmd)
+		envFlags, _ := cmd.Flags().GetStringArray("env")
+		secretFlags, _ := cmd.Flags().GetStringArray("secret")
+		envVars, err := parseKeyValues(envFlags, "--env")
+		if err != nil {
+			return err
+		}
+		secrets, err := parseKeyValues(secretFlags, "--secret")
+		if err != nil {
+			return err
+		}
 		displayName, _ := cmd.Flags().GetString("display-name")
 		slug, _ := cmd.Flags().GetString("slug")
 
@@ -245,6 +255,8 @@ var appCreateCmd = &cobra.Command{
 				HealthCheckInterval: healthCheckInterval,
 				HealthCheckRetries:  healthCheckRetries,
 				Probes:              probes,
+				EnvVars:             envVars,
+				Secrets:             secrets,
 			})
 		}
 
@@ -282,6 +294,26 @@ var appCreateCmd = &cobra.Command{
 		fmt.Println(renderInfoBox("App Created", rows))
 		return nil
 	},
+}
+
+// parseKeyValues turns repeated KEY=VALUE flags into a map, refusing a
+// spelling that carries no "=" and a key given twice.
+func parseKeyValues(flags []string, flag string) (map[string]string, error) {
+	if len(flags) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(flags))
+	for _, f := range flags {
+		parts := strings.SplitN(f, "=", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return nil, fmt.Errorf("invalid %s %q (want KEY=VALUE)", flag, f)
+		}
+		if _, dup := out[parts[0]]; dup {
+			return nil, fmt.Errorf("%s %s given twice", flag, parts[0])
+		}
+		out[parts[0]] = parts[1]
+	}
+	return out, nil
 }
 
 // parseVolumeMounts turns repeated --mount flags of the form
@@ -1766,6 +1798,8 @@ func init() {
 	appCreateCmd.Flags().String("service-account", "", "Service account email for workload identity")
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
+	appCreateCmd.Flags().StringArray("env", nil, "Set a plain config value on the new app: KEY=VALUE (repeatable). Set before the release command runs, so a migration sees it")
+	appCreateCmd.Flags().StringArray("secret", nil, "Set a secret config value on the new app: KEY=VALUE (repeatable). Stored encrypted and hidden from `config list`")
 	appCreateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; repeat for exec form)")
 	appCreateCmd.Flags().String("display-name", "", "Cosmetic display name (defaults to the app name); mutable later via `app update --display-name`")
 	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.app.<platform-domain> instead of the derived host (always-on apps; globally unique)")
