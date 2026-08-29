@@ -49,7 +49,7 @@ so it cannot tell a long answer from a stuck server, and it cut `app logs
 context ends anything longer, and is the real bound (ADR-107).
 
 It **retries a 429** on its own, honouring `Retry-After` with added jitter,
-bounded in attempts, and never past the caller's context (ADR-113). This is safe
+bounded in attempts, and never past the caller's context (ADR-115). This is safe
 for a `POST`, which it would not ordinarily be: the platform refuses a
 rate-limited request before it reaches the handler, so no work happened and
 there is no half-created resource for a repeat to collide with. The jitter is
