@@ -40,6 +40,24 @@ injection — it is what stopped this from being buildable from source.
 Read rather than contributed to: there is no contribution process, and issues
 here are not a support channel.
 
+## What the client bounds, and what it retries
+
+`pkg/client` sets **per-phase** bounds only — dial, TLS handshake, response
+header — and never a total deadline. A total deadline covers reading the body,
+so it cannot tell a long answer from a stuck server, and it cut `app logs
+--follow` at 30 seconds where ADR-086 promises thirty minutes. The caller's
+context ends anything longer, and is the real bound (ADR-107).
+
+It **retries a 429** on its own, honouring `Retry-After` with added jitter,
+bounded in attempts, and never past the caller's context (ADR-113). This is safe
+for a `POST`, which it would not ordinarily be: the platform refuses a
+rate-limited request before it reaches the handler, so no work happened and
+there is no half-created resource for a repeat to collide with. The jitter is
+added, never subtracted — one org's clients share one budget, so they are
+refused together and told the same second to return.
+
+Nothing else is retried. A 5xx may have done work.
+
 ## A change here is a release
 
 The platform and the provider both depend on `github.com/fogpipe/cloud-cli` at a

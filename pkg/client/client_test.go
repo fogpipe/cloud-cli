@@ -376,3 +376,113 @@ func TestClientFollowEndsWithTheCallersContext(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second,
 		"the context's deadline is what stops it")
 }
+
+// A rate-limited request is retried, and the retry carries the body again.
+//
+// The platform refuses before the handler runs, so nothing happened and there is
+// no half-created resource for a repeat to collide with — which is what makes
+// retrying a POST correct here rather than a hack.
+func TestClient_RetriesARefusedRequestIncludingItsBody(t *testing.T) {
+	bodies := []string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		if len(bodies) < 3 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"proj-1"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fp-test")
+	req, err := c.newRequest(context.Background(), http.MethodPost, "/api/v1/projects", map[string]string{"name": "demo"})
+	require.NoError(t, err)
+
+	var out struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, c.do(req, &out))
+	assert.Equal(t, "proj-1", out.ID)
+	assert.Equal(t, []string{`{"name":"demo"}`, `{"name":"demo"}`, `{"name":"demo"}`}, bodies,
+		"every attempt must carry the body, not just the first")
+}
+
+// Retrying is bounded: a caller that keeps retrying into a budget it has really
+// exhausted is the load it is being refused for. The last refusal is what the
+// caller is told about.
+func TestClient_StopsRetryingAndReportsTheRefusal(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":"RATE_LIMITED","message":"too many requests, please retry later"}}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fp-test")
+	req, err := c.newRequest(context.Background(), http.MethodGet, "/api/v1/projects", nil)
+	require.NoError(t, err)
+
+	err = c.do(req, nil)
+	require.Error(t, err)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+	assert.Equal(t, maxRateLimitRetries+1, attempts)
+}
+
+// A retry never outlives the deadline the caller set — the caller's context is
+// the bound, not the server's Retry-After (ADR-107).
+func TestClient_RetryDoesNotOutliveTheCallersContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	c := New(srv.URL, "fp-test")
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects", nil)
+	require.NoError(t, err)
+
+	start := time.Now()
+	err = c.do(req, nil)
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second,
+		"the wait must end with the context, not run the server's full Retry-After")
+}
+
+// The wait is spread, because every client of one organization shares one budget
+// and is therefore refused together and told the same second to return.
+func TestRetryAfter_SpreadsTheAnswerWithoutComingBackEarly(t *testing.T) {
+	seen := map[time.Duration]bool{}
+	for i := 0; i < 50; i++ {
+		d := retryAfter("4")
+		assert.GreaterOrEqual(t, d, 4*time.Second, "jitter is added, never subtracted")
+		assert.LessOrEqual(t, d, 6*time.Second)
+		seen[d] = true
+	}
+	assert.Greater(t, len(seen), 1, "every client waiting the same time recreates the burst")
+}
+
+// An unreadable or absent Retry-After is still a refusal: retry shortly rather
+// than not at all.
+func TestRetryAfter_FallsBackWhenTheHeaderIsUnusable(t *testing.T) {
+	for _, header := range []string{"", "soon", "-3", "Wed, 21 Oct 2015 07:28:00 GMT"} {
+		d := retryAfter(header)
+		assert.GreaterOrEqual(t, d, time.Second, "header %q", header)
+		assert.LessOrEqual(t, d, 2*time.Second, "header %q", header)
+	}
+}
+
+// However long the server asks for, one refusal parks the caller for a bounded
+// time.
+func TestRetryAfter_IsCapped(t *testing.T) {
+	assert.LessOrEqual(t, retryAfter("86400"), maxRetryAfter+maxRetryAfter/2)
+}

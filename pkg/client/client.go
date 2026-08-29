@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -126,24 +127,112 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any) 
 	return req, nil
 }
 
+// maxRateLimitRetries bounds how many times a refused request is repeated. The
+// platform refuses a rate-limited request BEFORE it reaches the handler, so no
+// work happened and nothing was half-created — the request is repeatable
+// whatever its method, which is what makes retrying a POST sound here rather
+// than a hack. What it is not is unbounded: a caller that keeps retrying into a
+// budget it has genuinely exhausted is the load it is being refused for.
+const maxRateLimitRetries = 4
+
+// maxRetryAfter caps how long a single refusal may park the caller, however
+// long the server asks for. The caller's own context still ends anything
+// longer, and is the real bound (ADR-107).
+const maxRetryAfter = 60 * time.Second
+
 func (c *Client) do(req *http.Request, out any) error {
+	for attempt := 0; ; attempt++ {
+		retryIn, err := c.attempt(req, out)
+		if retryIn <= 0 || attempt >= maxRateLimitRetries {
+			return err
+		}
+		replay, replayErr := replayRequest(req)
+		if replayErr != nil {
+			return err
+		}
+		if waitErr := wait(req.Context(), retryIn); waitErr != nil {
+			return waitErr
+		}
+		req = replay
+	}
+}
+
+// attempt performs one exchange. A non-zero duration means the platform refused
+// the request as rate limited and said when to come back; the error is returned
+// alongside it, so a caller that stops retrying still reports what happened.
+func (c *Client) attempt(req *http.Request, out any) (time.Duration, error) {
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("executing request: %w", err)
+		return 0, fmt.Errorf("executing request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return retryAfter(resp.Header.Get("Retry-After")), responseError(resp)
+	}
 	if resp.StatusCode >= 400 {
-		return responseError(resp)
+		return 0, responseError(resp)
 	}
 
 	if out != nil {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return fmt.Errorf("decoding response: %w", err)
+			return 0, fmt.Errorf("decoding response: %w", err)
 		}
 	}
 
-	return nil
+	return 0, nil
+}
+
+// retryAfter reads how long the platform asked us to wait, and spreads the
+// answer. Every client of one organization shares one budget, so they are
+// refused together and told the same second to return — retrying at exactly
+// that moment recreates the burst that was refused. The jitter is added, never
+// subtracted: coming back early is another refusal.
+func retryAfter(header string) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(header))
+	if err != nil || seconds < 0 {
+		// No usable header. Wait a second rather than not retrying at all: a
+		// refusal we cannot read is still a refusal, and the attempt count is
+		// what bounds us.
+		seconds = 1
+	}
+	base := time.Duration(seconds) * time.Second
+	if base > maxRetryAfter {
+		base = maxRetryAfter
+	}
+	if base <= 0 {
+		base = time.Second
+	}
+	return base + time.Duration(rand.Int63n(int64(base/2)+1))
+}
+
+// wait sleeps, unless the caller's context ends first — a retry must never
+// outlive the deadline the caller set (ADR-107).
+func wait(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// replayRequest rebuilds a request for a second attempt. A body built by
+// newRequest is a *bytes.Reader, so net/http records a GetBody that hands back a
+// fresh copy of it; a request whose body cannot be rebuilt is not replayed.
+func replayRequest(req *http.Request) (*http.Request, error) {
+	replay := req.Clone(req.Context())
+	if req.GetBody == nil {
+		return replay, nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	replay.Body = body
+	return replay, nil
 }
 
 // responseError turns an error response into an APIError, falling back to the
