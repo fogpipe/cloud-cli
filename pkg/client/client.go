@@ -2138,7 +2138,10 @@ func (c *Client) ListOrgs(ctx context.Context) ([]*Organization, error) {
 	return orgs, nil
 }
 
-// GetOrg retrieves an organization by ID.
+// GetOrg retrieves an organization by any reference it answers to: its uuid, its
+// frozen short id or its display name (ADR-094). Resolving a spelling before
+// calling this is never necessary — the API exchanges the reference for the org
+// at its route boundary (ADR-121).
 func (c *Client) GetOrg(ctx context.Context, id string) (*Organization, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+id, nil)
 	if err != nil {
