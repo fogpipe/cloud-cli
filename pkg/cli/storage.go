@@ -94,10 +94,18 @@ func parseSize(s string) (int64, error) {
 	return n, nil
 }
 
-// humanizeSize renders a byte count with a binary suffix; 0 is "unlimited".
-func humanizeSize(n int64) string {
+// humanizeQuota renders a size bound; 0 is "unlimited".
+func humanizeQuota(n int64) string {
 	if n <= 0 {
 		return "unlimited"
+	}
+	return humanizeSize(n)
+}
+
+// humanizeSize renders a byte count with a binary suffix.
+func humanizeSize(n int64) string {
+	if n <= 0 {
+		return "0B"
 	}
 	units := []struct {
 		suffix string
@@ -778,31 +786,49 @@ func bucketS3Name(b *client.Bucket) string {
 	return b.GlobalAlias
 }
 
-// bucketQuota renders the size/object quota pair for detail views.
-// bucketUsage renders what the bucket holds against its quota. A nil used
-// count is the store not answering, shown as unknown rather than as empty.
+// bucketUsage renders what the bucket holds against its quota, with the
+// object count when the store reported one.
 func bucketUsage(b *client.Bucket) string {
-	used := "—"
-	if b.UsedBytes != nil {
-		used = humanizeSize(*b.UsedBytes)
-	}
-	quota := "unlimited"
-	if b.QuotaMaxSize > 0 {
-		quota = humanizeSize(b.QuotaMaxSize)
-	}
-	out := used + " of " + quota
+	out := usageAgainstQuota(b.UsedBytes, b.QuotaMaxSize)
 	if b.ObjectCount != nil {
 		out += fmt.Sprintf(" · %d objects", *b.ObjectCount)
 	}
 	return out
 }
 
+// usageAgainstQuota renders used bytes against a size quota, with the share
+// of the quota consumed. A nil used count is the store not answering, shown
+// as unknown rather than as empty; an unlimited quota has no share to show.
+func usageAgainstQuota(used *int64, quota int64) string {
+	if used == nil {
+		return "— of " + humanizeQuota(quota)
+	}
+	out := humanizeSize(*used) + " of " + humanizeQuota(quota)
+	if quota > 0 {
+		out += " (" + usagePercent(*used, quota) + ")"
+	}
+	return out
+}
+
+// usagePercent rounds the share to a whole percent, except that anything
+// above zero and below one percent is "<1%" rather than a "0%" that reads
+// as empty.
+func usagePercent(used, quota int64) string {
+	pct := float64(used) * 100 / float64(quota)
+	if used > 0 && pct < 1 {
+		return "<1%"
+	}
+	return fmt.Sprintf("%.0f%%", pct)
+}
+
+// bucketQuota renders the size/object quota pair for detail views.
+
 func bucketQuota(maxSize, maxObjects int64) string {
 	objects := "unlimited"
 	if maxObjects > 0 {
 		objects = strconv.FormatInt(maxObjects, 10) + " objects"
 	}
-	return humanizeSize(maxSize) + " / " + objects
+	return humanizeQuota(maxSize) + " / " + objects
 }
 
 func init() {

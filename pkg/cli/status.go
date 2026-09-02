@@ -269,12 +269,8 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 				website = "enabled"
 			}
 		}
-		used := "—"
-		if bk.UsedBytes != nil {
-			used = humanizeSize(*bk.UsedBytes)
-		}
 		bucketRows = append(bucketRows, statusRow{
-			cells: []string{bk.Name, used, renderStatus(bk.Status), website},
+			cells: []string{bk.Name, usageAgainstQuota(bk.UsedBytes, bk.QuotaMaxSize), renderStatus(bk.Status), website},
 		})
 	}
 	b.WriteString(renderStatusSection("BUCKETS", []string{"USED", "STATUS", "WEBSITE"}, bucketRows))

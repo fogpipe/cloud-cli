@@ -1878,6 +1878,7 @@ type BucketStatus struct {
 	WebsiteURL     string `json:"website_url,omitempty"`
 	UsedBytes      *int64 `json:"used_bytes,omitempty"`
 	ObjectCount    *int64 `json:"object_count,omitempty"`
+	QuotaMaxSize   int64  `json:"quota_max_size,omitempty"`
 }
 
 // RunnerStatus is one CI runner pool and how many runners are alive in it.
