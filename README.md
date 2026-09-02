@@ -58,8 +58,8 @@ replace itself, so `fpcloud upgrade` prints the commands above instead.
 
 ```sh
 fpcloud login                                # browser sign-in
-fpcloud org use <org>                        # select your organization
-fpcloud project use <project>                # select a project
+fpcloud switch <org> <project>               # select your org and project
+                                             # (no arguments: pick from a list)
 fpcloud app deploy <app> --image <image>     # deploy or update an app
 ```
 

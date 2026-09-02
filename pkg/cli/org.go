@@ -223,9 +223,10 @@ var orgRemoveCmd = &cobra.Command{
 }
 
 // resolveOrgID determines the organization a command should act on and returns
-// its id. An explicit --org — or the current org from `org use`, which is the
-// persistent flag's default — wins; otherwise it falls back to the caller's
-// first organization. It errors only when the user belongs to no organizations.
+// its id. An explicit --org — or the current org from `org switch`, which is the
+// persistent flag's default — wins. With nothing set it falls back to the
+// caller's only organization, and refuses when there are several: picking the
+// first would act on an arbitrary org rather than the one meant.
 func resolveOrgID(cmd *cobra.Command) (string, error) {
 	if org := rootCmd.Flag("org").Value.String(); org != "" {
 		return resolveOrgRef(cmd.Context(), org)
@@ -235,7 +236,15 @@ func resolveOrgID(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("could not determine org: %w", err)
 	}
 	if len(orgs) == 0 {
-		return "", fmt.Errorf("no organization found; use --org or `fpcloud org use <org>`")
+		return "", fmt.Errorf("no organization found; use --org or `fpcloud switch`")
+	}
+	if len(orgs) > 1 {
+		names := make([]string, len(orgs))
+		for i, o := range orgs {
+			names[i] = o.ShortID
+		}
+		return "", fmt.Errorf("no organization selected and you belong to several (%s); run `fpcloud switch` or pass --org",
+			strings.Join(names, ", "))
 	}
 	return orgs[0].ID, nil
 }
@@ -302,81 +311,45 @@ var orgRenameCmd = &cobra.Command{
 	},
 }
 
-var orgUseCmd = &cobra.Command{
-	Use:   "use <org>",
-	Short: "Set the current organization",
-	Args:  cobra.ExactArgs(1),
+var orgSwitchCmd = &cobra.Command{
+	Use:   "switch [org]",
+	Short: "Switch the current organization",
+	Long: `Point the CLI at an organization, asking which when not told.
+
+The current project is cleared: a project belongs to exactly one organization,
+so one chosen under the previous org would contradict the new one. Use
+` + "`fpcloud switch`" + ` to choose an organization and a project together.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
-		// Validate the ref against the orgs the caller belongs to rather than
-		// silently persisting a typo as context. GetOrg can't tell "unknown"
-		// from "not a member" (both 403), so match the membership list.
-		ref := args[0]
-		orgs, err := getClient().ListOrgs(context.Background())
+		ref := ""
+		if len(args) > 0 {
+			ref = args[0]
+		}
+		org, err := selectOrg(cmd.Context(), ref)
 		if err != nil {
 			return err
 		}
-		var match *client.Organization
-		for _, o := range orgs {
-			if o.ID == ref || o.ShortID == ref || strings.EqualFold(o.DisplayName, ref) {
-				match = o
-				break
-			}
+		if org == nil {
+			fmt.Println(mutedStyle.Render("Aborted."))
+			return nil
 		}
-		if match == nil {
-			return fmt.Errorf("no organization %q; run 'fpcloud org list'", ref)
-		}
-		cfg.CurrentOrg = ref
-		// Cache the org's FKE entitlement so the `fke` command tree can be hidden
-		// without a network call per invocation (best-effort; the server still
-		// enforces).
-		cfg.CurrentOrgFKE = match.FKEEnabled
-		// Keep the org/project pair consistent: a current project set under the
-		// previous org would otherwise linger and contradict the new org. Drop it
-		// unless it also exists in the org we're switching to.
-		// Keep the org/project pair consistent. Best-effort: if the project list
-		// is unreachable, leave the project as-is rather than block the org switch.
-		clearedProject := ""
-		selectedProject := ""
-		if projects, err := getClient().ListProjectsInOrg(context.Background(), match.ID); err == nil {
-			inOrg := false
-			for _, p := range projects {
-				if p.Name == cfg.CurrentProject {
-					inOrg = true
-					break
-				}
-			}
-			// A current project set under the previous org would otherwise linger
-			// and contradict the new org, so drop it unless it also exists here.
-			if cfg.CurrentProject != "" && !inOrg {
-				clearedProject = cfg.CurrentProject
-				cfg.CurrentProject = ""
-			}
-			// Convenience: when the new org has exactly one project the choice is
-			// unambiguous, so adopt it instead of leaving the context project-less.
-			if cfg.CurrentProject == "" && len(projects) == 1 {
-				cfg.CurrentProject = projects[0].Name
-				selectedProject = projects[0].Name
-			}
-		}
+		applyOrg(cfg, org)
+		cleared := cfg.CurrentProject
+		cfg.CurrentProject = ""
 		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Current organization set to %q.", args[0]),
+				fmt.Sprintf(" Current organization set to %q.", org.ShortID),
 		))
-		switch {
-		case selectedProject != "":
+		if cleared != "" {
 			fmt.Println(mutedStyle.Render(
-				fmt.Sprintf("Current project set to %q (only project in this org).", selectedProject),
-			))
-		case clearedProject != "":
-			fmt.Println(mutedStyle.Render(
-				fmt.Sprintf("Cleared current project %q (not in this org); run 'fpcloud project use <name>'.", clearedProject),
+				fmt.Sprintf("Cleared current project %q; run 'fpcloud project switch'.", cleared),
 			))
 		}
 		return nil
@@ -385,7 +358,7 @@ var orgUseCmd = &cobra.Command{
 
 func init() {
 	// --org is inherited from the root persistent flag (default: current org from
-	// `org use`); these commands must not shadow it with a local --org.
+	// `org switch`); these commands must not shadow it with a local --org.
 	orgInviteCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
 	orgAddUserCmd.Flags().String("name", "", "Display name (defaults to email)")
 	orgAddUserCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
@@ -394,7 +367,7 @@ func init() {
 	orgRenameCmd.Flags().String("name", "", "The organization's new readable name")
 	orgCmd.AddCommand(orgRenameCmd)
 	orgCmd.AddCommand(orgListCmd)
-	orgCmd.AddCommand(orgUseCmd)
+	orgCmd.AddCommand(orgSwitchCmd)
 	orgCmd.AddCommand(orgMembersCmd)
 	orgCmd.AddCommand(orgInviteCmd)
 	orgCmd.AddCommand(orgAddUserCmd)

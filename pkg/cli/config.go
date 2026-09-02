@@ -144,7 +144,7 @@ func newClient(apiURL, cred string) *client.Client {
 func requireProject() (string, error) {
 	project := rootCmd.Flag("project").Value.String()
 	if project == "" {
-		return "", fmt.Errorf("no project specified; use --project flag or `fpcloud project use <name>`")
+		return "", fmt.Errorf("no project specified; use --project flag or `fpcloud switch`")
 	}
 	return project, nil
 }

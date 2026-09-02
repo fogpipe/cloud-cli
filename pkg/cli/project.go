@@ -113,7 +113,7 @@ var projectListCmd = &cobra.Command{
 		ctx := context.Background()
 		c := getClient()
 
-		// Scope to the selected org (--org / `org use`), falling back to the
+		// Scope to the selected org (--org / `org switch`), falling back to the
 		// caller's default org. To see another org's projects, switch orgs.
 		orgRef := rootCmd.Flag("org").Value.String()
 		orgName := ""
@@ -123,7 +123,7 @@ var projectListCmd = &cobra.Command{
 				return err
 			}
 			if me.Organization == nil {
-				return fmt.Errorf("no organization selected; run 'fpcloud org use <org>' or pass --org")
+				return fmt.Errorf("no organization selected; run 'fpcloud switch' or pass --org")
 			}
 			orgRef = me.Organization.ID
 			orgName = me.Organization.DisplayName
@@ -392,15 +392,15 @@ var projectMoveCmd = &cobra.Command{
 	},
 }
 
-var projectUseCmd = &cobra.Command{
-	Use:   "use [name]",
-	Short: "Set the current project (interactive picker if no name given)",
+var projectSwitchCmd = &cobra.Command{
+	Use:   "switch [name]",
+	Short: "Switch the current project within the current organization",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		c := getClient()
 
-		// Scope to the selected org (--org / `org use`), falling back to
+		// Scope to the selected org (--org / `org switch`), falling back to
 		// the caller's default org — same as `project list`.
 		orgRef := rootCmd.Flag("org").Value.String()
 		if orgRef == "" {
@@ -409,7 +409,7 @@ var projectUseCmd = &cobra.Command{
 				return err
 			}
 			if me.Organization == nil {
-				return fmt.Errorf("no organization selected; run 'fpcloud org use <org>' or pass --org")
+				return fmt.Errorf("no organization selected; run 'fpcloud switch' or pass --org")
 			}
 			orgRef = me.Organization.ID
 		}
@@ -470,7 +470,7 @@ var projectUseCmd = &cobra.Command{
 func pickProject(projects []*client.Project) (string, error) {
 	// Before the fzf branch: fzf draws on the terminal too, so neither picker
 	// has anything to draw on.
-	if err := requirePrompt("name the project: fpcloud project use <name>"); err != nil {
+	if err := requirePrompt("name the project: fpcloud switch <org> <project>"); err != nil {
 		return "", err
 	}
 	if fzf, err := exec.LookPath("fzf"); err == nil {
@@ -547,6 +547,6 @@ func init() {
 	projectMoveCmd.Flags().Bool("force", false, "Proceed even if the project has stateful resources (data is not migrated)")
 	projectMoveCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
-	projectCmd.AddCommand(projectCreateCmd, projectListCmd, projectGetCmd, projectStatusCmd, projectUpdateCmd, projectDeleteCmd, projectMoveCmd, projectUseCmd)
+	projectCmd.AddCommand(projectCreateCmd, projectListCmd, projectGetCmd, projectStatusCmd, projectUpdateCmd, projectDeleteCmd, projectMoveCmd, projectSwitchCmd)
 	rootCmd.AddCommand(projectCmd)
 }

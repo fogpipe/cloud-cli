@@ -290,6 +290,7 @@ func runLogin(ctx context.Context, port int) error {
 	fmt.Println()
 	fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
 	fmt.Println(mutedStyle.Render("  For kubectl access, run:  fpcloud fke get-credentials [--project <name>]"))
+	seedContext(ctx)
 	return nil
 }
 

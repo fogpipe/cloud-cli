@@ -45,8 +45,8 @@ func completeProjects(cmd *cobra.Command, args []string, toComplete string) ([]s
 	defer cancel()
 	c := getClient()
 
-	// Scope to the selected org (--org / `org use`), falling back to the
-	// caller's default org — same as `project list` / `project use`.
+	// Scope to the selected org (--org / `org switch`), falling back to the
+	// caller's default org — same as `project list` / `project switch`.
 	orgRef := rootCmd.Flag("org").Value.String()
 	if orgRef == "" {
 		me, err := c.GetMe(ctx)
@@ -65,6 +65,32 @@ func completeProjects(cmd *cobra.Command, args []string, toComplete string) ([]s
 		out = append(out, p.Name)
 	}
 	return out, noFile
+}
+
+// completeSwitchArgs completes `switch <org> <project>`: organizations for the
+// first argument, and the projects of the org named there for the second.
+func completeSwitchArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	switch len(args) {
+	case 0:
+		return completeOrgs(cmd, args, toComplete)
+	case 1:
+		ctx, cancel := compCtx()
+		defer cancel()
+		orgID, err := resolveOrgRef(ctx, args[0])
+		if err != nil {
+			return nil, noFile
+		}
+		projects, err := getClient().ListProjectsInOrg(ctx, orgID)
+		if err != nil {
+			return nil, noFile
+		}
+		out := make([]string, 0, len(projects))
+		for _, p := range projects {
+			out = append(out, p.Name)
+		}
+		return out, noFile
+	}
+	return nil, noFile
 }
 
 func completeOrgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -223,12 +249,16 @@ func completeConfigKeys(cmd *cobra.Command, args []string, toComplete string) ([
 // and flags exist.
 func registerCompletions() {
 	// Positional resource arguments.
-	for _, c := range []*cobra.Command{projectGetCmd, projectUseCmd, projectUpdateCmd, projectDeleteCmd} {
+	for _, c := range []*cobra.Command{projectGetCmd, projectSwitchCmd, projectUpdateCmd, projectDeleteCmd} {
 		c.ValidArgsFunction = completeProjects
 	}
-	for _, c := range []*cobra.Command{orgUseCmd, orgMembersCmd} {
+	for _, c := range []*cobra.Command{orgSwitchCmd, orgMembersCmd} {
 		c.ValidArgsFunction = completeOrgs
 	}
+	// `switch <org> <project>`: the org for the first argument, then that org's
+	// projects for the second — read from args[0] rather than the current
+	// context, so the pair completes before either half is saved.
+	switchCmd.ValidArgsFunction = completeSwitchArgs
 	for _, c := range []*cobra.Command{appGetCmd, appDeleteCmd, appLogsCmd, appRevisionsCmd, appScaleCmd, appRollbackCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd} {
 		c.ValidArgsFunction = completeApps
 	}
