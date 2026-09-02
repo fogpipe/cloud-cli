@@ -41,6 +41,30 @@ func TestClientCreateProject(t *testing.T) {
 	assert.Equal(t, "my-project", project.Name)
 }
 
+func TestClientListWorkloadEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/projects/proj-1/workloads/web/events", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]WorkloadEvent{{
+			Reason:  "FailedCreate",
+			Message: "pods \"web-1\" is forbidden: exceeded quota",
+			Source:  "event",
+			Object:  "web-6f9",
+			Count:   3,
+		}})
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "test-key")
+	events, err := c.ListWorkloadEvents(context.Background(), "proj-1", "web")
+
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "FailedCreate", events[0].Reason)
+	assert.Equal(t, int32(3), events[0].Count)
+}
+
 func TestClientErrorHandling_NestedFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

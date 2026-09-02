@@ -281,6 +281,18 @@ type CreateTrustBindingRequest struct {
 }
 
 // App represents a deployed application.
+// WorkloadEvent is one warning recorded against a project workload — a
+// Kubernetes Warning event or a container-level failure.
+type WorkloadEvent struct {
+	Reason    string `json:"reason"`
+	Message   string `json:"message"`
+	Source    string `json:"source"`
+	Object    string `json:"object"`
+	Count     int32  `json:"count"`
+	FirstSeen string `json:"first_seen,omitempty"`
+	LastSeen  string `json:"last_seen,omitempty"`
+}
+
 type App struct {
 	ID                  string           `json:"id"`
 	ProjectID           string           `json:"project_id"`

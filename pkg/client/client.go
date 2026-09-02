@@ -988,6 +988,21 @@ func (c *Client) GetApp(ctx context.Context, id string) (*App, error) {
 	return &app, nil
 }
 
+// ListWorkloadEvents lists the warnings recorded against a project workload —
+// admission refusals (quota), image pull failures, container crashes — the
+// explanation when a deploy produced no pods and no logs.
+func (c *Client) ListWorkloadEvents(ctx context.Context, projectID, workload string) ([]WorkloadEvent, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/workloads/"+workload+"/events", nil)
+	if err != nil {
+		return nil, err
+	}
+	var events []WorkloadEvent
+	if err := c.do(httpReq, &events); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
 // ListApps lists all apps in a project.
 func (c *Client) ListApps(ctx context.Context, projectID string) ([]*App, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/apps", nil)

@@ -1780,8 +1780,62 @@ refused.`,
 		}
 		defer body.Close()
 
-		_, err = io.Copy(os.Stdout, body)
+		n, err := io.Copy(os.Stdout, body)
+		if err == nil && n == 0 && !follow {
+			printEmptyLogsHint(c, appID)
+		}
 		return err
+	},
+}
+
+// printEmptyLogsHint explains an empty log window when the workload has
+// warning events but produced no output — the quota-refused deploy, the
+// unpullable image: nothing ever ran, so nothing ever logged (#516).
+func printEmptyLogsHint(c *client.Client, appID string) {
+	app, err := c.GetApp(context.Background(), appID)
+	if err != nil {
+		return
+	}
+	events, err := c.ListWorkloadEvents(context.Background(), app.ProjectID, app.Name)
+	if err != nil || len(events) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "No log lines in this window, and the workload reports %d warning(s) — run `fpcloud app events %s`\n", len(events), app.Name)
+}
+
+var appEventsCmd = &cobra.Command{
+	Use:   "events <name>",
+	Short: "Read workload warnings for an app",
+	Long: `Read the warnings recorded against an app's workload.
+
+This is where a deploy that produced no pods explains itself: a pod refused at
+admission (project quota exceeded), an image that cannot be pulled, a missing
+Secret. The deploy is accepted, no container ever starts, logs stay empty — the
+event is the only record.
+
+  fpcloud app events web
+  fpcloud app events web -o json`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		appID, err := appIDFrom(c, cmd, args)
+		if err != nil {
+			return err
+		}
+		app, err := c.GetApp(context.Background(), appID)
+		if err != nil {
+			return err
+		}
+		events, err := c.ListWorkloadEvents(context.Background(), app.ProjectID, app.Name)
+		if err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(events))
+		for _, e := range events {
+			rows = append(rows, []string{e.Reason, strconv.Itoa(int(e.Count)), e.Object, e.LastSeen, e.Message})
+		}
+		render([]string{"REASON", "COUNT", "OBJECT", "LAST SEEN", "MESSAGE"}, rows, events)
+		return nil
 	},
 }
 
@@ -1870,6 +1924,6 @@ func init() {
 	// shorthand (the flag wins when both are given).
 	appCmd.PersistentFlags().String("app", "", "App name or ID (the positional <name> is a shorthand)")
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd)
 	rootCmd.AddCommand(appCmd)
 }
