@@ -610,13 +610,13 @@ func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*P
 }
 
 // UpdateOrgQuota sets an organization's operator-only resource ceiling; only the
-// non-nil axes are changed.
+// non-nil axes of req are changed.
 //
 // The ceiling is the org's rather than a project's because a tenant decides how
 // many projects it has: bounding each one bounded a number the tenant could
 // raise by creating another.
-func (c *Client) UpdateOrgQuota(ctx context.Context, id string, maxCPU, maxMemory *string, maxPods *int, maxStorage *string) (*Organization, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+id+"/quota", SetQuotaRequest{MaxCPU: maxCPU, MaxMemory: maxMemory, MaxPods: maxPods, MaxStorage: maxStorage})
+func (c *Client) UpdateOrgQuota(ctx context.Context, id string, req SetQuotaRequest) (*Organization, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+id+"/quota", req)
 	if err != nil {
 		return nil, err
 	}

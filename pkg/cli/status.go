@@ -159,10 +159,40 @@ func renderCeiling(p client.StatusProject) string {
 	if p.MaxPods > 0 {
 		axes = append(axes, fmt.Sprintf("%d/%d pods", p.UsedPods, p.MaxPods))
 	}
+	if p.MaxStorage != "" {
+		axes = append(axes, firstNonEmpty(p.UsedStorage, "?")+"/"+p.MaxStorage+" disk")
+	}
+	// Every metered type is bounded here, including the three no ResourceQuota
+	// counts (ADR-128). They are on the same line as the rest deliberately: an
+	// axis that is not reported is one nobody can be refused on and understand
+	// why, which is how object storage stayed unbounded while the org row read
+	// as the whole obligation.
+	if p.MaxObjectStorage != "" {
+		axes = append(axes, humanizeSize(p.ReservedObjectBytes)+"/"+p.MaxObjectStorage+" objects (reserved)")
+	}
+	if p.MaxObjects > 0 {
+		axes = append(axes, fmt.Sprintf("%d/%d object count (reserved)", p.ReservedObjects, p.MaxObjects))
+	}
+	if p.MaxRegistryStorage != "" {
+		axes = append(axes, humanizeSize(p.UsedRegistryBytes)+"/"+p.MaxRegistryStorage+" registry"+registryAge(p))
+	}
 	if len(axes) == 0 {
 		return ""
 	}
 	return p.CeilingScope + " " + strings.Join(axes, " / ")
+}
+
+// registryAge dates the registry reading, or says it has never been taken.
+//
+// It is the one axis whose spend is measured rather than declared, so it is the
+// one whose number can be out of date — a push is bounded against this reading
+// and overshoots it by however long ago it was. Unmeasured is not zero: nothing
+// is refused on it.
+func registryAge(p client.StatusProject) string {
+	if p.RegistryMeasuredAt.IsZero() {
+		return " (never measured)"
+	}
+	return " (measured " + humanAge(p.RegistryMeasuredAt) + " ago)"
 }
 
 // renderProjectStatus renders the whole document. prev, when non-nil, is the

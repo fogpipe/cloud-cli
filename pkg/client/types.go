@@ -257,6 +257,12 @@ type SetQuotaRequest struct {
 	MaxMemory  *string `json:"max_memory,omitempty"`
 	MaxPods    *int    `json:"max_pods,omitempty"`
 	MaxStorage *string `json:"max_storage,omitempty"`
+	// The axes no ResourceQuota carries, bounded in the control plane alone
+	// (ADR-128): what the org's bucket quotas may sum to, and what its projects
+	// may hold in the registry.
+	MaxObjectStorage   *string `json:"max_object_storage,omitempty"`
+	MaxObjects         *int64  `json:"max_objects,omitempty"`
+	MaxRegistryStorage *string `json:"max_registry_storage,omitempty"`
 }
 
 // TrustBinding is a per-project OIDC federation trust binding: a repo (matched by
@@ -691,13 +697,20 @@ type SetBucketURLSlugRequest struct {
 }
 
 // CreateBucketRequest is the request body for creating a bucket.
+//
+// A quota field is a pointer because absent and zero say different things
+// (ADR-128): absent takes the platform default, and 0 is unlimited, which only
+// an operator may declare. A bucket quota is a reservation against the
+// organization's ceiling, so a size it cannot hold is refused.
 type CreateBucketRequest struct {
 	Name            string `json:"name"`
-	QuotaMaxSize    int64  `json:"quota_max_size,omitempty"`
-	QuotaMaxObjects int64  `json:"quota_max_objects,omitempty"`
+	QuotaMaxSize    *int64 `json:"quota_max_size,omitempty"`
+	QuotaMaxObjects *int64 `json:"quota_max_objects,omitempty"`
 }
 
-// SetBucketQuotaRequest is the request body for updating a bucket's quotas.
+// SetBucketQuotaRequest is the request body for updating a bucket's quotas. It
+// states the whole quota, so both fields are required; 0 is unlimited and is
+// operator-only (ADR-128).
 type SetBucketQuotaRequest struct {
 	QuotaMaxSize    int64 `json:"quota_max_size"`
 	QuotaMaxObjects int64 `json:"quota_max_objects"`
@@ -1031,6 +1044,14 @@ type Organization struct {
 	MaxMemory  string `json:"max_memory"`
 	MaxPods    int    `json:"max_pods"`
 	MaxStorage string `json:"max_storage"`
+
+	// Every metered type is bounded by the org (ADR-128), and these three are
+	// the ones Kubernetes cannot count: object storage is the sum of what the
+	// org's bucket quotas reserve, the registry is what its projects were last
+	// measured to hold.
+	MaxObjectStorage   string `json:"max_object_storage"`
+	MaxObjects         int64  `json:"max_objects"`
+	MaxRegistryStorage string `json:"max_registry_storage"`
 
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -1749,7 +1770,21 @@ type StatusProject struct {
 	UsedMemory     string `json:"used_memory,omitempty"`
 	UsedPods       int64  `json:"used_pods,omitempty"`
 	UsedStorage    string `json:"used_storage,omitempty"`
-	CeilingScope   string `json:"ceiling_scope,omitempty"`
+
+	// The axes bounded in the control plane rather than by a ResourceQuota
+	// (ADR-128). Object storage is what the org's buckets have been GRANTED —
+	// a bucket quota is a reservation — where the registry is what its projects
+	// were last MEASURED to hold, which is why only that one carries the age of
+	// its reading.
+	MaxObjectStorage    string    `json:"max_object_storage,omitempty"`
+	MaxObjects          int64     `json:"max_objects,omitempty"`
+	MaxRegistryStorage  string    `json:"max_registry_storage,omitempty"`
+	ReservedObjectBytes int64     `json:"reserved_object_bytes,omitempty"`
+	ReservedObjects     int64     `json:"reserved_objects,omitempty"`
+	UsedRegistryBytes   int64     `json:"used_registry_bytes,omitempty"`
+	RegistryMeasuredAt  time.Time `json:"registry_measured_at,omitempty"`
+
+	CeilingScope string `json:"ceiling_scope,omitempty"`
 }
 
 // StatusProblem is one thing wrong with one resource, in the same shape

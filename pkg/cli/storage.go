@@ -142,12 +142,22 @@ var storageBucketCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		sizeStr, _ := cmd.Flags().GetString("quota-size")
-		maxSize, err := parseSize(sizeStr)
-		if err != nil {
-			return err
+		// A flag left off is left off, rather than sent as a zero: absent takes
+		// the platform default and 0 is unlimited, which only an operator may
+		// declare (ADR-128).
+		var maxSize, maxObjects *int64
+		if cmd.Flags().Changed("quota-size") {
+			sizeStr, _ := cmd.Flags().GetString("quota-size")
+			v, err := parseSize(sizeStr)
+			if err != nil {
+				return err
+			}
+			maxSize = &v
 		}
-		maxObjects, _ := cmd.Flags().GetInt64("quota-objects")
+		if cmd.Flags().Changed("quota-objects") {
+			v, _ := cmd.Flags().GetInt64("quota-objects")
+			maxObjects = &v
+		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
@@ -832,15 +842,15 @@ func bucketQuota(maxSize, maxObjects int64) string {
 }
 
 func init() {
-	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti; empty = unlimited)")
-	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count (0 = unlimited)")
+	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); unset = the platform default, 0 = unlimited (operator-only)")
+	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count; unset = the platform default, 0 = unlimited (operator-only)")
 
 	storageBucketDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	storageBucketCredentialsCmd.Flags().String("format", "table", "Output form: table | env | json")
 
-	storageBucketSetQuotaCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti; 0 = unlimited)")
-	storageBucketSetQuotaCmd.Flags().Int64("quota-objects", 0, "Max object count (0 = unlimited)")
+	storageBucketSetQuotaCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); 0 = unlimited (operator-only)")
+	storageBucketSetQuotaCmd.Flags().Int64("quota-objects", 0, "Max object count; 0 = unlimited (operator-only)")
 
 	storageBucketWebsiteEnableCmd.Flags().String("index", "", "Index document served for a directory request (default index.html)")
 	storageBucketWebsiteEnableCmd.Flags().String("error", "", "Document served on a miss (optional)")
