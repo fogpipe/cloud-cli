@@ -698,10 +698,10 @@ type SetBucketURLSlugRequest struct {
 
 // CreateBucketRequest is the request body for creating a bucket.
 //
-// A quota field is a pointer because absent and zero say different things
-// (ADR-128): absent takes the platform default, and 0 is unlimited, which only
-// an operator may declare. A bucket quota is a reservation against the
-// organization's ceiling, so a size it cannot hold is refused.
+// A quota field is a pointer so that absent means "take the platform default"
+// rather than colliding with a stated value. A bucket quota is a reservation
+// against the organization's ceiling, so a size it cannot hold is refused —
+// and so is zero, which is not a size (ADR-129).
 type CreateBucketRequest struct {
 	Name            string `json:"name"`
 	QuotaMaxSize    *int64 `json:"quota_max_size,omitempty"`
@@ -709,8 +709,8 @@ type CreateBucketRequest struct {
 }
 
 // SetBucketQuotaRequest is the request body for updating a bucket's quotas. It
-// states the whole quota, so both fields are required; 0 is unlimited and is
-// operator-only (ADR-128).
+// states the whole quota, so both fields are required, and both are sizes above
+// zero — a bucket with no number voids its organization's ceiling (ADR-129).
 type SetBucketQuotaRequest struct {
 	QuotaMaxSize    int64 `json:"quota_max_size"`
 	QuotaMaxObjects int64 `json:"quota_max_objects"`

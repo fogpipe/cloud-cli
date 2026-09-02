@@ -62,8 +62,9 @@ func resolveBucketID(c *client.Client, ref string) (string, error) {
 	return "", notFoundf("bucket %q not found in project %q", ref, project)
 }
 
-// parseSize parses a byte count that may carry a binary suffix (Ki/Mi/Gi/Ti). An
-// empty string (or 0) means unlimited and returns 0.
+// parseSize parses a byte count that may carry a binary suffix (Ki/Mi/Gi/Ti).
+// An empty string returns 0, which no longer reaches the API as a quota — the
+// caller only sends a value the flag actually carried (ADR-129).
 func parseSize(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -94,10 +95,15 @@ func parseSize(s string) (int64, error) {
 	return n, nil
 }
 
-// humanizeQuota renders a size bound; 0 is "unlimited".
+// humanizeQuota renders a size bound.
+//
+// A quota is always a size (ADR-129), so a zero here is a bucket the server
+// did not report one for — "unknown", never "unlimited". The two used to
+// render alike, which is the reading that hid an unbounded bucket inside a
+// bounded-looking listing.
 func humanizeQuota(n int64) string {
 	if n <= 0 {
-		return "unlimited"
+		return "unknown"
 	}
 	return humanizeSize(n)
 }
@@ -143,8 +149,8 @@ var storageBucketCreateCmd = &cobra.Command{
 			return err
 		}
 		// A flag left off is left off, rather than sent as a zero: absent takes
-		// the platform default and 0 is unlimited, which only an operator may
-		// declare (ADR-128).
+		// the platform default, and zero is not a size and is refused
+		// (ADR-129).
 		var maxSize, maxObjects *int64
 		if cmd.Flags().Changed("quota-size") {
 			sizeStr, _ := cmd.Flags().GetString("quota-size")
@@ -367,7 +373,7 @@ var storageBucketCredentialsCmd = &cobra.Command{
 
 var storageBucketSetQuotaCmd = &cobra.Command{
 	Use:   "set-quota <name|id>",
-	Short: "Update a bucket's size / object-count quota (0 = unlimited)",
+	Short: "Update a bucket's size / object-count quota",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("quota-size") && !cmd.Flags().Changed("quota-objects") {
@@ -808,7 +814,8 @@ func bucketUsage(b *client.Bucket) string {
 
 // usageAgainstQuota renders used bytes against a size quota, with the share
 // of the quota consumed. A nil used count is the store not answering, shown
-// as unknown rather than as empty; an unlimited quota has no share to show.
+// as unknown rather than as empty; a quota the server did not report has no
+// share to show.
 func usageAgainstQuota(used *int64, quota int64) string {
 	if used == nil {
 		return "— of " + humanizeQuota(quota)
@@ -834,7 +841,7 @@ func usagePercent(used, quota int64) string {
 // bucketQuota renders the size/object quota pair for detail views.
 
 func bucketQuota(maxSize, maxObjects int64) string {
-	objects := "unlimited"
+	objects := "unknown"
 	if maxObjects > 0 {
 		objects = strconv.FormatInt(maxObjects, 10) + " objects"
 	}
@@ -842,15 +849,15 @@ func bucketQuota(maxSize, maxObjects int64) string {
 }
 
 func init() {
-	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); unset = the platform default, 0 = unlimited (operator-only)")
-	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count; unset = the platform default, 0 = unlimited (operator-only)")
+	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); unset takes the platform default. Reserved against the organization's ceiling")
+	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count; unset takes the platform default. Reserved against the organization's ceiling")
 
 	storageBucketDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	storageBucketCredentialsCmd.Flags().String("format", "table", "Output form: table | env | json")
 
-	storageBucketSetQuotaCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); 0 = unlimited (operator-only)")
-	storageBucketSetQuotaCmd.Flags().Int64("quota-objects", 0, "Max object count; 0 = unlimited (operator-only)")
+	storageBucketSetQuotaCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti). Reserved against the organization's ceiling")
+	storageBucketSetQuotaCmd.Flags().Int64("quota-objects", 0, "Max object count. Reserved against the organization's ceiling")
 
 	storageBucketWebsiteEnableCmd.Flags().String("index", "", "Index document served for a directory request (default index.html)")
 	storageBucketWebsiteEnableCmd.Flags().String("error", "", "Document served on a miss (optional)")
