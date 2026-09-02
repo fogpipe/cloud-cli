@@ -205,9 +205,9 @@ var storageBucketListCmd = &cobra.Command{
 		}
 		rows := make([][]string, len(buckets))
 		for i, b := range buckets {
-			rows[i] = []string{b.Name, bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects), b.Region, renderStatus(b.Status)}
+			rows[i] = []string{b.Name, bucketUsage(b), b.Region, renderStatus(b.Status)}
 		}
-		render([]string{"NAME", "USAGE/QUOTA", "REGION", "STATUS"}, rows, buckets)
+		render([]string{"NAME", "USED/QUOTA", "REGION", "STATUS"}, rows, buckets)
 		return nil
 	},
 }
@@ -779,6 +779,24 @@ func bucketS3Name(b *client.Bucket) string {
 }
 
 // bucketQuota renders the size/object quota pair for detail views.
+// bucketUsage renders what the bucket holds against its quota. A nil used
+// count is the store not answering, shown as unknown rather than as empty.
+func bucketUsage(b *client.Bucket) string {
+	used := "—"
+	if b.UsedBytes != nil {
+		used = humanizeSize(*b.UsedBytes)
+	}
+	quota := "unlimited"
+	if b.QuotaMaxSize > 0 {
+		quota = humanizeSize(b.QuotaMaxSize)
+	}
+	out := used + " of " + quota
+	if b.ObjectCount != nil {
+		out += fmt.Sprintf(" · %d objects", *b.ObjectCount)
+	}
+	return out
+}
+
 func bucketQuota(maxSize, maxObjects int64) string {
 	objects := "unlimited"
 	if maxObjects > 0 {

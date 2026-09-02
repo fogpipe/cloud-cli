@@ -269,11 +269,15 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 				website = "enabled"
 			}
 		}
+		used := "—"
+		if bk.UsedBytes != nil {
+			used = humanizeSize(*bk.UsedBytes)
+		}
 		bucketRows = append(bucketRows, statusRow{
-			cells: []string{bk.Name, renderStatus(bk.Status), website},
+			cells: []string{bk.Name, used, renderStatus(bk.Status), website},
 		})
 	}
-	b.WriteString(renderStatusSection("BUCKETS", []string{"STATUS", "WEBSITE"}, bucketRows))
+	b.WriteString(renderStatusSection("BUCKETS", []string{"USED", "STATUS", "WEBSITE"}, bucketRows))
 
 	runnerRows := make([]statusRow, 0, len(s.Runners))
 	for _, r := range s.Runners {
