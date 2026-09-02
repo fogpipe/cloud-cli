@@ -87,6 +87,24 @@ To move a merged client change downstream without releasing everything,
 consumers can pin its commit — `go get github.com/fogpipe/cloud-cli@<commit>`
 resolves a pseudo-version with no tag involved.
 
+## A dependency is attributed before it ships
+
+The binary embeds `pkg/cli/THIRD_PARTY_LICENSES.md` and prints it with
+`fpcloud licenses`. That is not a courtesy — MIT, BSD, ISC and Apache-2.0 all
+grant redistribution *on the condition* that their copyright notice travels
+with the binary, and this is a binary we hand out through GitHub releases,
+Homebrew and Nix.
+
+- **Regenerate after any dependency change**: `just licenses`. CI regenerates
+  and diffs, so a module added without attributing it fails the build rather
+  than shipping unattributed.
+- **Embedded, not a release asset.** Homebrew installs only the binary and Nix
+  builds from source, so an asset beside the release would reach neither — and
+  a build from a tag has to be as compliant as the one CI publishes.
+- The set comes from `go list -deps` over `./cmd/fpcloud`, so a module reached
+  only by a test or a tool is correctly absent: it is not in what anyone
+  receives.
+
 ## Working across repos
 
 `just tree <name>` at the workspace root gives a session an isolated copy of

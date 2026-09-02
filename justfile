@@ -11,3 +11,11 @@ test:
 lint:
     go vet ./...
     gofmt -l .
+
+# Regenerate the third-party attribution the binary embeds (CI fails on a stale file)
+licenses:
+    deno run --allow-read --allow-write --allow-run --allow-env scripts/third-party-licenses.ts
+
+# Fail if the embedded attribution no longer matches what the binary links
+licenses-check:
+    deno run --allow-read --allow-run --allow-env scripts/third-party-licenses.ts --check

@@ -23,3 +23,13 @@ jobs:
       # no contributions that would catch it in review.
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      # The binary carries the notices its dependencies' licences require, and a
+      # generated file goes stale on the next `go get` — a stale attribution
+      # being the same breach wearing a fix. Regenerating here is what makes
+      # adding a dependency without attributing it fail the build.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "v2.x"
+      - name: third-party licenses are attributed
+        run: deno run --allow-read --allow-run --allow-env scripts/third-party-licenses.ts --check
