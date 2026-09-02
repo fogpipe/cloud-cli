@@ -101,6 +101,7 @@ var projectCreateCmd = &cobra.Command{
 			{"Egress", egressLabel(project.Egress)},
 			{"Created", project.CreatedAt.Format("2006-01-02 15:04:05")},
 		}))
+		printEgressNote(project.Egress)
 		return nil
 	},
 }
@@ -212,7 +213,7 @@ var projectListCmd = &cobra.Command{
 func egressLabel(e string) string {
 	switch e {
 	case "all":
-		return "all (open)"
+		return "all (open, except tcp 25/465)"
 	case "https":
 		return "https (443 only)"
 	case "restricted", "":
@@ -220,6 +221,24 @@ func egressLabel(e string) string {
 	default:
 		return e
 	}
+}
+
+// egressNote states what the host network drops on top of the project's own
+// egress policy, and is empty unless that changes what the mode means. Only
+// "all" claims the ports: the tighter modes deny 25 and 465 themselves, so
+// naming the host block there would describe a bound that is not the binding
+// one. See docs/projects-and-access.md.
+func printEgressNote(e string) {
+	if note := egressNote(e); note != "" {
+		fmt.Println(mutedStyle.Render(note))
+	}
+}
+
+func egressNote(e string) string {
+	if e != "all" {
+		return ""
+	}
+	return "tcp 25 and 465 are dropped by the host network, on every mode — use 587 for SMTP submission"
 }
 
 var projectGetCmd = &cobra.Command{
@@ -246,6 +265,7 @@ var projectGetCmd = &cobra.Command{
 			{"Created", project.CreatedAt.Format("2006-01-02 15:04:05")},
 			{"Updated", project.UpdatedAt.Format("2006-01-02 15:04:05")},
 		}))
+		printEgressNote(project.Egress)
 		return nil
 	},
 }
@@ -257,7 +277,9 @@ var projectUpdateCmd = &cobra.Command{
 
   --display-name  Change the project's cosmetic display name. The frozen name
                   (which anchors the namespace and registry path) is untouched.
-  --egress        Egress policy: 'restricted', 'https' (443 only), or 'all' (open).
+  --egress        Egress policy: 'restricted', 'https' (443 only), or 'all'
+                  (every port the host network carries — 25 and 465 are dropped
+                  by it, so SMTP submission goes over 587).
 
 Resource caps (ADR-035) are set by the platform operator, not here.`,
 	Args: cobra.ExactArgs(1),
@@ -298,6 +320,7 @@ Resource caps (ADR-035) are set by the platform operator, not here.`,
 			{"Display Name", project.DisplayName},
 			{"Egress", egressLabel(project.Egress)},
 		}))
+		printEgressNote(project.Egress)
 		return nil
 	},
 }
@@ -538,9 +561,9 @@ func pickProjectFzf(fzf string, projects []*client.Project) (string, error) {
 
 func init() {
 	projectCreateCmd.Flags().Bool("use", true, "Set as current project after creation (pass --use=false to skip)")
-	projectCreateCmd.Flags().String("egress", "restricted", "Egress policy: 'restricted' (default), 'https' (443 only), or 'all' (open)")
+	projectCreateCmd.Flags().String("egress", "restricted", "Egress policy: 'restricted' (default), 'https' (443 only), or 'all' (open, except tcp 25/465)")
 	projectUpdateCmd.Flags().String("display-name", "", "New cosmetic display name (the frozen project name is unchanged)")
-	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted', 'https' (443 only), or 'all' (open)")
+	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted', 'https' (443 only), or 'all' (open, except tcp 25/465)")
 	projectListCmd.Flags().Bool("apps", false, "List each project's app names instead of just the count")
 	projectDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	projectDeleteCmd.Flags().Bool("no-wait", false, "Return once the deletion is accepted, without waiting for the teardown")
