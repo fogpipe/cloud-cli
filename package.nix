@@ -12,7 +12,9 @@
 # no reason; the source is Apache-2.0.
 {
   lib,
+  stdenv,
   buildGoModule,
+  installShellFiles,
 }:
 buildGoModule (finalAttrs: {
   pname = "fpcloud";
@@ -23,6 +25,18 @@ buildGoModule (finalAttrs: {
   vendorHash = "sha256-txsSh5vq1/5bXC55My+vYTr7nGnRE6d18tY3UUvyfnM=";
 
   subPackages = [ "cmd/fpcloud" ];
+
+  nativeBuildInputs = [ installShellFiles ];
+
+  # The binary generates its own completions, so shipping them costs nothing and
+  # spares every consumer writing a `_fpcloud` stub of its own. Skipped when the
+  # build platform cannot run what it just built (cross-compilation).
+  postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+    installShellCompletion --cmd fpcloud \
+      --bash <($out/bin/fpcloud completion bash) \
+      --zsh <($out/bin/fpcloud completion zsh) \
+      --fish <($out/bin/fpcloud completion fish)
+  '';
 
   # Same stamp the release workflow applies, so `fpcloud version` agrees with the
   # package version instead of reporting "dev".
