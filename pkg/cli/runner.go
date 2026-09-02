@@ -295,12 +295,16 @@ func runnerScope(r *client.Runner) string {
 }
 
 func runnerInfoRows(r *client.Runner) [][]string {
+	scale := fmt.Sprintf("%d-%d (%d active)", r.MinRunners, r.MaxRunners, r.CurrentRunners)
+	if r.AdmittedRunners > 0 {
+		scale = fmt.Sprintf("%d-%d (%d active, ceiling admits %d)", r.MinRunners, r.MaxRunners, r.CurrentRunners, r.AdmittedRunners)
+	}
 	rows := [][]string{
 		{"Name", r.Name},
 		{"Serves", runnerScope(r)},
 		{"runs-on", strings.Join(r.Labels, ", ")},
 		{"Group", r.RunnerGroup},
-		{"Scale", fmt.Sprintf("%d-%d (%d active)", r.MinRunners, r.MaxRunners, r.CurrentRunners)},
+		{"Scale", scale},
 		{"Status", renderStatus(r.Status)},
 	}
 	if r.Builder != nil {

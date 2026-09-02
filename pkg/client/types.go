@@ -1573,9 +1573,10 @@ type Runner struct {
 	// Labels is what a workflow puts in `runs-on`.
 	Labels []string `json:"labels,omitempty"`
 
-	Status         string `json:"status,omitempty"`
-	CurrentRunners int    `json:"current_runners,omitempty"`
-	Message        string `json:"message,omitempty"`
+	Status          string `json:"status,omitempty"`
+	CurrentRunners  int    `json:"current_runners,omitempty"`
+	AdmittedRunners int    `json:"admitted_runners,omitempty"`
+	Message         string `json:"message,omitempty"`
 
 	// Problems are failures on the pool's own pods — a runner killed for
 	// exceeding its memory above all. They do not make the pool unhealthy: the
