@@ -122,6 +122,9 @@ is built from the cobra tree and needs no network.
 ## Conventions
 
 - `go build ./...`, `go test ./...`, `gofmt` — CI gates all three.
+- A `t.Skip` is guarded on an input the environment can supply, never on an open
+  issue: `internal/suite` refuses an unconditional one, so a test that must stop
+  running is deleted rather than parked (ADR-126).
 - Dependency versions track the platform's. A fresh `go mod tidy` resolves to
   latest and would drag the server's graph forward through this module; pin to
   what the platform pins unless the upgrade is the point.
