@@ -8,28 +8,28 @@
 class Fpcloud < Formula
   desc "Fogpipe Cloud CLI — deploy apps, manage databases, domains, and object storage"
   homepage "https://github.com/fogpipe/cloud-cli"
-  version "0.153.4"
+  version "0.154.0"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
       url "https://github.com/fogpipe/cloud-cli/releases/download/v#{version}/fpcloud-darwin-arm64"
-      sha256 "a9374e6ef55da11854ae9ee8f7ba13a66963106b3233f7a97377b9109550be11"
+      sha256 "832bba4af1216559cfe972e971c6d0905239d481e3975c426452d08b7784498f"
     end
     on_intel do
       url "https://github.com/fogpipe/cloud-cli/releases/download/v#{version}/fpcloud-darwin-amd64"
-      sha256 "76c623643fc78a55f71e9ab79c3e462a8506f8f4bb3f5d0ba525f0521fab76f5"
+      sha256 "9d04dc4174c02e609737049cfb36815bb70528d620ddcbf7e241889d7bce8a20"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/fogpipe/cloud-cli/releases/download/v#{version}/fpcloud-linux-arm64"
-      sha256 "15a6ae0dce239cd70d20000b72d10393bc0466467e346246ded8903acb4bc764"
+      sha256 "61517e52bd1792c28b94be72941e8b4980f038b7203c3b71830511086e7ae88c"
     end
     on_intel do
       url "https://github.com/fogpipe/cloud-cli/releases/download/v#{version}/fpcloud-linux-amd64"
-      sha256 "85eb2b3127f5a3672629cb2cc903330ef94dae9d1891e93b1a6c8d42636467af"
+      sha256 "0e05558db0d00607b3129f91a014cb03ff374090e59b44ba57fed70c5537327f"
     end
   end
 
