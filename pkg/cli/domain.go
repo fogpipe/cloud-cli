@@ -59,6 +59,9 @@ var domainAddCmd = &cobra.Command{
 			fmt.Println(mutedStyle.Render("  (Cloudflare-for-SaaS, reverse proxy) at this app's origin; fpcloud"))
 			fmt.Println(mutedStyle.Render("  routes the Host to your app over plain HTTP."))
 			fmt.Println()
+			fmt.Println(mutedStyle.Render("  This domain is now the app's address: its fogpipe.cloud host is"))
+			fmt.Println(mutedStyle.Render("  withdrawn, and comes back only when the last domain is removed."))
+			fmt.Println()
 			return nil
 		}
 
@@ -88,6 +91,9 @@ var domainAddCmd = &cobra.Command{
 		} else {
 			printDNSInstructions(d.Domain)
 		}
+		fmt.Println(mutedStyle.Render("  Once active, this domain is the app's address: its fogpipe.cloud host"))
+		fmt.Println(mutedStyle.Render("  is withdrawn, and comes back only when the last domain is removed."))
+		fmt.Println()
 		return nil
 	},
 }

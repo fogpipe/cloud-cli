@@ -633,6 +633,9 @@ var websiteDomainAddCmd = &cobra.Command{
 			return renderData(vr)
 		}
 		renderDomainVerification(vr)
+		fmt.Println(mutedStyle.Render("  Once active, this domain is the site's address: its fogpipe.cloud host"))
+		fmt.Println(mutedStyle.Render("  is withdrawn, and comes back only when the last domain is removed."))
+		fmt.Println()
 		return nil
 	},
 }
