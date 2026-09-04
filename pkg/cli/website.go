@@ -430,9 +430,9 @@ var websiteListCmd = &cobra.Command{
 		}
 		rows := make([][]string, len(sites))
 		for i, b := range sites {
-			rows[i] = []string{b.Name, dashIfEmpty(b.WebsiteURL), renderStatus(b.Status)}
+			rows[i] = []string{b.Name, dashIfEmpty(b.WebsiteURL)}
 		}
-		render([]string{"NAME", "URL", "STATUS"}, rows, sites)
+		render([]string{"NAME", "URL"}, rows, sites)
 		return nil
 	},
 }
