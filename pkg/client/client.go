@@ -291,6 +291,22 @@ func (c *Client) FKEToken(ctx context.Context, projectID string) (*ClusterToken,
 	return &tok, nil
 }
 
+// AuthConfig reports where humans sign in (ADR-132): the identity provider, its
+// endpoints, the client ids the platform registered for the CLI and the
+// console, and whether the CLI's token exchange goes through the platform.
+// Unauthenticated; asked before a credential exists.
+func (c *Client) AuthConfig(ctx context.Context) (*AuthConfigResponse, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp AuthConfigResponse
+	if err := c.do(httpReq, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // GetMe retrieves the current user's info.
 func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth/me", nil)

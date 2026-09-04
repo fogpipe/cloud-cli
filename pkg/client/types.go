@@ -1121,6 +1121,19 @@ type ProvisionUserRequest struct {
 }
 
 // MeResponse is the response from the /auth/me endpoint.
+// AuthConfigResponse is where humans sign in (ADR-132). BrokerPath is set when
+// the issuer demands a client secret from a native client and the platform
+// exchanges the CLI's code on its behalf (ADR-068); empty means the CLI talks to
+// the issuer directly.
+type AuthConfigResponse struct {
+	Issuer                string `json:"issuer"`
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	CLIClientID           string `json:"cli_client_id"`
+	ConsoleClientID       string `json:"console_client_id"`
+	BrokerPath            string `json:"broker_path,omitempty"`
+}
+
 type MeResponse struct {
 	User         *User         `json:"user"`
 	Organization *Organization `json:"organization"`
