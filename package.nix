@@ -18,7 +18,7 @@
 }:
 buildGoModule (finalAttrs: {
   pname = "fpcloud";
-  version = "0.162.0"; # bumped by the release pipeline (.github/workflows/release.yml)
+  version = "0.163.0"; # bumped by the release pipeline (.github/workflows/release.yml)
 
   src = ./.;
 
