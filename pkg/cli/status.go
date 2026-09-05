@@ -36,6 +36,8 @@ whose certificate never issued, backups that stopped producing restore points.
   fpcloud project status                 the current project
   fpcloud project status my-project      another one
   fpcloud project status --watch         redraw as it changes (every 2s)
+                                         following fpcloud switch; a named
+                                         project stays pinned
   fpcloud project status -o json         the whole document, for a script
 
 Checks that could not run are listed rather than dropped: a report is only
@@ -74,16 +76,24 @@ healthy if it also says that everything was looked at.`,
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return fmt.Errorf("--watch renders a live view; it cannot be combined with -o %s", rootCmd.Flag("output").Value.String())
 		}
-		return watchProjectStatus(project, interval)
+		return watchProjectStatus(projectSource(args), interval)
 	},
 }
 
 // watchProjectStatus redraws the status view in place until interrupted.
 //
-// In process rather than under watch(1): re-running the binary each tick would
-// re-read the config and re-resolve the project every time, and — because each
-// run starts blank — could never say what changed between two of them, which is
-// the only thing a watcher is actually looking for.
+// In process rather than under watch(1): a binary re-run each tick starts blank
+// and could never say what changed between two runs, which is the only thing a
+// watcher is actually looking for.
+//
+// The project is asked for every tick, not captured once. A project named on the
+// command line or by --project is pinned — the watcher named a thing, and a
+// context switch in another shell does not rename it. Given neither, the watch
+// means "wherever I am" and follows `fpcloud switch` the way the prompt segment
+// does; it used to keep the project it started with, so the prompt and the view
+// on the same screen disagreed about what current meant. A change of project
+// drops the previous observation and the ETag, so the first frame of the new one
+// is not marked as changes against the old.
 //
 // The client is rebuilt every poll rather than captured once. An ID token
 // lasts about an hour, so a watch held open longer than that used to fail with
@@ -92,7 +102,7 @@ healthy if it also says that everything was looked at.`,
 // one to disk — could not reach it. Rebuilding per tick both picks up that new
 // token and lets `currentIDToken` do the refresh it already knows how to do,
 // silently, from the refresh token.
-func watchProjectStatus(project string, interval time.Duration) error {
+func watchProjectStatus(source func() (string, error), interval time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -102,11 +112,22 @@ func watchProjectStatus(project string, interval time.Duration) error {
 	defer fmt.Print("\x1b[?25h\x1b[?1049l")
 
 	var (
-		etag string
-		prev *client.ProjectStatus
+		watched string
+		etag    string
+		prev    *client.ProjectStatus
 	)
 	for {
-		status, newETag, err := getClient().ProjectStatus(ctx, project, etag)
+		var (
+			status  *client.ProjectStatus
+			newETag string
+		)
+		project, err := source()
+		if err == nil && project != watched {
+			watched, prev, etag = project, nil, ""
+		}
+		if err == nil {
+			status, newETag, err = getClient().ProjectStatus(ctx, watched, etag)
+		}
 		switch {
 		case ctx.Err() != nil:
 			return nil
@@ -126,6 +147,26 @@ func watchProjectStatus(project string, interval time.Duration) error {
 			return nil
 		case <-time.After(interval):
 		}
+	}
+}
+
+func projectSource(args []string) func() (string, error) {
+	if len(args) > 0 {
+		return func() (string, error) { return args[0], nil }
+	}
+	if flag := rootCmd.Flag("project"); flag.Changed {
+		pinned := flag.Value.String()
+		return func() (string, error) { return pinned, nil }
+	}
+	return func() (string, error) {
+		cfg, err := loadConfig()
+		if err != nil {
+			return "", err
+		}
+		if cfg.CurrentProject == "" {
+			return "", fmt.Errorf("no project specified; use --project flag or `fpcloud switch`")
+		}
+		return cfg.CurrentProject, nil
 	}
 }
 
