@@ -249,7 +249,7 @@ func seedContext(ctx context.Context) {
 			return
 		}
 		if matchOrg(orgs, cfg.CurrentOrg) == nil {
-			fmt.Println(mutedStyle.Render(fmt.Sprintf("  The saved context (%s/%s) is not visible to this identity; choosing again.", cfg.CurrentOrg, orDefault(cfg.CurrentProject, "-"))))
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("  You are not a member of the saved context's org (%s); choosing again.", cfg.CurrentOrg)))
 			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
 		}
 	}

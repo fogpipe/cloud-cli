@@ -67,7 +67,7 @@ or {identity} appears in --format, so prompt use stays fast.`,
 
 		orgShown := orDefault(org, "(unset)")
 		if access == "no" {
-			orgShown = org + " " + mutedStyle.Render("(not visible to "+identity+" — run fpcloud switch)")
+			orgShown = org + " " + mutedStyle.Render("("+identity+" is not a member; run fpcloud switch)")
 		}
 		fmt.Println(renderInfoBox("Context", [][]string{
 			{"Organization", orgShown},
