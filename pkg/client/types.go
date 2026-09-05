@@ -1462,6 +1462,12 @@ type ClusterCredentials struct {
 	CertificateAuthorityData string `json:"certificate_authority_data"`
 	Context                  string `json:"context"`
 	Namespace                string `json:"namespace"`
+	// Namespaces is every namespace the context reaches — one for a project
+	// context, every project namespace the org owns for an org context. Told
+	// here because a tenant cannot list namespaces on the cluster: a list
+	// cannot be filtered by RBAC, and one that could would name every other
+	// tenant.
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // ClusterToken is a short-lived Kubernetes token bound to the project's or the

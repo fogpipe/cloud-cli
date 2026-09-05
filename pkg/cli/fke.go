@@ -54,13 +54,14 @@ var fkeGetCredentialsCmd = &cobra.Command{
 		}
 
 		var entry kubeconfigEntry
+		var reachable []string
 		switch scope {
 		case fkeScopeOrg:
 			org, err := fkeOrgRef(cmd)
 			if err != nil {
 				return err
 			}
-			entry, err = orgCredentialsEntry(ctx, org)
+			entry, reachable, err = orgCredentialsEntry(ctx, org)
 			if err != nil {
 				return err
 			}
@@ -83,6 +84,11 @@ var fkeGetCredentialsCmd = &cobra.Command{
 			fmt.Println(mutedStyle.Render(fmt.Sprintf("  Namespace %q is now current. Try:  kubectl get pods", entry.namespace)))
 		} else {
 			fmt.Println(mutedStyle.Render("  Every namespace your organization owns is reachable; none is current. Try:  kubectl get pods -n <namespace>"))
+			// Named here because the cluster will not name them: a tenant cannot
+			// list namespaces, since a list cannot be filtered by RBAC.
+			for _, ns := range reachable {
+				fmt.Println(mutedStyle.Render("    " + ns))
+			}
 		}
 		return nil
 	},
@@ -116,12 +122,13 @@ func credentialsEntry(ctx context.Context, project string) (kubeconfigEntry, err
 // `fke get-token --scope org --org <org>`. The org is pinned into the exec block
 // as written, so the context keeps naming the org it was made for whatever
 // `fpcloud switch` later selects.
-func orgCredentialsEntry(ctx context.Context, org string) (kubeconfigEntry, error) {
+func orgCredentialsEntry(ctx context.Context, org string) (kubeconfigEntry, []string, error) {
 	creds, err := getClient().OrgFKECredentials(ctx, org)
 	if err != nil {
-		return kubeconfigEntry{}, err
+		return kubeconfigEntry{}, nil, err
 	}
-	return kubeconfigEntryFrom(creds, []string{"fke", "get-token", "--scope", string(fkeScopeOrg), "--org", org})
+	entry, err := kubeconfigEntryFrom(creds, []string{"fke", "get-token", "--scope", string(fkeScopeOrg), "--org", org})
+	return entry, creds.Namespaces, err
 }
 
 func kubeconfigEntryFrom(creds *client.ClusterCredentials, execArgs []string) (kubeconfigEntry, error) {
