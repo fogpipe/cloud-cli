@@ -82,11 +82,6 @@ func resolveIdP(ctx context.Context) (*identityProvider, error) {
 		}
 		idp.Issuer = cfg.Issuer
 		idp.ClientID = cfg.CLIClientID
-		if cfg.BrokerPath != "" {
-			// The issuer demands a secret from a native client, so the platform
-			// holds it and exchanges the code on the CLI's behalf (ADR-068).
-			idp.TokenURL = strings.TrimSuffix(apiURL, "/") + cfg.BrokerPath
-		}
 	}
 	provider, err := oidc.NewProvider(ctx, idp.Issuer)
 	if err != nil {

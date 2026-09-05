@@ -34,9 +34,7 @@ attributes call. They are the open end of this rule, not a precedent
 No credential belongs in this binary, and none is in it — not even an issuer
 or a client id. `fpcloud login` asks the control plane where humans sign in
 (`GET /api/v1/auth/config`, ADR-132 §5), discovers that issuer's endpoints, and
-runs a public PKCE login; an issuer that demands a secret from a native client
-answers with a `broker_path`, and the platform holds the secret and exchanges
-the code (ADR-068). `FPCLOUD_OIDC_ISSUER` + `FPCLOUD_OIDC_CLIENT_ID` (and
+runs a public PKCE login. `FPCLOUD_OIDC_ISSUER` + `FPCLOUD_OIDC_CLIENT_ID` (and
 `FPCLOUD_OIDC_CLIENT_SECRET` for a confidential one) override it for developing
 against another issuer. The token cache records its issuer, and a refresh is
 refused against any other. Don't reintroduce a build-time injection — it is
