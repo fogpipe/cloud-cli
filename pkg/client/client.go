@@ -308,6 +308,20 @@ func (c *Client) AuthConfig(ctx context.Context) (*AuthConfigResponse, error) {
 }
 
 // GetMe retrieves the current user's info.
+// AuthSecurity reports how the signed-in person signs in: their factors at
+// the identity provider, and where to manage them.
+func (c *Client) AuthSecurity(ctx context.Context) (*AuthSecurityResponse, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth/security", nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp AuthSecurityResponse
+	if err := c.do(httpReq, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth/me", nil)
 	if err != nil {

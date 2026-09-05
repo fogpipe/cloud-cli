@@ -1134,6 +1134,18 @@ type AuthConfigResponse struct {
 	BrokerPath            string `json:"broker_path,omitempty"`
 }
 
+// AuthSecurityResponse is how the caller signs in, as the identity provider
+// reports it (ADR-132). MFA is "enrolled", "none" or "unknown" — unknown when
+// the platform cannot ask the provider, never rendered as off. Methods are
+// password, passkey, totp, security_key, otp_sms, otp_email, external.
+// ManageURL is where the person changes any of it.
+type AuthSecurityResponse struct {
+	Issuer    string   `json:"issuer"`
+	ManageURL string   `json:"manage_url"`
+	MFA       string   `json:"mfa"`
+	Methods   []string `json:"methods"`
+}
+
 type MeResponse struct {
 	User         *User         `json:"user"`
 	Organization *Organization `json:"organization"`

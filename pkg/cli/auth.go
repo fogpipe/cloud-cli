@@ -127,6 +127,20 @@ var authStatusCmd = &cobra.Command{
 			curProject = mutedStyle.Render("(unset)")
 		}
 
+		// How the person signs in, from the identity provider. Only a browser
+		// login has factors; an API key is the credential itself. A provider
+		// the platform cannot ask answers "unknown", which is shown as such
+		// rather than read as no second factor.
+		signIn := ""
+		if credType == "browser login" {
+			if sec, err := c.AuthSecurity(context.Background()); err == nil {
+				signIn = sec.MFA
+				if len(sec.Methods) > 0 {
+					signIn += " (" + strings.Join(sec.Methods, ", ") + ")"
+				}
+			}
+		}
+
 		fields := [][]string{
 			{"Email", me.User.Email},
 			{"Name", me.User.Name},
@@ -137,6 +151,9 @@ var authStatusCmd = &cobra.Command{
 			{"Active org", curOrg},
 			{"Active project", curProject},
 		}
+		if signIn != "" {
+			fields = append(fields, []string{"MFA", signIn})
+		}
 
 		if jsonOut {
 			return renderData(map[string]any{
@@ -144,6 +161,7 @@ var authStatusCmd = &cobra.Command{
 				"email":          me.User.Email,
 				"name":           me.User.Name,
 				"credential":     credType,
+				"mfa":            signIn,
 				"organization":   me.Organization.DisplayName,
 				"user_id":        me.User.ID,
 				"org_id":         me.Organization.ID,
