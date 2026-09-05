@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,21 +143,31 @@ func renderKeyValue(key, value string) string {
 
 // Info box for resource creation results
 func renderInfoBox(title string, pairs [][]string) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
-
-	var lines []string
-	lines = append(lines, header, "")
+	rows := make([]string, 0, len(pairs))
+	width := 0
 	for _, pair := range pairs {
-		lines = append(lines, renderKeyValue(pair[0], pair[1]))
+		row := renderKeyValue(pair[0], pair[1])
+		rows = append(rows, row)
+		if w := lipgloss.Width(row); w > width {
+			width = w
+		}
 	}
-
-	// Tight: one space inside the border, and one blank row under the title
-	// to set it apart from the rows. A box that is mostly air reads as a
-	// dialog, and this is a table.
-	box := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(colorPrimary).
-		Padding(0, 1)
-
-	return box.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	// The title sits in the top border rather than on a row of its own, so the
+	// box is a table with a caption and not a dialog. One space of padding
+	// inside the border; the top rule is as wide as the padded rows.
+	label := " " + title + " "
+	if w := lipgloss.Width(label) + 1; w > width+2 {
+		width = w - 2
+	}
+	border := lipgloss.NewStyle().Foreground(colorPrimary)
+	head := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(label)
+	fill := width + 2 - 1 - lipgloss.Width(label)
+	var lines []string
+	lines = append(lines, border.Render("╭─")+head+border.Render(strings.Repeat("─", fill)+"╮"))
+	cell := lipgloss.NewStyle().Width(width)
+	for _, row := range rows {
+		lines = append(lines, border.Render("│ ")+cell.Render(row)+border.Render(" │"))
+	}
+	lines = append(lines, border.Render("╰"+strings.Repeat("─", width+2)+"╯"))
+	return strings.Join(lines, "\n")
 }
