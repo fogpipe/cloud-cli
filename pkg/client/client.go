@@ -1447,7 +1447,8 @@ func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.
 	return ws, nil
 }
 
-// UpdateDatabase reconciles a database's spec (cpu/memory/storage/instances/version/pooler).
+// UpdateDatabase reconciles a database's spec (cpu/memory/storage/version/pooler).
+// The instance count is the platform's (ADR-136), reported and never set.
 func (c *Client) UpdateDatabase(ctx context.Context, id string, req UpdateDatabaseRequest) (*Database, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/databases/"+id, req)
 	if err != nil {

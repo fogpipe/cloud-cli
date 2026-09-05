@@ -587,10 +587,11 @@ type Database struct {
 	// schedule every new database gets (fogpipe/cloud-workspace#82). Set by
 	// disabling backups in the backup config, cleared by enabling them.
 	BackupsDisabled bool `json:"backups_disabled"`
-	// CPU/Memory/Storage/Instances are the spec the database is running under —
-	// the same four UpdateDatabaseRequest changes. They are read from the live
+	// CPU/Memory/Storage are the spec the database is running under and are what
+	// UpdateDatabaseRequest changes; Instances is the platform's own number
+	// (ADR-136) and is reported here, never set. All four are read from the live
 	// cluster rather than from a stored copy, so they report what is actually
-	// running; all four are empty/zero when the cluster cannot be reached.
+	// running, and all four are empty/zero when the cluster cannot be reached.
 	CPU       string `json:"cpu,omitempty"`
 	Memory    string `json:"memory,omitempty"`
 	Storage   string `json:"storage,omitempty"`
@@ -642,7 +643,6 @@ type UpdateDatabaseRequest struct {
 	Memory      string `json:"memory,omitempty"`
 	Storage     string `json:"storage,omitempty"`
 	Version     string `json:"version,omitempty"`
-	Instances   *int64 `json:"instances,omitempty"`
 	Pooler      *bool  `json:"pooler,omitempty"`
 	// Extensions replaces the installed set; nil leaves it unchanged, an empty
 	// list uninstalls what the platform installed.

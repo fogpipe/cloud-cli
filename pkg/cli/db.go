@@ -697,7 +697,7 @@ var dbRestoreCmd = &cobra.Command{
 
 var dbUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update a running database (cpu, memory, instances, storage, version, pooler)",
+	Short: "Update a running database (cpu, memory, storage, version, pooler)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
@@ -716,10 +716,6 @@ var dbUpdateCmd = &cobra.Command{
 		req.Memory, _ = cmd.Flags().GetString("memory")
 		req.Storage, _ = cmd.Flags().GetString("storage")
 		req.Version, _ = cmd.Flags().GetString("postgres-version")
-		if cmd.Flags().Changed("instances") {
-			n, _ := cmd.Flags().GetInt64("instances")
-			req.Instances = &n
-		}
 		if cmd.Flags().Changed("pooler") {
 			p, _ := cmd.Flags().GetBool("pooler")
 			req.Pooler = &p
@@ -732,8 +728,8 @@ var dbUpdateCmd = &cobra.Command{
 			req.Extensions = &e
 		}
 		if req.CPU == "" && req.Memory == "" && req.Storage == "" && req.Version == "" &&
-			req.Instances == nil && req.Pooler == nil && req.Extensions == nil {
-			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --instances --storage --postgres-version --pooler --extension")
+			req.Pooler == nil && req.Extensions == nil {
+			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --storage --postgres-version --pooler --extension")
 		}
 
 		db, err := c.UpdateDatabase(context.Background(), existing.ID, req)
@@ -799,7 +795,6 @@ func init() {
 	dbUpdateCmd.Flags().String("cpu", "", "New CPU request/limit per instance (e.g. 500m)")
 	dbUpdateCmd.Flags().String("memory", "", "New memory request/limit per instance (e.g. 1Gi)")
 	dbUpdateCmd.Flags().String("storage", "", "New storage size (grow only, e.g. 20Gi)")
-	dbUpdateCmd.Flags().Int64("instances", 1, "Number of Postgres instances (HA)")
 	dbUpdateCmd.Flags().String("postgres-version", "", "New Postgres major version (forward only)")
 	dbUpdateCmd.Flags().Bool("pooler", false, "Enable/disable the PgBouncer pooler")
 	dbUpdateCmd.Flags().StringSlice("extension", nil, "Replace the installed extensions, repeatable (empty uninstalls them)")
