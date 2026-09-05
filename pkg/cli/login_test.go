@@ -85,19 +85,29 @@ func TestResolveIdP_AsksTheControlPlane(t *testing.T) {
 }
 
 // Every login asks for the account picker — a session the browser already
-// holds must not decide who the CLI signs in as — and an issuer without
+// holds must not decide who the CLI signs in as — unless the command names the
+// account, which is then a login_hint and no picker. An issuer without
 // offline_access is asked for a refresh token its own way on top.
-func TestAuthOptions_AlwaysPickAnAccount(t *testing.T) {
-	url := func(idp *identityProvider) string {
-		return oauthConfig(idp, "http://127.0.0.1:1").AuthCodeURL("s", authOptions(idp)...)
+func TestAuthOptions_PickAnAccountUnlessNamed(t *testing.T) {
+	url := func(idp *identityProvider, account string) string {
+		return oauthConfig(idp, "http://127.0.0.1:1").AuthCodeURL("s", authOptions(idp, account)...)
 	}
-	with := url(&identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c", OfflineAccess: true})
+	modern := &identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c", OfflineAccess: true}
+	with := url(modern, "")
 	if !strings.Contains(with, "prompt=select_account") || strings.Contains(with, "access_type") {
 		t.Errorf("offline_access issuer: %s", with)
 	}
-	without := url(&identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c"})
+	named := url(modern, "alexander")
+	if !strings.Contains(named, "login_hint=alexander") || strings.Contains(named, "prompt=") {
+		t.Errorf("a named account skips the picker: %s", named)
+	}
+	legacy := &identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c"}
+	without := url(legacy, "")
 	if !strings.Contains(without, "select_account") || !strings.Contains(without, "consent") || !strings.Contains(without, "access_type=offline") {
 		t.Errorf("issuer without offline_access: %s", without)
+	}
+	if u := url(legacy, "alexander"); !strings.Contains(u, "prompt=consent") || strings.Contains(u, "select_account") {
+		t.Errorf("named account on a legacy issuer keeps consent only: %s", u)
 	}
 }
 

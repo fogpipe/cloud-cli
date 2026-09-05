@@ -32,7 +32,8 @@ var authLoginCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			return runLogin(context.Background(), port)
+			account, _ := cmd.Flags().GetString("account")
+			return runLogin(context.Background(), port, account)
 		}
 
 		cfg, err := loadConfig()
@@ -227,6 +228,7 @@ var authLogoutCmd = &cobra.Command{
 func init() {
 	authStatusCmd.Flags().Bool("wide", false, "Show the detailed boxed view")
 	authLoginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
+	authLoginCmd.Flags().String("account", "", "Sign in as this login name without the account picker")
 	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authConfigureDockerCmd)
 	rootCmd.AddCommand(authCmd)
 }

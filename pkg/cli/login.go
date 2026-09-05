@@ -130,11 +130,26 @@ func oauthConfig(idp *identityProvider, redirectURL string) *oauth2.Config {
 // holds more than one. An issuer without offline_access is also asked for a
 // refresh token its own way — Google issues one only under
 // access_type=offline with a consent prompt.
-func authOptions(idp *identityProvider) []oauth2.AuthCodeOption {
-	if idp.OfflineAccess {
-		return []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("prompt", "select_account")}
+//
+// account names the login instead: sent as login_hint, the issuer uses that
+// account's session without asking, or asks for that account and no other. The
+// account is then in the command that produced the credential, which is what
+// makes skipping the picker safe.
+func authOptions(idp *identityProvider, account string) []oauth2.AuthCodeOption {
+	var opts []oauth2.AuthCodeOption
+	prompt := "select_account"
+	if account != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login_hint", account))
+		prompt = ""
 	}
-	return []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent select_account")}
+	if !idp.OfflineAccess {
+		opts = append(opts, oauth2.AccessTypeOffline)
+		prompt = strings.TrimSpace("consent " + prompt)
+	}
+	if prompt != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
+	}
+	return opts
 }
 
 // cachedToken records the issuer beside the tokens, so a refresh is attempted
@@ -184,11 +199,12 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return runLogin(context.Background(), port)
+		account, _ := cmd.Flags().GetString("account")
+		return runLogin(context.Background(), port, account)
 	},
 }
 
-func runLogin(ctx context.Context, port int) error {
+func runLogin(ctx context.Context, port int, account string) error {
 	ln, redirectURL, err := listenLoopback(port)
 	if err != nil {
 		return err
@@ -226,7 +242,7 @@ func runLogin(ctx context.Context, port int) error {
 	go srv.Serve(ln)
 	defer srv.Close()
 
-	authURL := conf.AuthCodeURL(state, append(authOptions(idp), oauth2.S256ChallengeOption(verifier))...)
+	authURL := conf.AuthCodeURL(state, append(authOptions(idp, account), oauth2.S256ChallengeOption(verifier))...)
 	fmt.Println("Opening your browser to sign in…")
 	fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
 	_ = openBrowser(authURL)
@@ -436,5 +452,6 @@ func parseJWTClaims(jwt string) map[string]any {
 
 func init() {
 	loginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
+	loginCmd.Flags().String("account", "", "Sign in as this login name without the account picker")
 	rootCmd.AddCommand(loginCmd, getTokenCmd)
 }
