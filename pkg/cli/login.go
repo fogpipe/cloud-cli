@@ -264,6 +264,19 @@ func runLogin(ctx context.Context, port int, account string) error {
 	if idToken == "" {
 		return fmt.Errorf("no id_token returned by %s", idp.Issuer)
 	}
+	// A context belongs to the identity that chose it. Signing in as someone
+	// else starts from no context at all, rather than inheriting an org and
+	// project another person picked — which reads as theirs and fails as
+	// theirs on every command (fogpipe/cloud-workspace#103).
+	if previous, err := loadToken(); err == nil && emailFromIDToken(previous.IDToken) != emailFromIDToken(idToken) {
+		if cfg, err := loadConfig(); err == nil && (cfg.CurrentOrg != "" || cfg.CurrentProject != "") {
+			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
+			if err := saveConfig(cfg); err != nil {
+				return fmt.Errorf("clear the previous identity's context: %w", err)
+			}
+			fmt.Println(mutedStyle.Render("  Signed in as a different identity; the previous context was cleared."))
+		}
+	}
 	if err := saveToken(&cachedToken{
 		Issuer:       idp.Issuer,
 		AccessToken:  tok.AccessToken,
