@@ -44,18 +44,33 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		}
 
 		identity := currentIdentity()
+		// Whether the identity can see the org the context names. A context
+		// that names an org the identity cannot reach renders like a working
+		// one and fails on every command; saying so here is the difference.
+		access := "unknown"
+		if identity != "" && org != "" {
+			access = "no"
+			if orgs, err := getClient().ListOrgs(context.Background()); err == nil && matchOrg(orgs, org) != nil {
+				access = "yes"
+			}
+		}
 
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(map[string]string{
-				"org":      org,
-				"project":  project,
-				"api_url":  apiURL,
-				"identity": identity,
+				"org":        org,
+				"project":    project,
+				"api_url":    apiURL,
+				"identity":   identity,
+				"org_access": access,
 			})
 		}
 
+		orgShown := orDefault(org, "(unset)")
+		if access == "no" {
+			orgShown = org + " " + mutedStyle.Render("(not visible to "+identity+" — run fpcloud switch)")
+		}
 		fmt.Println(renderInfoBox("Context", [][]string{
-			{"Organization", orDefault(org, "(unset)")},
+			{"Organization", orgShown},
 			{"Project", orDefault(project, "(unset)")},
 			{"API URL", apiURL},
 			{"Identity", orDefault(identity, "(unauthenticated)")},

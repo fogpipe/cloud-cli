@@ -235,11 +235,26 @@ func seedContext(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if cfg.CurrentOrg != "" && cfg.CurrentProject != "" {
-		return
-	}
 	hint := func() {
 		fmt.Println(mutedStyle.Render("  Set your context with:      fpcloud switch"))
+	}
+	// A saved context belongs to whoever saved it. Signing in as someone else
+	// must not inherit an org that identity cannot see: every command would
+	// then fail with a 403 that reads like a permissions problem, on a context
+	// the person never chose (fogpipe/cloud-workspace#103).
+	if cfg.CurrentOrg != "" {
+		orgs, err := getClient().ListOrgs(ctx)
+		if err != nil {
+			hint()
+			return
+		}
+		if matchOrg(orgs, cfg.CurrentOrg) == nil {
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("  The saved context (%s/%s) is not visible to this identity; choosing again.", cfg.CurrentOrg, orDefault(cfg.CurrentProject, "-"))))
+			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
+		}
+	}
+	if cfg.CurrentOrg != "" && cfg.CurrentProject != "" {
+		return
 	}
 	org, err := selectOrg(ctx, "")
 	if err != nil || org == nil {
