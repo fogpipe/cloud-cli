@@ -84,15 +84,20 @@ func TestResolveIdP_AsksTheControlPlane(t *testing.T) {
 	}
 }
 
-// An issuer that does not list offline_access is asked for a refresh token its
-// own way; one that lists it is asked through the standard scope and nothing
-// else.
-func TestRefreshOptions_FollowWhatTheIssuerSupports(t *testing.T) {
-	if opts := refreshOptions(&identityProvider{OfflineAccess: true}); len(opts) != 0 {
-		t.Errorf("an issuer with offline_access needs no extra options, got %d", len(opts))
+// Every login asks for the account picker — a session the browser already
+// holds must not decide who the CLI signs in as — and an issuer without
+// offline_access is asked for a refresh token its own way on top.
+func TestAuthOptions_AlwaysPickAnAccount(t *testing.T) {
+	url := func(idp *identityProvider) string {
+		return oauthConfig(idp, "http://127.0.0.1:1").AuthCodeURL("s", authOptions(idp)...)
 	}
-	if opts := refreshOptions(&identityProvider{OfflineAccess: false}); len(opts) == 0 {
-		t.Error("expected access_type=offline and a consent prompt for an issuer without offline_access")
+	with := url(&identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c", OfflineAccess: true})
+	if !strings.Contains(with, "prompt=select_account") || strings.Contains(with, "access_type") {
+		t.Errorf("offline_access issuer: %s", with)
+	}
+	without := url(&identityProvider{AuthURL: "https://id.example/authorize", ClientID: "c"})
+	if !strings.Contains(without, "select_account") || !strings.Contains(without, "consent") || !strings.Contains(without, "access_type=offline") {
+		t.Errorf("issuer without offline_access: %s", without)
 	}
 }
 

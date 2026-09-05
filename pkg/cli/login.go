@@ -123,14 +123,18 @@ func oauthConfig(idp *identityProvider, redirectURL string) *oauth2.Config {
 	}
 }
 
-// refreshOptions asks an issuer without offline_access for a refresh token its
-// own way. Google issues one only under access_type=offline, and only on a
-// consent prompt once the user has consented before.
-func refreshOptions(idp *identityProvider) []oauth2.AuthCodeOption {
+// authOptions are the extra authorize parameters a login sends. Every login
+// asks for the account picker: a browser that holds a session at the issuer
+// would otherwise be signed straight in as whoever that session is, which is
+// single sign-on working as designed and the wrong account whenever a person
+// holds more than one. An issuer without offline_access is also asked for a
+// refresh token its own way — Google issues one only under
+// access_type=offline with a consent prompt.
+func authOptions(idp *identityProvider) []oauth2.AuthCodeOption {
 	if idp.OfflineAccess {
-		return nil
+		return []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("prompt", "select_account")}
 	}
-	return []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")}
+	return []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent select_account")}
 }
 
 // cachedToken records the issuer beside the tokens, so a refresh is attempted
@@ -222,7 +226,7 @@ func runLogin(ctx context.Context, port int) error {
 	go srv.Serve(ln)
 	defer srv.Close()
 
-	authURL := conf.AuthCodeURL(state, append(refreshOptions(idp), oauth2.S256ChallengeOption(verifier))...)
+	authURL := conf.AuthCodeURL(state, append(authOptions(idp), oauth2.S256ChallengeOption(verifier))...)
 	fmt.Println("Opening your browser to sign in…")
 	fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
 	_ = openBrowser(authURL)
