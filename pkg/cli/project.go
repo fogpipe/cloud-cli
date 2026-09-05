@@ -500,9 +500,16 @@ func pickProject(projects []*client.Project) (string, error) {
 		return pickProjectFzf(fzf, projects)
 	}
 
+	width := 0
+	for _, p := range projects {
+		if len(p.Name) > width {
+			width = len(p.Name)
+		}
+	}
 	options := make([]huh.Option[string], len(projects))
 	for i, p := range projects {
-		label := p.Name
+		// Padded to the longest name so the second column lines up.
+		label := fmt.Sprintf("%-*s", width, p.Name)
 		if p.IsPlatform {
 			label += " 🔒"
 		}
@@ -525,14 +532,22 @@ func pickProject(projects []*client.Project) (string, error) {
 }
 
 func pickProjectFzf(fzf string, projects []*client.Project) (string, error) {
+	width := 0
+	for _, p := range projects {
+		if len(p.Name) > width {
+			width = len(p.Name)
+		}
+	}
 	var input strings.Builder
 	for _, p := range projects {
-		// "<name>\t<egress>" — the name is the first tab-delimited field.
+		// "<name>\t<egress>" — the name is the first tab-delimited field, padded
+		// to the longest so the tab lands in one column: fzf renders a tab as a
+		// tab, and a short name would otherwise stop at the previous tab stop.
 		eg := egressLabel(p.Egress)
 		if p.IsPlatform {
 			eg += " 🔒"
 		}
-		fmt.Fprintf(&input, "%s\t%s\n", p.Name, eg)
+		fmt.Fprintf(&input, "%-*s\t%s\n", width, p.Name, eg)
 	}
 
 	cmd := exec.Command(fzf,

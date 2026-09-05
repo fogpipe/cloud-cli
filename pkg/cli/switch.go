@@ -173,9 +173,15 @@ func pickOrg(orgs []*client.Organization) (*client.Organization, error) {
 		return pickOrgFzf(fzf, orgs)
 	}
 
+	width := 0
+	for _, o := range orgs {
+		if len(o.ShortID) > width {
+			width = len(o.ShortID)
+		}
+	}
 	options := make([]huh.Option[string], len(orgs))
 	for i, o := range orgs {
-		options[i] = huh.NewOption(o.ShortID+"  "+mutedStyle.Render(o.DisplayName), o.ShortID)
+		options[i] = huh.NewOption(fmt.Sprintf("%-*s  %s", width, o.ShortID, mutedStyle.Render(o.DisplayName)), o.ShortID)
 	}
 	var selected string
 	if err := huh.NewSelect[string]().
@@ -192,10 +198,17 @@ func pickOrg(orgs []*client.Organization) (*client.Organization, error) {
 }
 
 func pickOrgFzf(fzf string, orgs []*client.Organization) (*client.Organization, error) {
+	width := 0
+	for _, o := range orgs {
+		if len(o.ShortID) > width {
+			width = len(o.ShortID)
+		}
+	}
 	var input strings.Builder
 	for _, o := range orgs {
-		// "<short-id>\t<display-name>" — the id is the first tab-delimited field.
-		fmt.Fprintf(&input, "%s\t%s\n", o.ShortID, o.DisplayName)
+		// "<short-id>\t<display-name>" — the id is the first tab-delimited field,
+		// padded to the longest so the tab lands in one column.
+		fmt.Fprintf(&input, "%-*s\t%s\n", width, o.ShortID, o.DisplayName)
 	}
 
 	cmd := exec.Command(fzf,
