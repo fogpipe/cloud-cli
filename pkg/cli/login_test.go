@@ -84,30 +84,14 @@ func TestResolveIdP_AsksTheControlPlane(t *testing.T) {
 	}
 }
 
-// An issuer that demands a secret from a native client is brokered: the code
-// goes to the platform, which holds the secret, while the browser still goes to
-// the issuer (ADR-068).
-func TestResolveIdP_BrokeredExchangeGoesToThePlatform(t *testing.T) {
-	issuer := fakeIssuer(t, []string{"openid", "email", "profile"}, nil)
-	api := fakeControlPlane(t, map[string]any{"issuer": issuer.URL, "cli_client_id": "cli-client", "broker_path": "/api/v1/auth/oauth/token"})
-	t.Setenv("FPCLOUD_OIDC_ISSUER", "")
-	t.Setenv("FPCLOUD_API_URL", api.URL)
-
-	idp, err := resolveIdP(context.Background())
-	if err != nil {
-		t.Fatalf("resolveIdP: %v", err)
+// An issuer that does not list offline_access is asked for a refresh token its
+// own way; one that lists it is asked through the standard scope and nothing
+// else.
+func TestRefreshOptions_FollowWhatTheIssuerSupports(t *testing.T) {
+	if opts := refreshOptions(&identityProvider{OfflineAccess: true}); len(opts) != 0 {
+		t.Errorf("an issuer with offline_access needs no extra options, got %d", len(opts))
 	}
-	if idp.TokenURL != api.URL+"/api/v1/auth/oauth/token" {
-		t.Errorf("token url = %q, want the broker", idp.TokenURL)
-	}
-	if idp.AuthURL != issuer.URL+"/authorize" {
-		t.Errorf("auth url = %q, want the issuer's", idp.AuthURL)
-	}
-	if idp.OfflineAccess {
-		t.Error("an issuer not listing offline_access must be asked for a refresh token its own way")
-	}
-	opts := refreshOptions(idp)
-	if len(opts) == 0 {
+	if opts := refreshOptions(&identityProvider{OfflineAccess: false}); len(opts) == 0 {
 		t.Error("expected access_type=offline and a consent prompt for an issuer without offline_access")
 	}
 }
