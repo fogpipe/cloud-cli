@@ -146,15 +146,16 @@ func renderInfoBox(title string, pairs [][]string) string {
 
 	var lines []string
 	lines = append(lines, header)
-	lines = append(lines, "")
 	for _, pair := range pairs {
 		lines = append(lines, renderKeyValue(pair[0], pair[1]))
 	}
 
+	// Tight: one space inside the border and no blank rows. A box that is
+	// mostly air reads as a dialog, and this is a table.
 	box := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colorPrimary).
-		Padding(1, 2)
+		Padding(0, 1)
 
 	return box.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
