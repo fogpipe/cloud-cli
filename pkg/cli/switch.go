@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var switchCmd = &cobra.Command{
@@ -64,7 +65,7 @@ To move one axis alone, use ` + "`fpcloud org switch`" + ` or ` + "`fpcloud proj
 			fmt.Println(mutedStyle.Render("Aborted."))
 			return nil
 		}
-		cfg.CurrentProject = project
+		cfg.CurrentProject = projectName(project)
 
 		if err := saveConfig(cfg); err != nil {
 			return err
@@ -103,27 +104,43 @@ func selectOrg(ctx context.Context, ref string) (*client.Organization, error) {
 // selectProject resolves the project under org, asking when ref is empty.
 // ok is false only when the user cancelled the picker — an org with no projects
 // answers "" and true, since empty is the right context there.
-func selectProject(ctx context.Context, org *client.Organization, ref string) (name string, ok bool, err error) {
+func selectProject(ctx context.Context, org *client.Organization, ref string) (project *client.Project, ok bool, err error) {
 	projects, err := getClient().ListProjectsInOrg(ctx, org.ID)
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	if ref != "" {
 		for _, p := range projects {
 			if p.Name == ref {
-				return p.Name, true, nil
+				return p, true, nil
 			}
 		}
-		return "", false, fmt.Errorf("no project %q in organization %q; run 'fpcloud project list'", ref, org.ShortID)
+		return nil, false, fmt.Errorf("no project %q in organization %q; run 'fpcloud project list'", ref, org.ShortID)
 	}
 	switch len(projects) {
 	case 0:
-		return "", true, nil
+		return nil, true, nil
 	case 1:
-		return projects[0].Name, true, nil
+		return projects[0], true, nil
 	}
 	picked, err := pickProject(projects)
-	return picked, picked != "" && err == nil, err
+	if err != nil || picked == "" {
+		return nil, false, err
+	}
+	for _, p := range projects {
+		if p.Name == picked {
+			return p, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+// projectName is the name of a project that may be absent.
+func projectName(p *client.Project) string {
+	if p == nil {
+		return ""
+	}
+	return p.Name
 }
 
 // matchOrg finds the org a reference names — its uuid, its frozen short id, or
@@ -149,16 +166,45 @@ func applyOrg(cfg *Config, org *client.Organization) {
 }
 
 // printContext reports the pair a switch settled on.
-func printContext(org *client.Organization, project string) {
+func printContext(org *client.Organization, project *client.Project) {
 	fmt.Println(successBox.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-			fmt.Sprintf(" Switched to %s/%s.", org.ShortID, orDefault(project, "(no project)")),
+			fmt.Sprintf(" Switched to %s/%s.", org.ShortID, orDefault(projectName(project), "(no project)")),
 	))
-	if project == "" {
+	if project == nil {
 		fmt.Println(mutedStyle.Render(
 			fmt.Sprintf("Organization %q has no projects; run 'fpcloud project create <name>'.", org.ShortID),
 		))
+		return
 	}
+	followKubeNamespace(org, project)
+}
+
+// followKubeNamespace points the org-wide kubectl context, if the kubeconfig
+// holds one, at the project just switched to. The org context reaches every
+// namespace the org owns and is current in none, so kubectl against it lands
+// in "default" and is refused; the project the person just chose is the
+// namespace they mean. Nothing else in the kubeconfig is touched, the current
+// context included, and a kubeconfig without the org context is left alone.
+func followKubeNamespace(org *client.Organization, project *client.Project) {
+	if project.Namespace == "" {
+		return
+	}
+	po := clientcmd.NewDefaultPathOptions()
+	kube, err := po.GetStartingConfig()
+	if err != nil {
+		return
+	}
+	name := "fpcloud-" + org.ShortID
+	kctx, ok := kube.Contexts[name]
+	if !ok || kctx.Namespace == project.Namespace {
+		return
+	}
+	kctx.Namespace = project.Namespace
+	if err := clientcmd.ModifyConfig(po, *kube, true); err != nil {
+		return
+	}
+	fmt.Println(mutedStyle.Render(fmt.Sprintf("  kubectl context %q now defaults to namespace %s", name, project.Namespace)))
 }
 
 // pickOrg prompts the user to choose an organization, returning nil if
@@ -294,7 +340,7 @@ func seedContext(ctx context.Context) {
 		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Organization %s; pick a project with:  fpcloud switch", org.ShortID)))
 		return
 	}
-	cfg.CurrentProject = project
+	cfg.CurrentProject = projectName(project)
 	if err := saveConfig(cfg); err != nil {
 		hint()
 		return
