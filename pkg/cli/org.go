@@ -170,7 +170,7 @@ var orgAddUserCmd = &cobra.Command{
 }
 
 var orgSetRoleCmd = &cobra.Command{
-	Use:   "set-role <user-id>",
+	Use:   "set-role <user-id|email>",
 	Short: "Change a member's role",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -199,8 +199,8 @@ var orgSetRoleCmd = &cobra.Command{
 }
 
 var orgRemoveCmd = &cobra.Command{
-	Use:   "remove <user-id>",
-	Short: "Remove a member from the organization",
+	Use:   "remove <user-id|email>",
+	Short: "Remove a member, or take back an invitation nobody has redeemed yet",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		orgID, err := resolveOrgID(cmd)
