@@ -251,6 +251,12 @@ func seedContext(ctx context.Context) {
 		if matchOrg(orgs, cfg.CurrentOrg) == nil {
 			fmt.Println(mutedStyle.Render(fmt.Sprintf("  You are not a member of the saved context's org (%s); choosing again.", cfg.CurrentOrg)))
 			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
+			// Written now, not after a choice: a picker the person leaves must
+			// leave no context behind, never the stale one.
+			if err := saveConfig(cfg); err != nil {
+				hint()
+				return
+			}
 		}
 	}
 	if cfg.CurrentOrg != "" && cfg.CurrentProject != "" {
