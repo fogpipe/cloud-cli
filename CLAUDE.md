@@ -31,11 +31,16 @@ Two `pkg/client` methods still reach an operator route — `UpdateOrgFKE` and
 attributes call. They are the open end of this rule, not a precedent
 (`fogpipe/cloud-workspace#121`); nothing new joins them.
 
-No credential belongs in this binary, and none is in it. The Google client
-secret the token exchange needs lives on the platform, which brokers the
-exchange at `/api/v1/auth/oauth/token`; `oidcClientSecret` is only ever set for
-a non-Google client, from the environment. Don't reintroduce a build-time
-injection — it is what stopped this from being buildable from source.
+No credential belongs in this binary, and none is in it — not even an issuer
+or a client id. `fpcloud login` asks the control plane where humans sign in
+(`GET /api/v1/auth/config`, ADR-132 §5), discovers that issuer's endpoints, and
+runs a public PKCE login; an issuer that demands a secret from a native client
+answers with a `broker_path`, and the platform holds the secret and exchanges
+the code (ADR-068). `FPCLOUD_OIDC_ISSUER` + `FPCLOUD_OIDC_CLIENT_ID` (and
+`FPCLOUD_OIDC_CLIENT_SECRET` for a confidential one) override it for developing
+against another issuer. The token cache records its issuer, and a refresh is
+refused against any other. Don't reintroduce a build-time injection — it is
+what stopped this from being buildable from source.
 
 Read rather than contributed to: there is no contribution process, and issues
 here are not a support channel.

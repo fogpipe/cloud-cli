@@ -19,9 +19,9 @@ var authCmd = &cobra.Command{
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Log in with Google (gcloud-style), or --api-key for a static key",
+	Short: "Log in in the browser (gcloud-style), or --api-key for a static key",
 	Long: "Log in to fpcloud.\n\n" +
-		"With no flags this runs the Google browser login (like `gcloud auth login`);\n" +
+		"With no flags this signs you in through the browser (like `gcloud auth login`);\n" +
 		"that identity authenticates both the API and kubectl, so no separate key is\n" +
 		"needed. Pass --api-key for a static key (CI / service accounts).",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,14 +75,14 @@ var authStatusCmd = &cobra.Command{
 	Short: "Show current authentication status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Resolve the credential the same way getClient() does: a static API key
-		// if set, otherwise the Google OIDC token from `fpcloud auth login`.
+		// if set, otherwise the OIDC token from `fpcloud auth login`.
 		apiURL := resolveAPIURL()
 		cred := cmd.Flag("api-key").Value.String()
 		credType := "API key"
 		if cred == "" {
 			if token, err := currentIDToken(); err == nil {
 				cred = token
-				credType = "Google login"
+				credType = "browser login"
 			}
 		}
 
@@ -170,7 +170,7 @@ var authLogoutCmd = &cobra.Command{
 	Short: "Remove saved credentials (API key and browser session)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Both credentials, because there are two. Clearing only the API key left
-		// the cached Google refresh token in place, and getClient falls through to
+		// the cached refresh token in place, and getClient falls through to
 		// it — so the session kept working with full access after the user was told
 		// their credentials were removed (#568). On a shared machine that is the
 		// difference between logging out and believing you have.

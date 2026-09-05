@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,33 +23,13 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-// The CLI's default OIDC client is a Google **Desktop-app** client (#392). Its client
-// id is public and committed here; the client secret is never in this binary at all.
-// Google requires it in the token exchange even with PKCE (confirmed: a secretless
-// exchange is rejected with "client_secret is missing"), and a native app cannot keep
-// one — so the platform holds it and the exchange is brokered through
-// /api/v1/auth/oauth/token instead. That is what makes a plain `go build` of this repo
-// a CLI that can actually log in, which is what nixpkgs and Homebrew core require.
-// Setting FPCLOUD_OIDC_CLIENT_ID switches to a different client entirely — e.g. a
-// self-hosted IdP (ADR-022), whose FPCLOUD_OIDC_CLIENT_SECRET may be empty (public/PKCE);
-// that path talks to the issuer directly and never touches the broker.
-var (
-	oidcClientID     = "597394613214-a44p2lq2md2728dmfbtedolau3sn2d18.apps.googleusercontent.com"
-	oidcClientSecret = "" // only ever set for a non-Google client, via FPCLOUD_OIDC_CLIENT_SECRET
-	// OIDC endpoints default to Google; override per-issuer via ldflags or the
-	// FPCLOUD_OIDC_* env vars. FPCLOUD_OIDC_ISSUER triggers .well-known discovery,
-	// while FPCLOUD_OIDC_AUTH_URL / FPCLOUD_OIDC_TOKEN_URL set the endpoints directly.
-	oidcIssuer   = ""
-	oidcAuthURL  = "https://accounts.google.com/o/oauth2/v2/auth"
-	oidcTokenURL = "https://oauth2.googleapis.com/token"
-)
-
 // listenLoopback binds the OAuth callback listener and returns it with the
 // redirect URI naming the port it actually got. port 0 takes an ephemeral one:
 // the loopback redirect is built from the bound address rather than agreed in
 // advance, so nothing has to be free before login starts and two logins can run
-// side by side. Google's desktop-app client accepts any loopback port, which is
-// what makes that legal; --port pins one for an IdP that registers an exact URI.
+// side by side. The platform registers the CLI as a native client whose
+// loopback redirect matches on path alone, which is what makes that legal;
+// --port pins one for an IdP that registers an exact URI.
 //
 // 127.0.0.1 rather than localhost, on both sides: a listener on the name binds
 // whichever family resolves first, and a browser that picks the other one gets
@@ -61,115 +42,107 @@ func listenLoopback(port int) (net.Listener, string, error) {
 	return ln, "http://" + ln.Addr().String(), nil
 }
 
-func resolveOIDCClient() (string, string, error) {
-	// The committed Google Desktop client is the default (public, no secret —
-	// PKCE-only). Setting FPCLOUD_OIDC_CLIENT_ID switches to a different client
-	// entirely (e.g. a self-hosted IdP, ADR-022); its secret comes from
-	// FPCLOUD_OIDC_CLIENT_SECRET (empty = public client, PKCE-only — no secret sent).
-	id, secret := oidcClientID, oidcClientSecret
-	if envID := os.Getenv("FPCLOUD_OIDC_CLIENT_ID"); envID != "" {
-		id, secret = envID, os.Getenv("FPCLOUD_OIDC_CLIENT_SECRET")
-	}
-	if id == "" {
-		return "", "", fmt.Errorf("fpcloud has no OIDC client id; set FPCLOUD_OIDC_CLIENT_ID (plus FPCLOUD_OIDC_CLIENT_SECRET for a confidential/Google client)")
-	}
-	return id, secret, nil
+// identityProvider is where this CLI signs people in: an issuer, the client the
+// platform registered for the CLI, and the endpoints discovered from the issuer.
+// This binary carries none of it (ADR-132 §5) — the control plane says where
+// humans sign in through GET /api/v1/auth/config, the way it already says where
+// the cluster is, so a from-source build logs in with nothing configured and a
+// control plane someone else runs needs no environment on any machine.
+//
+// FPCLOUD_OIDC_ISSUER with FPCLOUD_OIDC_CLIENT_ID (and FPCLOUD_OIDC_CLIENT_SECRET
+// for a confidential client) point at another issuer instead, for developing
+// against one the control plane does not know yet.
+type identityProvider struct {
+	Issuer       string
+	AuthURL      string
+	TokenURL     string
+	ClientID     string
+	ClientSecret string
+	// OfflineAccess reports whether the issuer grants a refresh token through
+	// the standard offline_access scope. One that does not (Google) is asked
+	// its own way, with access_type=offline and a consent prompt.
+	OfflineAccess bool
 }
 
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-// resolveEndpoints determines the OAuth authorization/token endpoints. Precedence:
-// explicit FPCLOUD_OIDC_AUTH_URL / FPCLOUD_OIDC_TOKEN_URL win; otherwise an issuer
-// (FPCLOUD_OIDC_ISSUER or the ldflags-baked oidcIssuer) is resolved via OIDC
-// discovery (<issuer>/.well-known/openid-configuration); otherwise the baked
-// defaults (Google) are used.
-func resolveEndpoints(ctx context.Context) (oauth2.Endpoint, error) {
-	authURL := envOr("FPCLOUD_OIDC_AUTH_URL", oidcAuthURL)
-	tokenURL := envOr("FPCLOUD_OIDC_TOKEN_URL", oidcTokenURL)
-
-	if issuer := envOr("FPCLOUD_OIDC_ISSUER", oidcIssuer); issuer != "" {
-		provider, err := oidc.NewProvider(ctx, issuer)
+// resolveIdP finds the identity provider and discovers its endpoints.
+func resolveIdP(ctx context.Context) (*identityProvider, error) {
+	idp := &identityProvider{}
+	if issuer := os.Getenv("FPCLOUD_OIDC_ISSUER"); issuer != "" {
+		idp.Issuer = issuer
+		idp.ClientID = os.Getenv("FPCLOUD_OIDC_CLIENT_ID")
+		idp.ClientSecret = os.Getenv("FPCLOUD_OIDC_CLIENT_SECRET")
+		if idp.ClientID == "" {
+			return nil, fmt.Errorf("FPCLOUD_OIDC_ISSUER is set without FPCLOUD_OIDC_CLIENT_ID")
+		}
+	} else {
+		apiURL := resolveAPIURL()
+		cfg, err := newClient(apiURL, "").AuthConfig(ctx)
 		if err != nil {
-			return oauth2.Endpoint{}, fmt.Errorf("discover oidc issuer %q: %w", issuer, err)
+			return nil, fmt.Errorf("ask %s where to sign in: %w", apiURL, err)
 		}
-		ep := provider.Endpoint()
-		// An explicit endpoint env var still overrides discovery.
-		if os.Getenv("FPCLOUD_OIDC_AUTH_URL") != "" {
-			ep.AuthURL = authURL
+		idp.Issuer = cfg.Issuer
+		idp.ClientID = cfg.CLIClientID
+		if cfg.BrokerPath != "" {
+			// The issuer demands a secret from a native client, so the platform
+			// holds it and exchanges the code on the CLI's behalf (ADR-068).
+			idp.TokenURL = strings.TrimSuffix(apiURL, "/") + cfg.BrokerPath
 		}
-		if os.Getenv("FPCLOUD_OIDC_TOKEN_URL") != "" {
-			ep.TokenURL = tokenURL
-		}
-		return ep, nil
 	}
-	return oauth2.Endpoint{AuthURL: authURL, TokenURL: tokenURL}, nil
+	provider, err := oidc.NewProvider(ctx, idp.Issuer)
+	if err != nil {
+		return nil, fmt.Errorf("discover identity provider %s: %w", idp.Issuer, err)
+	}
+	ep := provider.Endpoint()
+	idp.AuthURL = ep.AuthURL
+	if idp.TokenURL == "" {
+		idp.TokenURL = ep.TokenURL
+	}
+	var meta struct {
+		ScopesSupported []string `json:"scopes_supported"`
+	}
+	if err := provider.Claims(&meta); err == nil {
+		idp.OfflineAccess = slices.Contains(meta.ScopesSupported, oidc.ScopeOfflineAccess)
+	}
+	return idp, nil
 }
-
-// usingGoogleDefaults reports whether login is pointed at the baked-in Google
-// endpoints — i.e. no issuer and no endpoint override is configured, and the
-// default auth URL is still Google's. It lets the UX say "Google" only when
-// that's actually true, and stay generic for a self-hosted issuer (ADR-022).
-func usingGoogleDefaults() bool {
-	if envOr("FPCLOUD_OIDC_ISSUER", oidcIssuer) != "" {
-		return false
-	}
-	if os.Getenv("FPCLOUD_OIDC_AUTH_URL") != "" || os.Getenv("FPCLOUD_OIDC_TOKEN_URL") != "" {
-		return false
-	}
-	return strings.Contains(oidcAuthURL, "accounts.google.com")
-}
-
-// idpName is a human label for the configured identity provider, so login
-// messages don't say "Google" when pointed at a self-hosted IdP.
-func idpName() string {
-	if usingGoogleDefaults() {
-		return "Google"
-	}
-	return "your identity provider"
-}
-
-// brokerTokenPath is where the platform exchanges codes and refresh tokens on
-// the CLI's behalf, holding the Google client secret this binary does not.
-const brokerTokenPath = "/api/v1/auth/oauth/token"
 
 // oauthConfig builds the OAuth client. redirectURL names the loopback callback
 // this login is listening on; a refresh grant sends no redirect_uri and passes "".
-func oauthConfig(ctx context.Context, redirectURL string) (*oauth2.Config, error) {
-	id, secret, err := resolveOIDCClient()
-	if err != nil {
-		return nil, err
-	}
-	endpoint, err := resolveEndpoints(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// Only the default Google client is brokered. A self-hosted issuer is either
-	// public (PKCE, no secret to hold) or configured with its own secret here, and
-	// in both cases talking to it directly is correct — routing it through our
-	// platform would put a third party in the middle of someone else's login.
-	if usingGoogleDefaults() && os.Getenv("FPCLOUD_OIDC_CLIENT_ID") == "" {
-		endpoint.TokenURL = strings.TrimSuffix(resolveAPIURL(), "/") + brokerTokenPath
-	}
-	if secret == "" {
+func oauthConfig(idp *identityProvider, redirectURL string) *oauth2.Config {
+	endpoint := oauth2.Endpoint{AuthURL: idp.AuthURL, TokenURL: idp.TokenURL}
+	if idp.ClientSecret == "" {
 		// Public client: send client_id in the request body and don't attempt HTTP
 		// Basic auth with an empty secret. PKCE (S256) secures the code exchange.
 		endpoint.AuthStyle = oauth2.AuthStyleInParams
 	}
+	scopes := []string{oidc.ScopeOpenID, "email", "profile"}
+	if idp.OfflineAccess {
+		scopes = append(scopes, oidc.ScopeOfflineAccess)
+	}
 	return &oauth2.Config{
-		ClientID:     id,
-		ClientSecret: secret,
+		ClientID:     idp.ClientID,
+		ClientSecret: idp.ClientSecret,
 		Endpoint:     endpoint,
 		RedirectURL:  redirectURL,
-		Scopes:       []string{"openid", "email", "profile"},
-	}, nil
+		Scopes:       scopes,
+	}
 }
 
+// refreshOptions asks an issuer without offline_access for a refresh token its
+// own way. Google issues one only under access_type=offline, and only on a
+// consent prompt once the user has consented before.
+func refreshOptions(idp *identityProvider) []oauth2.AuthCodeOption {
+	if idp.OfflineAccess {
+		return nil
+	}
+	return []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")}
+}
+
+// cachedToken records the issuer beside the tokens, so a refresh is attempted
+// only against the issuer that minted them: a session from one identity
+// provider is not carried into another.
 type cachedToken struct {
+	Issuer       string    `json:"issuer"`
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	IDToken      string    `json:"id_token"`
@@ -223,10 +196,11 @@ func runLogin(ctx context.Context, port int) error {
 	}
 	defer ln.Close()
 
-	conf, err := oauthConfig(ctx, redirectURL)
+	idp, err := resolveIdP(ctx)
 	if err != nil {
 		return err
 	}
+	conf := oauthConfig(idp, redirectURL)
 	verifier := oauth2.GenerateVerifier()
 	state, err := randomString()
 	if err != nil {
@@ -253,12 +227,8 @@ func runLogin(ctx context.Context, port int) error {
 	go srv.Serve(ln)
 	defer srv.Close()
 
-	authURL := conf.AuthCodeURL(state,
-		oauth2.AccessTypeOffline,
-		oauth2.S256ChallengeOption(verifier),
-		oauth2.SetAuthURLParam("prompt", "consent"),
-	)
-	fmt.Printf("Opening your browser to sign in with %s…\n", idpName())
+	authURL := conf.AuthCodeURL(state, append(refreshOptions(idp), oauth2.S256ChallengeOption(verifier))...)
+	fmt.Println("Opening your browser to sign in…")
 	fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
 	_ = openBrowser(authURL)
 
@@ -277,9 +247,10 @@ func runLogin(ctx context.Context, port int) error {
 	}
 	idToken, _ := tok.Extra("id_token").(string)
 	if idToken == "" {
-		return fmt.Errorf("no id_token returned by %s", idpName())
+		return fmt.Errorf("no id_token returned by %s", idp.Issuer)
 	}
 	if err := saveToken(&cachedToken{
+		Issuer:       idp.Issuer,
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
 		IDToken:      idToken,
@@ -294,10 +265,10 @@ func runLogin(ctx context.Context, port int) error {
 	return nil
 }
 
-// currentIDToken returns a valid Google OIDC ID token, transparently
-// refreshing it from the cached refresh token when it's near expiry. The
-// cluster trusts Google OIDC, so this token doubles as the bearer credential
-// for direct k8s API calls (see registry.go).
+// currentIDToken returns a valid OIDC ID token, transparently refreshing it
+// from the cached refresh token when it's near expiry. It is the bearer
+// credential for the control plane and, through the registry broker, the
+// registry (see registry.go).
 func currentIDToken() (string, error) {
 	t, err := loadToken()
 	if err != nil {
@@ -307,12 +278,15 @@ func currentIDToken() (string, error) {
 	exp := idTokenExpiry(idToken)
 	if idToken == "" || time.Now().After(exp.Add(-60*time.Second)) {
 		ctx := context.Background()
-		// A refresh grant carries no redirect_uri — there is no callback to come back to.
-		conf, err := oauthConfig(ctx, "")
+		idp, err := resolveIdP(ctx)
 		if err != nil {
 			return "", err
 		}
-		src := conf.TokenSource(ctx, &oauth2.Token{
+		if t.Issuer != idp.Issuer {
+			return "", fmt.Errorf("your session is from %s, not from %s — run `fpcloud login`", firstNonEmpty(t.Issuer, "an earlier identity provider"), idp.Issuer)
+		}
+		// A refresh grant carries no redirect_uri — there is no callback to come back to.
+		src := oauthConfig(idp, "").TokenSource(ctx, &oauth2.Token{
 			RefreshToken: t.RefreshToken,
 			Expiry:       time.Now().Add(-time.Hour),
 		})
@@ -323,12 +297,17 @@ func currentIDToken() (string, error) {
 		if nid, _ := newTok.Extra("id_token").(string); nid != "" {
 			idToken = nid
 		}
-		_ = saveToken(&cachedToken{
+		// An issuer that rotates refresh tokens invalidates the old one on use,
+		// so a save that fails is the next command failing to refresh.
+		if err := saveToken(&cachedToken{
+			Issuer:       t.Issuer,
 			AccessToken:  newTok.AccessToken,
 			RefreshToken: firstNonEmpty(newTok.RefreshToken, t.RefreshToken),
 			IDToken:      idToken,
 			Expiry:       newTok.Expiry,
-		})
+		}); err != nil {
+			return "", fmt.Errorf("save refreshed session: %w", err)
+		}
 	}
 	return idToken, nil
 }
@@ -359,7 +338,7 @@ var getTokenCmd = &cobra.Command{
 // than embedded constants, so the binary is cluster-agnostic; execArgs is the
 // exec-plugin argv that mints the bearer token (e.g. {"fke","get-token",
 // "--project","myproj"} for a scoped tenant token, or {"get-token"} for the operator
-// Google-ID-token cluster-admin path).
+// ID-token cluster-admin path).
 type kubeconfigEntry struct {
 	context   string
 	server    string

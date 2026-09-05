@@ -109,7 +109,7 @@ func resolveAPIURL() string {
 // the Terraform provider uses so one variable means one thing whichever binary
 // reads it: an explicit --api-key, then FPCLOUD_API_KEY (what OIDC federation
 // mints in CI, and what the registry path has always honoured), then the key
-// stored in config.yaml, then the Google OIDC token from `fpcloud auth login`
+// stored in config.yaml, then the OIDC token from `fpcloud auth login`
 // — the same identity kubectl uses, so interactive use needs no separate key
 // (gcloud-style). Returns "" when nothing authenticates the caller.
 func resolveAPIKey() string {

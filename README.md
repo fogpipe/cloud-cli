@@ -82,9 +82,11 @@ go test ./...
 ```
 
 A binary you build yourself is the same one we release — nothing is injected at
-release time. Google requires a client secret in the OAuth token exchange even
-under PKCE, and a native app cannot keep one, so the platform holds it and
-brokers the exchange; `fpcloud login` works from a plain `go build`.
+release time. The CLI carries no identity provider and no client: it asks the
+control plane where humans sign in (`GET /api/v1/auth/config`) and runs a
+public PKCE login against that, so `fpcloud login` works from a plain
+`go build`. `FPCLOUD_OIDC_ISSUER` and `FPCLOUD_OIDC_CLIENT_ID` point it at
+another issuer while developing against one.
 
 The API this speaks to is published: `openapi.yaml`, `/docs` and `/llms.txt` on
 your platform host.

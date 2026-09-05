@@ -85,7 +85,7 @@ healthy if it also says that everything was looked at.`,
 // run starts blank — could never say what changed between two of them, which is
 // the only thing a watcher is actually looking for.
 //
-// The client is rebuilt every poll rather than captured once. A Google ID token
+// The client is rebuilt every poll rather than captured once. An ID token
 // lasts about an hour, so a watch held open longer than that used to fail with
 // "invalid or expired credentials" and then stay failed forever: the expired
 // token was pinned in memory, and even logging in again — which writes a fresh

@@ -6,8 +6,8 @@
 #     swap `src = ./.` for a fetchFromGitHub pinned to the release tag).
 #
 # Built from source, not repackaged from a release asset: nixpkgs asks for that
-# wherever the source allows it, and here it does — the CLI holds no Google
-# client secret, because the token exchange is brokered by the platform
+# wherever the source allows it, and here it does — the CLI holds no identity
+# provider and no client secret; it asks the control plane where to sign in
 # (pkg/cli/login.go). A binary drop would also have made this unfree-adjacent for
 # no reason; the source is Apache-2.0.
 {

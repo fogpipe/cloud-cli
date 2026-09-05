@@ -30,7 +30,7 @@ func isDockerCredentialHelper(argv0 string) bool {
 // runDockerCredentialHelper implements the Docker credential-helper protocol
 // (github.com/docker/docker-credential-helpers) so `docker push/pull` against the
 // fpcloud registry present a fresh credential — the caller's own fpcloud identity
-// (auto-refreshed Google ID token, or FPCLOUD_API_KEY), which the token broker
+// (auto-refreshed ID token, or FPCLOUD_API_KEY), which the token broker
 // exchanges for a scoped registry token — with no static `docker login`. It is
 // invoked when fpcloud runs as docker-credential-fpcloud, bypassing cobra so stdout
 // carries only protocol JSON. Returns the process exit code.
@@ -143,7 +143,7 @@ var authConfigureDockerCmd = &cobra.Command{
 	Use:   "configure-docker [REGISTRY...]",
 	Short: "Register fpcloud as a Docker credential helper for the fpcloud registry",
 	Long: "Configure Docker to authenticate to the fpcloud container registry using your\n" +
-		"Google login (gcloud-style). Adds a `credHelpers` entry to ~/.docker/config.json\n" +
+		"browser login (gcloud-style). Adds a `credHelpers` entry to ~/.docker/config.json\n" +
 		"so `docker push`/`pull` fetch a fresh password automatically — no `docker login`,\n" +
 		"no static password on disk.\n\n" +
 		"Defaults to " + registryHost + "; pass extra hosts to configure them too.",
