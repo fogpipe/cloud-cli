@@ -261,6 +261,22 @@ func (c *Client) FKECredentials(ctx context.Context, projectID string) (*Cluster
 	return &creds, nil
 }
 
+// OrgFKECredentials fetches the cluster connection facts for a kubeconfig
+// context spanning every project namespace the organization owns (GET
+// /orgs/{id}/fke/credentials). The context carries no default namespace: the
+// identity reaches all of the org's namespaces and none is the one.
+func (c *Client) OrgFKECredentials(ctx context.Context, orgID string) (*ClusterCredentials, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/fke/credentials", nil)
+	if err != nil {
+		return nil, err
+	}
+	var creds ClusterCredentials
+	if err := c.do(httpReq, &creds); err != nil {
+		return nil, err
+	}
+	return &creds, nil
+}
+
 // ClusterInfo fetches the project-independent cluster connection facts (apiserver
 // URL + CA) for assembling a cluster-admin kubeconfig — the staff FKE path, which
 // is not project-scoped.
@@ -281,6 +297,22 @@ func (c *Client) ClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 // calls this transparently.
 func (c *Client) FKEToken(ctx context.Context, projectID string) (*ClusterToken, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/fke/token", nil)
+	if err != nil {
+		return nil, err
+	}
+	var tok ClusterToken
+	if err := c.do(httpReq, &tok); err != nil {
+		return nil, err
+	}
+	return &tok, nil
+}
+
+// OrgFKEToken mints a short-lived Kubernetes token bound to the organization's
+// ServiceAccount (POST /orgs/{id}/fke/token), which every project namespace the
+// org owns binds to its tenant Role. kubectl's exec plugin calls this
+// transparently.
+func (c *Client) OrgFKEToken(ctx context.Context, orgID string) (*ClusterToken, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/fke/token", nil)
 	if err != nil {
 		return nil, err
 	}

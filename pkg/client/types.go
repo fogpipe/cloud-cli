@@ -1454,9 +1454,11 @@ func (e *APIError) Is(target error) bool {
 }
 
 // ClusterCredentials is the cluster connection facts for assembling a kubeconfig
-// context (GET /projects/{id}/fke/credentials). Server + CertificateAuthorityData
-// are cluster-global; Context/Namespace are per-project. The bearer token is
-// minted separately by the exec plugin (FKEToken).
+// context (GET /projects/{id}/fke/credentials, GET /orgs/{id}/fke/credentials).
+// Server + CertificateAuthorityData are cluster-global; Context names the
+// project or the org. Namespace is the project's, and empty for an org-wide
+// context, which reaches every namespace the org owns and defaults to none. The
+// bearer token is minted separately by the exec plugin (FKEToken, OrgFKEToken).
 type ClusterCredentials struct {
 	Server                   string `json:"server"`
 	CertificateAuthorityData string `json:"certificate_authority_data"`
@@ -1464,8 +1466,9 @@ type ClusterCredentials struct {
 	Namespace                string `json:"namespace"`
 }
 
-// ClusterToken is a short-lived, namespace-scoped Kubernetes token bound to the
-// project's ServiceAccount (POST /projects/{id}/fke/token).
+// ClusterToken is a short-lived Kubernetes token bound to the project's or the
+// organization's ServiceAccount (POST /projects/{id}/fke/token, POST
+// /orgs/{id}/fke/token).
 type ClusterToken struct {
 	Token               string `json:"token"`
 	ExpirationTimestamp string `json:"expiration_timestamp"`

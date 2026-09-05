@@ -78,3 +78,32 @@ func TestFKEToken(t *testing.T) {
 	assert.Equal(t, "abc", tok.Token)
 	assert.Equal(t, "2026-07-17T00:00:00Z", tok.ExpirationTimestamp)
 }
+
+func TestOrgFKECredentials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/orgs/fp/fke/credentials", r.URL.Path)
+		assert.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"server":"https://k8s:6443","certificate_authority_data":"Zm9v","context":"fpcloud-fp","namespace":""}`))
+	}))
+	defer server.Close()
+
+	creds, err := New(server.URL, "k").OrgFKECredentials(context.Background(), "fp")
+	require.NoError(t, err)
+	assert.Equal(t, "fpcloud-fp", creds.Context)
+	assert.Empty(t, creds.Namespace, "an org-wide context defaults to no namespace")
+}
+
+func TestOrgFKEToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/orgs/fp/fke/token", r.URL.Path)
+		assert.Equal(t, http.MethodPost, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"abc","expiration_timestamp":"2026-07-17T00:00:00Z"}`))
+	}))
+	defer server.Close()
+
+	tok, err := New(server.URL, "k").OrgFKEToken(context.Background(), "fp")
+	require.NoError(t, err)
+	assert.Equal(t, "abc", tok.Token)
+}
