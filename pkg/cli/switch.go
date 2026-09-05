@@ -268,9 +268,17 @@ func seedContext(ctx context.Context) {
 		return
 	}
 	applyOrg(cfg, org)
+	// The org is known the moment it is chosen — for most people without a
+	// question, since they belong to one — so it is written now. A project
+	// picker the person leaves then leaves the org set and only the project
+	// open, instead of throwing both away.
+	if err := saveConfig(cfg); err != nil {
+		hint()
+		return
+	}
 	project, ok, err := selectProject(ctx, org, "")
 	if err != nil || !ok {
-		hint()
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Organization %s; pick a project with:  fpcloud switch", org.ShortID)))
 		return
 	}
 	cfg.CurrentProject = project
