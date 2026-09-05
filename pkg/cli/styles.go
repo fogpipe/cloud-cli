@@ -145,13 +145,14 @@ func renderInfoBox(title string, pairs [][]string) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
 
 	var lines []string
-	lines = append(lines, header)
+	lines = append(lines, header, "")
 	for _, pair := range pairs {
 		lines = append(lines, renderKeyValue(pair[0], pair[1]))
 	}
 
-	// Tight: one space inside the border and no blank rows. A box that is
-	// mostly air reads as a dialog, and this is a table.
+	// Tight: one space inside the border, and one blank row under the title
+	// to set it apart from the rows. A box that is mostly air reads as a
+	// dialog, and this is a table.
 	box := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colorPrimary).
