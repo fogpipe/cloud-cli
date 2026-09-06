@@ -492,8 +492,6 @@ func tlsLabel(status string) string {
 	switch status {
 	case "issued":
 		return lipgloss.NewStyle().Foreground(colorSuccess).Render("issued")
-	case "failed":
-		return lipgloss.NewStyle().Foreground(colorDanger).Render("failed")
 	case "":
 		return mutedStyle.Render("—")
 	default:
