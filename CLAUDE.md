@@ -40,6 +40,19 @@ against another issuer. The token cache records its issuer, and a refresh is
 refused against any other. Don't reintroduce a build-time injection — it is
 what stopped this from being buildable from source.
 
+Authentication has two verbs and both are at the root (`fogpipe/cloud-workspace#360`):
+`fpcloud login` (the browser, or `--api-key` to store a static key after the
+API has accepted it) and `fpcloud logout` (both credentials, because there are
+two). There is no `auth` group — `auth login` was the same command, `auth
+status` said what `fpcloud context` says, and `auth configure-docker` is
+`fpcloud registry login`, which installs the Docker credential helper rather
+than running a `docker login` that expires with the token an hour later.
+`registry get-login-password` stays as the plumbing for a job with no binary
+on PATH for Docker to exec. Top-level rather than gcloud's `auth login` because
+every issued kubeconfig already calls top-level `fpcloud get-token`, the docs
+already say `fpcloud login`, and fly, gh, vercel, heroku and render all do the
+same. No aliases: a deleted spelling is deleted.
+
 Read rather than contributed to: there is no contribution process, and issues
 here are not a support channel.
 
