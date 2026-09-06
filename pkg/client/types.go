@@ -1055,6 +1055,14 @@ type Organization struct {
 	MaxObjects         int64  `json:"max_objects"`
 	MaxRegistryStorage string `json:"max_registry_storage"`
 
+	// UsedRegistryBytes is what the org's projects were last measured to hold
+	// in the registry, beside the ceiling it is refused against (ADR-128,
+	// fogpipe/cloud-workspace#284). RegistryMeasuredAt is when; zero means no
+	// project of the org has ever been measured, which is not the same as
+	// holding nothing.
+	UsedRegistryBytes  int64     `json:"used_registry_bytes"`
+	RegistryMeasuredAt time.Time `json:"registry_measured_at,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -1775,12 +1783,24 @@ type ProjectStatus struct {
 	Domains   []DomainStatus   `json:"domains"`
 	Buckets   []BucketStatus   `json:"buckets"`
 	Runners   []RunnerStatus   `json:"runners"`
+	// Registry is what THIS project holds in the registry, as last measured —
+	// the project's own share of the org-wide used_registry_bytes above
+	// (fogpipe/cloud-workspace#284). Nil when the project has never been
+	// measured, which is not the same as holding nothing.
+	Registry *RegistryStatus `json:"registry,omitempty"`
 
 	// Unchecked names the checks that could not be run. A report carrying these
 	// is incomplete, not clean — never render it as healthy.
 	Unchecked []UncheckedStatus `json:"unchecked,omitempty"`
 
 	ObservedAt time.Time `json:"observed_at"`
+}
+
+// RegistryStatus is a project's registry storage as the metering pass last
+// read it: the number its org is bounded and billed by (ADR-128).
+type RegistryStatus struct {
+	Bytes      int64     `json:"bytes"`
+	MeasuredAt time.Time `json:"measured_at"`
 }
 
 // StatusProject is the project itself and the ceiling its namespace is held to.

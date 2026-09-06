@@ -368,8 +368,17 @@ func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 
 // RegistryRepository is one image repository visible to a project, with the
 // <org_short_id>/<project>/ prefix stripped for display.
+//
+// Bytes is the repository's deduplicated stored size as the registry reports
+// it right now — the same reading metering sums into the project's registry
+// usage and the org ceiling refuses a push against (ADR-128), so what a tenant
+// sees is what they are bounded and billed by (fogpipe/cloud-workspace#284).
+// Nil when the registry could not size this repository; Error says why. An
+// unsized repository is not a zero-sized one.
 type RegistryRepository struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Bytes *int64 `json:"bytes"`
+	Error string `json:"error,omitempty"`
 }
 
 // RegistryTagList is the set of image tags for one repository.

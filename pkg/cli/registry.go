@@ -122,11 +122,16 @@ var registryReposListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// The size is what the registry holds for the repository right now,
+		// deduplicated — the reading the org's registry ceiling is refused
+		// against (ADR-128), so a tenant told to delete images can see which
+		// (fogpipe/cloud-workspace#284). A repository the registry could not
+		// size says so rather than reading as empty.
 		rows := make([][]string, len(repos))
 		for i, r := range repos {
-			rows[i] = []string{r.Name}
+			rows[i] = []string{r.Name, repoSize(r)}
 		}
-		render([]string{"REPOSITORY"}, rows, repos)
+		render([]string{"REPOSITORY", "SIZE"}, rows, repos)
 		return nil
 	},
 }
@@ -441,4 +446,11 @@ func init() {
 		registryReposCmd, registryTagsCmd, registryRetentionCmd, registryVisibilityCmd,
 	)
 	rootCmd.AddCommand(registryCmd)
+}
+
+func repoSize(r client.RegistryRepository) string {
+	if r.Bytes == nil {
+		return mutedStyle.Render("? (" + firstNonEmpty(r.Error, "not sized") + ")")
+	}
+	return humanizeSize(*r.Bytes)
 }

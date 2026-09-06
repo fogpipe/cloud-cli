@@ -247,6 +247,12 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 	if ceiling := renderCeiling(s.Project); ceiling != "" {
 		meta = append(meta, ceiling)
 	}
+	// The project's own share of the org's registry spend, so a tenant told to
+	// delete images knows whether it is this project holding them
+	// (fogpipe/cloud-workspace#284). Absent when never measured.
+	if s.Registry != nil {
+		meta = append(meta, "this project holds "+humanizeSize(s.Registry.Bytes)+" of images (measured "+humanAge(s.Registry.MeasuredAt)+" ago)")
+	}
 	b.WriteString(header + "  " + mutedStyle.Render(strings.Join(meta, "   ")) + "\n")
 	if !s.ObservedAt.IsZero() {
 		b.WriteString(mutedStyle.Render("observed "+s.ObservedAt.Local().Format("15:04:05")) + "\n")
