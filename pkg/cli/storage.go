@@ -723,6 +723,52 @@ var storageKeysListCmd = &cobra.Command{
 	},
 }
 
+var storageKeysUpdateCmd = &cobra.Command{
+	Use:   "update <bucket> <access-key-id>",
+	Short: "Change a scoped key's read/write/owner grants in place",
+	Long: `Change what a scoped S3 key may do without rotating it.
+
+Revoke-and-recreate was the only way to change a key's grants, and it hands out
+a new secret every consumer holding the old one has to be given
+(fogpipe/cloud-workspace#337). This keeps the access key id and the secret and
+changes only the grants. Every grant is stated, not merged: a flag left out is
+a grant taken away.`,
+	Example: "  fpcloud storage keys update assets GKKEY123 --read --write\n  fpcloud storage keys update assets GKKEY123 --read",
+	Args:    cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		read, _ := cmd.Flags().GetBool("read")
+		write, _ := cmd.Flags().GetBool("write")
+		owner, _ := cmd.Flags().GetBool("owner")
+		if !read && !write && !owner {
+			return fmt.Errorf("state at least one grant (--read, --write, --owner); to remove every grant, delete the key")
+		}
+
+		c := getClient()
+		bucketID, err := resolveBucketID(c, args[0])
+		if err != nil {
+			return err
+		}
+		key, err := c.UpdateBucketKeyPermissions(context.Background(), bucketID, args[1], client.UpdateBucketKeyPermissionsRequest{
+			Read: read, Write: write, Owner: owner,
+		})
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(key)
+		}
+		fmt.Println(renderInfoBox("Access Key Updated", [][]string{
+			{"Access Key", key.AccessKeyID},
+			{"Name", dashIfEmpty(key.Name)},
+			{"Read", yesNo(key.CanRead)},
+			{"Write", yesNo(key.CanWrite)},
+			{"Owner", yesNo(key.CanOwner)},
+			{"", mutedStyle.Render("The secret is unchanged; nothing holding this key needs a new one.")},
+		}))
+		return nil
+	},
+}
+
 var storageKeysDeleteCmd = &cobra.Command{
 	Use:   "delete <bucket> <access-key-id>",
 	Short: "Revoke a scoped access key",
@@ -905,7 +951,10 @@ func init() {
 		storageBucketUnbindCmd,
 		storageBucketBindingsCmd,
 	)
-	storageKeysCmd.AddCommand(storageKeysCreateCmd, storageKeysListCmd, storageKeysDeleteCmd)
+	storageKeysUpdateCmd.Flags().Bool("read", false, "Grant read (GetObject/ListBucket)")
+	storageKeysUpdateCmd.Flags().Bool("write", false, "Grant write (PutObject/DeleteObject)")
+	storageKeysUpdateCmd.Flags().Bool("owner", false, "Grant owner (bucket-level operations)")
+	storageKeysCmd.AddCommand(storageKeysCreateCmd, storageKeysListCmd, storageKeysUpdateCmd, storageKeysDeleteCmd)
 	storageCmd.AddCommand(storageBucketCmd, storageKeysCmd)
 	rootCmd.AddCommand(storageCmd)
 }
