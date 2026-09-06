@@ -465,6 +465,11 @@ type LogsRequest struct {
 	Since      string
 	Until      string
 	Timestamps bool
+	// Prefix names the replica that printed each line, and Pod narrows the
+	// read to one replica: every read merges every replica, so these are how a
+	// tenant tells which of them printed what.
+	Prefix bool
+	Pod    string
 }
 
 // TrafficTarget represents a traffic routing target.

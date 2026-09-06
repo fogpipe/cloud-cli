@@ -329,6 +329,7 @@ func TestClientGetAppLogs_Query(t *testing.T) {
 		{"window", LogsRequest{Since: "24h", Until: "1h"}, "since=24h&until=1h"},
 		{"absolute window", LogsRequest{Since: "2026-08-20T00:00:00Z"}, "since=2026-08-20T00%3A00%3A00Z"},
 		{"timestamps", LogsRequest{Timestamps: true}, "timestamps=true"},
+		{"one replica, named", LogsRequest{Pod: "web-7c9-abc", Prefix: true}, "pod=web-7c9-abc&prefix=true"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

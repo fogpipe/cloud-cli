@@ -1319,6 +1319,12 @@ func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsRequest) (io
 	if req.Timestamps {
 		q.Set("timestamps", "true")
 	}
+	if req.Prefix {
+		q.Set("prefix", "true")
+	}
+	if req.Pod != "" {
+		q.Set("pod", req.Pod)
+	}
 	path := "/api/v1/apps/" + id + "/logs"
 	if len(q) > 0 {
 		path += "?" + q.Encode()

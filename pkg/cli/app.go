@@ -1751,10 +1751,16 @@ timeline.
   fpcloud app logs web --since 24h
   fpcloud app logs web --since 2h --until 1h --timestamps
   fpcloud app logs web --follow --since 10m
+  fpcloud app logs web --prefix
+  fpcloud app logs web --pod web-7c9d8b6f5-x2k4q
 
 --follow replays the window, then keeps printing. A restart is a gap in the
 output rather than the end of it. --until has no meaning while following and is
-refused.`,
+refused.
+
+Replicas are merged, so --prefix names the replica in front of each line and
+--pod reads one replica alone — the way to tell which of several is the one
+misbehaving. The names to pass --pod are what --prefix prints.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
@@ -1762,6 +1768,8 @@ refused.`,
 		since, _ := cmd.Flags().GetString("since")
 		until, _ := cmd.Flags().GetString("until")
 		timestamps, _ := cmd.Flags().GetBool("timestamps")
+		prefix, _ := cmd.Flags().GetBool("prefix")
+		pod, _ := cmd.Flags().GetString("pod")
 
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
@@ -1774,6 +1782,7 @@ refused.`,
 		}
 		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
+			Prefix: prefix, Pod: pod,
 		})
 		if err != nil {
 			return err
@@ -1901,6 +1910,8 @@ func init() {
 	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
 	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now). Not valid with --follow")
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
+	appLogsCmd.Flags().Bool("prefix", false, "Prefix each line with the replica that printed it")
+	appLogsCmd.Flags().String("pod", "", "Read one replica's lines only, by the name --prefix prints")
 
 	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
 	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas (serverless mode)")
