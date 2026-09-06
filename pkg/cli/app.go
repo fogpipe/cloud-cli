@@ -1129,7 +1129,7 @@ var appUpdateCmd = &cobra.Command{
   --display-name  Change the app's cosmetic display name. The frozen name (which
                   names the k8s objects and the URL) is untouched — no redeploy.
   --slug          Set the vanity URL slug so the app is reachable at
-                  <slug>.app.<platform-domain>. Pass --slug "" to clear it back to
+                  <slug>.<tenant-domain>. Pass --slug "" to clear it back to
                   the derived host. Reconciles the Ingress; always-on apps only.
   --mode          Switch between hosting modes. 'always-on' is an always-on
                   Deployment; 'serverless' is a scale-to-zero Knative Service. The
@@ -1856,7 +1856,7 @@ func init() {
 	appCreateCmd.Flags().StringArray("secret", nil, "Set a secret config value on the new app: KEY=VALUE (repeatable). Stored encrypted and hidden from `config list`")
 	appCreateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; repeat for exec form)")
 	appCreateCmd.Flags().String("display-name", "", "Cosmetic display name (defaults to the app name); mutable later via `app update --display-name`")
-	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.app.<platform-domain> instead of the derived host (always-on apps; globally unique)")
+	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.<tenant-domain> instead of the derived host (always-on apps; globally unique)")
 	appCreateCmd.Flags().StringArray("mount", nil, "Mount a ConfigMap/Secret/emptyDir (repeatable), e.g. --mount configmap:my-config:/etc/app[:sub-path] or --mount emptydir::/tmp")
 	appCreateCmd.Flags().Int64("run-as-user", -1, "Run the container as this UID (hardening; -1 = image default)")
 	appCreateCmd.Flags().Int64("run-as-group", -1, "Run the container as this GID (hardening; -1 = image default)")
@@ -1911,7 +1911,7 @@ func init() {
 	appRollbackCmd.Flags().BoolP("yes", "y", false, "Roll back without confirming when the rollback crosses a release command")
 
 	appUpdateCmd.Flags().String("display-name", "", "New cosmetic display name (the frozen app name is unchanged)")
-	appUpdateCmd.Flags().String("slug", "", "Set the vanity URL slug (<slug>.app.<platform-domain>); pass --slug \"\" to clear it back to the derived host (always-on apps)")
+	appUpdateCmd.Flags().String("slug", "", "Set the vanity URL slug (<slug>.<tenant-domain>); pass --slug \"\" to clear it back to the derived host (always-on apps)")
 	appUpdateCmd.Flags().String("database", "", "Database this app's DATABASE_URL points at (name or id); pass --database \"\" to clear it back to the project's sole database")
 	appUpdateCmd.Flags().String("mode", "", "New hosting mode: 'always-on' or 'serverless'")
 	appUpdateCmd.Flags().String("storage", "", "Grow the persistent volume to this size (e.g. 100Gi). Grow-only, always-on mode")

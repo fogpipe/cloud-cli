@@ -1152,7 +1152,7 @@ func (c *Client) SetAppSecurityContext(ctx context.Context, id string, sc *Secur
 
 // UpdateAppURLSlug sets or clears an app's optional vanity host override (ADR-040).
 // An empty slug clears it, reverting the host to the derived label; a non-empty slug
-// makes the app reachable at <slug>.app.<platform_domain>. Always-on mode only.
+// makes the app reachable at <slug>.<tenant domain>. Always-on mode only.
 func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/apps/"+id, UpdateAppRequest{URLSlug: &slug})
 	if err != nil {
