@@ -9,14 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// `auth logout` has to remove BOTH credentials, because there are two.
+// `logout` has to remove BOTH credentials, because there are two.
 //
 // It used to clear only `api_key` from config.yaml and print "Credentials
 // removed". The cached Google refresh token stayed on disk, and getClient falls
 // through to it — so the session kept working with full access after the user
 // had been told their credentials were gone. On a shared or borrowed machine
 // that is the difference between logging out and believing you have (#568).
-func TestAuthLogout_RemovesBothCredentials(t *testing.T) {
+func TestLogout_RemovesBothCredentials(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("FPCLOUD_STATE_DIR", dir)
 	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
@@ -24,7 +24,7 @@ func TestAuthLogout_RemovesBothCredentials(t *testing.T) {
 	require.NoError(t, saveConfig(&Config{APIKey: "fp-key-abc"}))
 	require.NoError(t, os.WriteFile(tokenCachePath(), []byte(`{"id_token":"x","refresh_token":"y"}`), 0o600))
 
-	require.NoError(t, authLogoutCmd.RunE(authLogoutCmd, nil))
+	require.NoError(t, logoutCmd.RunE(logoutCmd, nil))
 
 	cfg, err := loadConfig()
 	require.NoError(t, err)
@@ -37,16 +37,16 @@ func TestAuthLogout_RemovesBothCredentials(t *testing.T) {
 // Logging out twice is not an error, and neither is logging out having never
 // logged in — the command reports what it cleared rather than claiming a removal
 // that did not happen.
-func TestAuthLogout_IsIdempotent(t *testing.T) {
+func TestLogout_IsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("FPCLOUD_STATE_DIR", dir)
 	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
 
-	assert.NoError(t, authLogoutCmd.RunE(authLogoutCmd, nil))
+	assert.NoError(t, logoutCmd.RunE(logoutCmd, nil))
 
 	require.NoError(t, saveConfig(&Config{APIKey: "fp-key-abc"}))
-	assert.NoError(t, authLogoutCmd.RunE(authLogoutCmd, nil))
-	assert.NoError(t, authLogoutCmd.RunE(authLogoutCmd, nil))
+	assert.NoError(t, logoutCmd.RunE(logoutCmd, nil))
+	assert.NoError(t, logoutCmd.RunE(logoutCmd, nil))
 
 	assert.NoFileExists(t, filepath.Join(dir, "oidc-token.json"))
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,7 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 	"k8s.io/client-go/tools/clientcmd"
@@ -193,14 +196,104 @@ func loadToken() (*cachedToken, error) {
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Log in via OIDC (authentication only; kubectl access is `fpcloud fke get-credentials`)",
+	Short: "Log in in the browser, or --api-key for a static key",
+	Long: "Log in to fpcloud.\n\n" +
+		"With no flags this signs you in through the browser; that identity authenticates\n" +
+		"the API, the registry and kubectl (`fpcloud fke get-credentials`), so no separate\n" +
+		"key is needed. Pass --api-key to store a static key instead (CI, service accounts).",
+	Example: "  fpcloud login\n  fpcloud login --api-key fp-...",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --api-key is the global flag, whose default is the key already stored
+		// in config.yaml — so only a key given on THIS command line means "store
+		// this one"; the stored default would otherwise make every plain
+		// `fpcloud login` re-verify the old key instead of opening the browser.
+		if flag := cmd.Flag("api-key"); flag.Changed {
+			return storeAPIKey(context.Background(), flag.Value.String())
+		}
 		port, err := cmd.Flags().GetInt("port")
 		if err != nil {
 			return err
 		}
 		account, _ := cmd.Flags().GetString("account")
 		return runLogin(context.Background(), port, account)
+	},
+}
+
+// storeAPIKey verifies a static key against the API and, only then, saves it.
+//
+// Verify BEFORE writing. Saving first meant a rejected key had already replaced
+// a working one by the time it was checked, and the failure was reported as
+// "saved (server may be unreachable)" with exit 0 — so the user was told their
+// credentials were fine, had lost the ones that were, and was pointed at the
+// network instead of the key (#568).
+func storeAPIKey(ctx context.Context, apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("--api-key is empty")
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	apiURL := resolveAPIURL()
+	me, err := newClient(apiURL, apiKey).GetMe(ctx)
+	if err != nil {
+		// A rejected key and an unreachable server are different answers and
+		// need different next steps; the old code folded them into one.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) {
+			return fmt.Errorf("the API rejected this key (%s) — nothing was changed, your existing credentials are untouched", apiErr.Error())
+		}
+		return fmt.Errorf("could not reach %s to verify the key (%w) — nothing was changed; retry when the API is reachable", apiURL, err)
+	}
+	cfg.APIKey = apiKey
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+	fmt.Println(successBox.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+			fmt.Sprintf(" Logged in as %s (%s)", me.User.Name, me.User.Email),
+	))
+	return nil
+}
+
+var logoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Remove saved credentials (API key and browser session)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Both credentials, because there are two. Clearing only the API key left
+		// the cached refresh token in place, and getClient falls through to
+		// it — so the session kept working with full access after the user was told
+		// their credentials were removed (#568). On a shared machine that is the
+		// difference between logging out and believing you have.
+		var cleared []string
+
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		if cfg.APIKey != "" {
+			cfg.APIKey = ""
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			cleared = append(cleared, "API key")
+		}
+
+		if err := os.Remove(tokenCachePath()); err == nil {
+			cleared = append(cleared, "browser session")
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("remove cached login token: %w", err)
+		}
+
+		if len(cleared) == 0 {
+			fmt.Println(mutedStyle.Render("Nothing to remove — no credentials were stored."))
+			return nil
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+				fmt.Sprintf(" Removed: %s.", strings.Join(cleared, " and ")),
+		))
+		return nil
 	},
 }
 
@@ -466,5 +559,5 @@ func parseJWTClaims(jwt string) map[string]any {
 func init() {
 	loginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
 	loginCmd.Flags().String("account", "", "Sign in as this login name without the account picker")
-	rootCmd.AddCommand(loginCmd, getTokenCmd)
+	rootCmd.AddCommand(loginCmd, logoutCmd, getTokenCmd)
 }

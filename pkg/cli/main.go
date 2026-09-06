@@ -148,8 +148,8 @@ func NewRootCommand() *cobra.Command { return rootCmd }
 
 // Execute runs the CLI. cmd/fpcloud is a thin main over this.
 func Execute() {
-	// When invoked as docker-credential-fpcloud (the symlink `fpcloud auth
-	// configure-docker` installs), act as a Docker credential helper and exit
+	// When invoked as docker-credential-fpcloud (the symlink `fpcloud registry
+	// login` installs), act as a Docker credential helper and exit
 	// before cobra so stdout carries only the protocol JSON.
 	if isDockerCredentialHelper(os.Args[0]) {
 		os.Exit(runDockerCredentialHelper(os.Args[1:]))

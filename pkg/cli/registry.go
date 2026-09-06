@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -59,18 +57,49 @@ var registryGetLoginPasswordCmd = &cobra.Command{
 }
 
 var registryLoginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Log Docker in to " + registryHost,
+	Use:   "login [REGISTRY...]",
+	Short: "Let Docker push to " + registryHost + " as you",
+	Long: "Configure Docker to authenticate to the fpcloud container registry with your\n" +
+		"fpcloud identity. Registers fpcloud as a Docker credential helper (a `credHelpers`\n" +
+		"entry in ~/.docker/config.json plus a `docker-credential-fpcloud` link beside the\n" +
+		"binary), so every `docker push`/`pull` fetches a fresh short-lived token — no\n" +
+		"`docker login`, no static password on disk, nothing that expires an hour later.\n\n" +
+		"Defaults to " + registryHost + "; pass extra hosts to configure them too.\n" +
+		"Where a helper cannot be installed (a CI job running the CLI with `go run`), pipe\n" +
+		"`fpcloud registry get-login-password` into `docker login --password-stdin` instead.",
+	Example: "  fpcloud registry login",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		username, password, err := fetchRegistryCreds()
+		hosts := args
+		if len(hosts) == 0 {
+			hosts = []string{registryHost}
+		}
+
+		link, linkErr := ensureDockerCredentialHelper()
+		cfgPath, err := addDockerCredHelpers(hosts)
 		if err != nil {
 			return err
 		}
-		docker := exec.Command("docker", "login", registryHost, "--username", username, "--password-stdin")
-		docker.Stdin = strings.NewReader(password)
-		docker.Stdout = os.Stdout
-		docker.Stderr = os.Stderr
-		return docker.Run()
+
+		ok := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓")
+		fmt.Println(ok + " Docker configured to use fpcloud for:")
+		for _, h := range hosts {
+			fmt.Println(mutedStyle.Render("    " + h))
+		}
+		fmt.Println(mutedStyle.Render("  Updated " + cfgPath))
+		if linkErr != nil {
+			exe, _ := os.Executable()
+			fmt.Println()
+			fmt.Println(lipgloss.NewStyle().Foreground(colorWarning).Render(
+				"  Could not install the docker-credential-fpcloud helper automatically:"))
+			fmt.Println(mutedStyle.Render("    " + linkErr.Error()))
+			fmt.Println(mutedStyle.Render("  Create it manually on your PATH (point it at the fpcloud binary), e.g.:"))
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("    ln -s %q ~/.local/bin/%s%s", exe, dockerCredHelperPrefix, dockerCredHelperName)))
+		} else {
+			fmt.Println(mutedStyle.Render("  Helper: " + link))
+		}
+		fmt.Println()
+		fmt.Println(mutedStyle.Render("  Now: docker push " + registryHost + "/<org>/<project>/<app>:<tag>"))
+		return nil
 	},
 }
 

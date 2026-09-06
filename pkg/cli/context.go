@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,7 +13,9 @@ var contextCmd = &cobra.Command{
 	Use:   "context",
 	Short: "Show the resolved CLI context (org, project, api-url, identity)",
 	Long: `Print the context the CLI resolves for commands: current organization,
-project, API URL, and logged-in identity.
+project, API URL, and logged-in identity — and, when signed in, which credential
+authenticates you (an API key or the browser login) and, for a browser login,
+the factors you sign in with.
 
 Values follow the usual precedence — an explicit --org/--project flag wins over
 the config file (which FPCLOUD_CONFIG_DIR, or FPCLOUD_STATE_DIR for the whole
@@ -55,12 +58,19 @@ or {identity} appears in --format, so prompt use stays fast.`,
 			}
 		}
 
+		credential, signIn := "", ""
+		if identity != "" {
+			credential, signIn = currentCredential()
+		}
+
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(map[string]string{
 				"org":        org,
 				"project":    project,
 				"api_url":    apiURL,
 				"identity":   identity,
+				"credential": credential,
+				"mfa":        signIn,
 				"org_access": access,
 			})
 		}
@@ -69,14 +79,40 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		if access == "no" {
 			orgShown = org + " " + mutedStyle.Render("("+identity+" is not a member; run fpcloud switch)")
 		}
-		fmt.Println(renderInfoBox("Context", [][]string{
+		rows := [][]string{
 			{"Organization", orgShown},
 			{"Project", orDefault(project, "(unset)")},
 			{"API URL", apiURL},
 			{"Identity", orDefault(identity, "(unauthenticated)")},
-		}))
+		}
+		if credential != "" {
+			rows = append(rows, []string{"Credential", credential})
+		}
+		if signIn != "" {
+			rows = append(rows, []string{"MFA", signIn})
+		}
+		fmt.Println(renderInfoBox("Context", rows))
 		return nil
 	},
+}
+
+// currentCredential names what authenticates the CLI right now — a static API
+// key, or the browser login — and, for a browser login, how the person signs
+// in at the identity provider. Only a browser login has factors; an API key is
+// the credential itself. A provider the platform cannot ask answers "", shown
+// as nothing rather than read as no second factor.
+func currentCredential() (credential, signIn string) {
+	if flag := rootCmd.Flag("api-key"); flag.Changed || os.Getenv("FPCLOUD_API_KEY") != "" || flag.Value.String() != "" {
+		return "API key", ""
+	}
+	credential = "browser login"
+	if sec, err := getClient().AuthSecurity(context.Background()); err == nil {
+		signIn = sec.MFA
+		if len(sec.Methods) > 0 {
+			signIn += " (" + strings.Join(sec.Methods, ", ") + ")"
+		}
+	}
+	return credential, signIn
 }
 
 // currentIdentity returns the logged-in user's email, or "" if the CLI is
