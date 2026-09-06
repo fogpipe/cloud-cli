@@ -108,8 +108,10 @@ var dbCreateCmd = &cobra.Command{
 			pairs = append(pairs, []string{"Address", addr})
 		}
 		if db.Password != "" {
-			// Shown once, at create: CNPG rotates the app role out of band, so this
-			// record's password goes stale and is never returned again.
+			// Issued once, at create, and it is the password Postgres has: the
+			// platform writes it where the cluster bootstraps from and keeps no
+			// copy (fogpipe/cloud-workspace#265). Later reads have it from
+			// `db connect`.
 			pairs = append(pairs, []string{"Username", db.Username})
 			pairs = append(pairs, []string{"Password", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(db.Password)})
 		}
@@ -184,7 +186,7 @@ var dbGetCmd = &cobra.Command{
 			{"Username", orDash(db.Username)},
 		}))
 		fmt.Println()
-		fmt.Println(mutedStyle.Render("  Credentials rotate; get a live connection with: fpcloud db connect " + db.Name))
+		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))
 		return nil
 	},
 }

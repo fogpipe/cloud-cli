@@ -575,9 +575,11 @@ type Database struct {
 	Plan        string `json:"plan"`
 	Status      string `json:"status"`
 	// Host/Port/Username are the database's address on the cluster network, as
-	// recorded at provisioning. Password is returned ONLY on create — CNPG owns
-	// the app role and rotates it out of band, so the live credential comes from
-	// the injected DATABASE_URL or `fpcloud db connect`, never from this record.
+	// recorded at provisioning. Password is returned ONLY on create (and on
+	// restore) and is the password the database has — the platform provisions
+	// it and keeps no copy (fogpipe/cloud-workspace#265), so a later read has
+	// none; the live credential is the injected DATABASE_URL or
+	// `fpcloud db connect`.
 	Host     string `json:"host"`
 	Port     int32  `json:"port"`
 	Username string `json:"username"`
