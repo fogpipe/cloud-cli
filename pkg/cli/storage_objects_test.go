@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -206,4 +208,34 @@ func TestListMetaMissingSource(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("expected an empty destination listing, got %d entries", len(got))
 	}
+}
+
+// An object key is an opaque string the bucket's writers chose, and `../` is
+// legal in one. Joined onto the target directory it cleaned to a path outside
+// it, which cp -r and sync wrote and sync --delete removed
+// (fogpipe/cloud-workspace#343).
+func TestLocalPathRefusesAKeyThatEscapesTheDirectory(t *testing.T) {
+	dir := t.TempDir()
+	for _, rel := range []string{"../victim", "a/../../victim", "..", "/etc/passwd", "a/b/../../../victim"} {
+		_, err := localPath(dir, rel)
+		assert.Error(t, err, rel)
+	}
+	for _, rel := range []string{"a.txt", "a/b.txt", "a/../b.txt", "..a/b", "a/.."} {
+		p, err := localPath(dir, rel)
+		require.NoError(t, err, rel)
+		assert.True(t, strings.HasPrefix(p, dir), "%s resolved to %s", rel, p)
+	}
+}
+
+func TestSyncDeleteOneStaysInsideTheDestination(t *testing.T) {
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("x"), 0o600))
+	dst := filepath.Join(outside, "dst")
+	require.NoError(t, os.Mkdir(dst, 0o755))
+
+	err := syncDeleteOne(context.Background(), nil, false, dst, "", "../victim", false)
+	assert.Error(t, err)
+	_, statErr := os.Stat(victim)
+	assert.NoError(t, statErr, "the file outside the destination must survive")
 }

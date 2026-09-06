@@ -658,6 +658,23 @@ func resolveDstKey(dstKey, srcName string) string {
 	return dstKey
 }
 
+// localPath is where a key-derived relative path lands under a local
+// directory, and refuses one that lands outside it. An object key is an opaque
+// string the bucket's writers chose, so `../../.ssh/authorized_keys` is a legal
+// key that Garage stores verbatim — and filepath.Join cleans, so it resolved to
+// exactly that file: written by cp -r and sync, removed by sync --delete, by
+// whoever next mirrored the bucket onto a workstation
+// (fogpipe/cloud-workspace#343). Refused rather than skipped: a key that cannot
+// be written is data the user asked for and would not get, and a mirror of that
+// bucket is not a thing this directory can be.
+func localPath(dir, rel string) (string, error) {
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("refusing object key %q: it resolves outside %s", rel, dir)
+	}
+	return filepath.Join(dir, clean), nil
+}
+
 // resolveDstPath picks the local destination for a single-file download: an
 // existing directory or trailing-slash target gets the key basename appended.
 func resolveDstPath(dst, key string) string {
@@ -830,7 +847,10 @@ func copyRemoteTreeThenMaybeDelete(ctx context.Context, srcR *remote, srcPrefix 
 				return err
 			}
 		} else {
-			outPath := filepath.Join(dstLocal, filepath.FromSlash(rel))
+			outPath, err := localPath(dstLocal, rel)
+			if err != nil {
+				return err
+			}
 			logTransfer(verb, "fps://"+srcR.bucket+"/"+key, outPath, dryrun)
 			if dryrun {
 				return nil
@@ -1138,27 +1158,28 @@ func listMeta(ctx context.Context, r *remote, isRemote bool, localArg, prefix st
 }
 
 func syncCopyOne(ctx context.Context, srcR *remote, srcRemote bool, srcArg, srcPrefix string, dstR *remote, dstRemote bool, dstArg, dstPrefix, rel string, dryrun bool, put putOpts) error {
-	srcDesc := filepath.Join(srcArg, filepath.FromSlash(rel))
+	srcKeyOrPath := filepath.Join(srcArg, filepath.FromSlash(rel))
+	srcDesc := srcKeyOrPath
 	if srcRemote {
-		srcDesc = "fps://" + srcR.bucket + "/" + joinKey(srcPrefix, rel)
+		srcKeyOrPath = joinKey(srcPrefix, rel)
+		srcDesc = "fps://" + srcR.bucket + "/" + srcKeyOrPath
 	}
-	dstDesc := filepath.Join(dstArg, filepath.FromSlash(rel))
+	dstKeyOrPath := joinKey(dstPrefix, rel)
+	dstDesc := ""
 	if dstRemote {
-		dstDesc = "fps://" + dstR.bucket + "/" + joinKey(dstPrefix, rel)
+		dstDesc = "fps://" + dstR.bucket + "/" + dstKeyOrPath
+	} else {
+		p, err := localPath(dstArg, rel)
+		if err != nil {
+			return err
+		}
+		dstKeyOrPath, dstDesc = p, p
 	}
 	if verbose() {
 		fmt.Printf("%scopy: %s -> %s\n", dryPrefix(dryrun), srcDesc, dstDesc)
 	}
 	if dryrun {
 		return nil
-	}
-	srcKeyOrPath := filepath.Join(srcArg, filepath.FromSlash(rel))
-	if srcRemote {
-		srcKeyOrPath = joinKey(srcPrefix, rel)
-	}
-	dstKeyOrPath := filepath.Join(dstArg, filepath.FromSlash(rel))
-	if dstRemote {
-		dstKeyOrPath = joinKey(dstPrefix, rel)
 	}
 	return copyOne(ctx, srcR, srcKeyOrPath, dstR, dstKeyOrPath, put)
 }
@@ -1175,7 +1196,10 @@ func syncDeleteOne(ctx context.Context, dstR *remote, dstRemote bool, dstArg, ds
 		_, err := dstR.cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &dstR.bucket, Key: &key})
 		return err
 	}
-	p := filepath.Join(dstArg, filepath.FromSlash(rel))
+	p, err := localPath(dstArg, rel)
+	if err != nil {
+		return err
+	}
 	if verbose() {
 		fmt.Printf("%sdelete: %s\n", dryPrefix(dryrun), p)
 	}
