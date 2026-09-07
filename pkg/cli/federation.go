@@ -153,8 +153,8 @@ func shortIssuer(issuer string) string {
 
 func init() {
 	federationGithubAddCmd.Flags().String("audience", "fpcloud", "OIDC audience the token must carry")
-	federationGithubAddCmd.Flags().String("subject", "", "Subject pattern to match (e.g. repo:owner/name:ref:refs/tags/*)")
-	federationGithubAddCmd.Flags().String("repo", "", "GitHub repo owner/name (shortcut to build --subject)")
+	federationGithubAddCmd.Flags().String("subject", "", "Subject pattern to match, e.g. repo:owner/name:ref:refs/tags/*; a pattern in that slug form matches GitHub's immutable form (repo:owner@OWNER-ID/name@REPO-ID:...) too, and one written with the ids matches only tokens carrying them")
+	federationGithubAddCmd.Flags().String("repo", "", "GitHub repo owner/name, or owner@OWNER-ID/name@REPO-ID to pin the ids (shortcut to build --subject)")
 	federationGithubAddCmd.Flags().String("ref", "", "Git ref to allow with --repo (e.g. refs/tags/*); omit to allow any ref")
 	federationGithubAddCmd.Flags().String("service-account", "", "Service account (email or id) the repo may assume")
 	federationGithubAddCmd.Flags().Int("ttl", 900, "Lifetime of minted tokens, in seconds")
