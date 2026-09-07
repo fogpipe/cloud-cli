@@ -2120,6 +2120,59 @@ func (c *Client) RestoreBackupDestination(ctx context.Context, dbID, object stri
 	return &run, nil
 }
 
+// ListDatabaseSubscriptions lists a managed database's subscriptions to
+// external sources, each carrying the health its own catalog reports (ADR-172).
+func (c *Client) ListDatabaseSubscriptions(ctx context.Context, dbID string) ([]DatabaseSubscription, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/databases/"+dbID+"/subscriptions", nil)
+	if err != nil {
+		return nil, err
+	}
+	var subs []DatabaseSubscription
+	if err := c.do(httpReq, &subs); err != nil {
+		return nil, err
+	}
+	return subs, nil
+}
+
+// GetDatabaseSubscription reads one subscription and its health.
+func (c *Client) GetDatabaseSubscription(ctx context.Context, dbID, name string) (*DatabaseSubscription, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/databases/"+dbID+"/subscriptions/"+name, nil)
+	if err != nil {
+		return nil, err
+	}
+	var sub DatabaseSubscription
+	if err := c.do(httpReq, &sub); err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+// CreateDatabaseSubscription declares a subscription. The source password
+// travels on this request and nowhere else; no read returns it.
+func (c *Client) CreateDatabaseSubscription(ctx context.Context, dbID string, req CreateDatabaseSubscriptionRequest) (*DatabaseSubscription, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+dbID+"/subscriptions", req)
+	if err != nil {
+		return nil, err
+	}
+	var sub DatabaseSubscription
+	if err := c.do(httpReq, &sub); err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+// DeleteDatabaseSubscription drops a subscription in Postgres and removes what
+// the platform emitted for it. The replication slot on the SOURCE is the
+// tenant's to account for: dropping a subscription the source cannot be reached
+// from leaves the slot behind, retaining WAL there forever.
+func (c *Client) DeleteDatabaseSubscription(ctx context.Context, dbID, name string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/databases/"+dbID+"/subscriptions/"+name, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
 // RestoreDatabase restores a database from a backup.
 func (c *Client) RestoreDatabase(ctx context.Context, dbID string, req RestoreRequest) (*Database, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+dbID+"/restore", req)

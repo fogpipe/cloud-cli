@@ -2232,3 +2232,91 @@ type RunnerStatus struct {
 	// has started; nil when the queue could not be read, which Message says.
 	WaitingJobs *int `json:"waiting_jobs,omitempty"`
 }
+
+// DatabaseSubscription is a managed database subscribing to a publication on
+// somebody else's Postgres — the near-zero-downtime way onto the platform
+// (ADR-172). Schema is not replicated, so the subscriber must already have the
+// tables: a migration is schema first, then this.
+type DatabaseSubscription struct {
+	Name        string `json:"name"`
+	DatabaseID  string `json:"database_id"`
+	Publication string `json:"publication"`
+	// PublicationDBName is the database the publication lives in on the source,
+	// when that is not the one the connection names.
+	PublicationDBName string                     `json:"publication_dbname,omitempty"`
+	Source            DatabaseSubscriptionSource `json:"source"`
+	Parameters        map[string]string          `json:"parameters,omitempty"`
+	// Applied is the operand's answer to one question and one only: did
+	// `CREATE SUBSCRIPTION` run. It stays true forever on a subscription that
+	// has since died, so it is never read as liveness — Health is.
+	Applied bool   `json:"applied"`
+	Message string `json:"message,omitempty"`
+	// Health is what the subscriber's own catalog says, which is the only
+	// place the answer exists.
+	Health    DatabaseSubscriptionHealth `json:"health"`
+	CreatedAt time.Time                  `json:"created_at"`
+}
+
+// DatabaseSubscriptionSource is where a subscription reads from. The password
+// is not here and never is: it is given once, on the request that declares the
+// subscription, and lives only in the Secret the platform writes for it.
+type DatabaseSubscriptionSource struct {
+	Host    string `json:"host"`
+	Port    int32  `json:"port"`
+	User    string `json:"user"`
+	DBName  string `json:"dbname"`
+	SSLMode string `json:"sslmode"`
+}
+
+// Subscription health states. State is always one of these and never empty — a
+// health field that can be absent is one a caller reads as healthy.
+const (
+	// SubscriptionReplicating: the apply worker is connected and running.
+	SubscriptionReplicating = "replicating"
+	// SubscriptionDown: the subscriber says it is not replicating, and Reason
+	// says which way — disabled, no worker, or gone from the catalog entirely.
+	SubscriptionDown = "down"
+	// SubscriptionUnknown: nobody could ask. Unreadable says why. This is not
+	// a synonym for down, and the difference is the whole point of reading
+	// health from Postgres rather than from the Kubernetes resource.
+	SubscriptionUnknown = "unknown"
+)
+
+// DatabaseSubscriptionHealth is read from `pg_stat_subscription` and
+// `pg_stat_subscription_stats` on the subscriber itself.
+type DatabaseSubscriptionHealth struct {
+	State string `json:"state"`
+	// Reason names why a subscription is down.
+	Reason string `json:"reason,omitempty"`
+	// Unreadable says why the platform could not ask, and is set only with
+	// state "unknown".
+	Unreadable string `json:"unreadable,omitempty"`
+	// ApplyLagBytes is WAL received from the source but not yet confirmed
+	// applied. Nil when the subscriber has no position to compare, which is
+	// not the same as zero lag.
+	ApplyLagBytes *int64     `json:"apply_lag_bytes,omitempty"`
+	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
+	ApplyErrors   *int64     `json:"apply_errors,omitempty"`
+	SyncErrors    *int64     `json:"sync_errors,omitempty"`
+}
+
+// CreateDatabaseSubscriptionRequest declares a subscription on a managed
+// database.
+//
+// Password is write-only: it is sent here, written into a Secret the platform
+// owns and names, and never returned by any read. The platform stores no copy.
+type CreateDatabaseSubscriptionRequest struct {
+	Name              string `json:"name"`
+	Publication       string `json:"publication"`
+	PublicationDBName string `json:"publication_dbname,omitempty"`
+	Host              string `json:"host"`
+	Port              int32  `json:"port,omitempty"`
+	User              string `json:"user"`
+	DBName            string `json:"dbname"`
+	SSLMode           string `json:"sslmode,omitempty"`
+	Password          string `json:"password"`
+	// Parameters are `CREATE SUBSCRIPTION … WITH (…)` options. The API
+	// allowlists them; anything outside the migration-relevant set is refused
+	// rather than passed through.
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
