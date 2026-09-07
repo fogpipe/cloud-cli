@@ -1412,8 +1412,6 @@ func init() {
 
 	storageCatCmd.Flags().String("range", "", "Byte range x-y (sends a Range header)")
 
-	storageDuCmd.Flags().BoolP("summarize", "s", false, "Print only the grand total")
-
 	storagePresignCmd.Flags().Int64("expires-in", 3600, "URL lifetime in seconds (max 604800)")
 
 	// Inject the parsed filter rules into each command's context so RunE can
