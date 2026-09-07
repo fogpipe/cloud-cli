@@ -1620,6 +1620,14 @@ type Runner struct {
 	// two numbers you can see.
 	Builder *RunnerBuilder `json:"builder,omitempty"`
 
+	// Services are the containers that run beside the runner for the life of
+	// each job pod, reachable on 127.0.0.1 (fogpipe/cloud-workspace#306). They
+	// are the platform's answer to a workflow's `services:` block, declared on
+	// the pool rather than in the workflow — a job's own `services:` still
+	// cannot work, because serving one needs a runner container mode the
+	// platform does not run (ADR-064).
+	Services []RunnerService `json:"services,omitempty"`
+
 	// Credential is which source the pool authenticates with: platform (the
 	// Fogpipe GitHub App), app (your own), or token.
 	Credential string `json:"credential"`
@@ -1795,6 +1803,9 @@ type CreateRunnerRequest struct {
 	// that builds nothing; an empty value takes the platform's defaults.
 	Builder *RunnerBuilder `json:"builder,omitempty"`
 
+	// Services are the containers every job in this pool gets beside it.
+	Services []RunnerService `json:"services,omitempty"`
+
 	// Credential defaults to "platform" — the Fogpipe GitHub App, installed in
 	// one click, with nothing else to supply.
 	Credential              string `json:"credential,omitempty"`
@@ -1834,6 +1845,47 @@ type UpdateRunnerRequest struct {
 	// --no-builder, and setting both is refused.
 	Builder   *RunnerBuilder `json:"builder,omitempty"`
 	NoBuilder bool           `json:"no_builder,omitempty"`
+
+	// Services replaces the pool's whole service set; an empty non-nil slice
+	// removes them all. Replace-in-full rather than per-service operations,
+	// because the caps are checked against the pod as a whole and a patch that
+	// can only add cannot express a change that has to shrink two containers at
+	// once — the same reasoning as Builder above.
+	Services *[]RunnerService `json:"services,omitempty"`
+}
+
+// RunnerService is a container that runs beside the runner for the life of a
+// job pod (fogpipe/cloud-workspace#306).
+//
+// It is declared on the POOL, not in the workflow, and that is the difference
+// worth understanding: GitHub serves a job's own `services:` block by running
+// the job in a container, which needs a runner container mode this platform
+// does not run (PodSecurity baseline rules out Docker-in-Docker, ADR-064). The
+// same capability at a different declaration site — one `postgres` beside every
+// job in the pool rather than one per workflow.
+//
+// Reachable on 127.0.0.1 from the job's steps, on whatever port the image
+// listens on; there is no port mapping to declare because there is no network
+// boundary between the containers of a pod.
+//
+// Env is stored and returned as written, and is NOT a secret store. A service
+// container exists for one job's lifetime and is reachable from nothing but
+// that pod, so what goes here configures a throwaway — which is also how
+// GitHub treats `services.*.env`, in plaintext in the repository. A credential
+// to anything that outlives the job does not belong here.
+type RunnerService struct {
+	// Name is the container's name in the pod: DNS-1123, unique within the
+	// pool. It names nothing on the network, since the containers share one.
+	Name  string            `json:"name"`
+	Image string            `json:"image"`
+	Env   map[string]string `json:"env,omitempty"`
+
+	// CPU and Memory bound this container alone, following the builder's rule
+	// (ADR-071): the service's appetite has nothing to do with the runner's, so
+	// one number cannot size both. A read always fills them in, so the pod's
+	// cost is a sum of numbers you can see.
+	CPU    string `json:"cpu,omitempty"`
+	Memory string `json:"memory,omitempty"`
 }
 
 // RunnerBuilder is the rootless image builder a pool runs alongside each job

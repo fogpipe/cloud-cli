@@ -110,6 +110,11 @@ var runnerCreateCmd = &cobra.Command{
 			return err
 		}
 
+		services, err := runnerServicesFromFlags(cmd)
+		if err != nil {
+			return err
+		}
+
 		req := client.CreateRunnerRequest{
 			Name:                    args[0],
 			DisplayName:             mustString(cmd, "display-name"),
@@ -119,6 +124,7 @@ var runnerCreateCmd = &cobra.Command{
 			CPU:                     mustString(cmd, "cpu"),
 			Memory:                  mustString(cmd, "memory"),
 			Builder:                 runnerBuilderFromFlags(cmd),
+			Services:                services,
 			Credential:              credential,
 			GitHubAppID:             appID,
 			GitHubAppInstallationID: installationID,
@@ -257,6 +263,18 @@ var runnerUpdateCmd = &cobra.Command{
 		// only come back under if one request carries both.
 		if err := setRunnerBuilder(c, id, cmd, &req); err != nil {
 			return err
+		}
+		// Replace-in-full, so naming any --service restates the whole set — the
+		// same shape as the API's field, and the only one a caps check over the
+		// whole pod can act on. --no-services is how a patch says "none", since
+		// no value of the flag can.
+		if mustBool(cmd, "no-services") {
+			empty := []client.RunnerService{}
+			req.Services = &empty
+		} else if services, err := runnerServicesFromFlags(cmd); err != nil {
+			return err
+		} else if services != nil {
+			req.Services = &services
 		}
 		runner, err := c.UpdateRunner(context.Background(), id, req)
 		if err != nil {
@@ -514,6 +532,9 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		rows = append(rows, []string{"Builder", fmt.Sprintf("rootless BuildKit, %s (BUILDKIT_HOST is set in the job)",
 			strings.TrimSpace(r.Builder.CPU+" "+r.Builder.Memory))})
 	}
+	if len(r.Services) > 0 {
+		rows = append(rows, []string{"Services", serviceCell(r.Services) + " — on 127.0.0.1 from your steps"})
+	}
 	switch r.Credential {
 	case "platform":
 		rows = append(rows, []string{"Credential", fmt.Sprintf("Fogpipe GitHub App (installation %s)", r.GitHubAppInstallationID)})
@@ -632,6 +653,10 @@ func runnerSpecFlags(cmd *cobra.Command) {
 func init() {
 	runnerSpecFlags(runnerCreateCmd)
 	runnerSpecFlags(runnerUpdateCmd)
+	runnerServiceFlags(runnerCreateCmd)
+	runnerServiceFlags(runnerUpdateCmd)
+	runnerUpdateCmd.Flags().Bool("no-services", false, "Remove every service container from the pool")
+	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-services", "service")
 	runnerUpdateCmd.Flags().Bool("no-builder", false, "Remove the pool's image builder")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-cpu")
