@@ -2686,6 +2686,21 @@ func (c *Client) ListRunners(ctx context.Context, projectID string) ([]*Runner, 
 	return runners, nil
 }
 
+// CheckRunnerWorkflows asks which jobs in the given workflows can run on the
+// project's pools. The workflow text travels in the request: nothing here
+// reads a repository (fogpipe/cloud-workspace#774).
+func (c *Client) CheckRunnerWorkflows(ctx context.Context, projectID string, req CheckRunnerWorkflowsRequest) (*RunnerWorkflowCheck, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runners/check", req)
+	if err != nil {
+		return nil, err
+	}
+	var out RunnerWorkflowCheck
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetRunner retrieves a runner pool by ID.
 func (c *Client) GetRunner(ctx context.Context, id string) (*Runner, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/runners/"+id, nil)

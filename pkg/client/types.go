@@ -1695,6 +1695,66 @@ type RestartRunnerRequest struct {
 	Force bool `json:"force"`
 }
 
+// CheckRunnerWorkflowsRequest asks which jobs in a workflow can run on this
+// project's pools. The caller supplies the text: the platform never fetches
+// tenant source, because the question is asked BEFORE the push and a workflow
+// read from the repository is one that has already been pushed
+// (fogpipe/cloud-workspace#774).
+type CheckRunnerWorkflowsRequest struct {
+	Workflows []WorkflowSource `json:"workflows"`
+}
+
+// WorkflowSource is one workflow file as the caller read it. Path is for
+// naming findings back and is never opened by the platform.
+type WorkflowSource struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// Verdicts a job can carry. Every job gets exactly one, including the ones
+// that cannot be decided — a `runs-on` the check cannot resolve is reported as
+// undetermined and never as passing.
+const (
+	// RunnerJobRuns: the label names a pool in this project and the job asks
+	// for nothing the pool cannot serve.
+	RunnerJobRuns = "runs"
+	// RunnerJobQueues: no pool in this project serves the label, so GitHub has
+	// nothing to hand the job to and it waits forever. `self-hosted` on its own
+	// is the common case — ARC registers a scale set under exactly one label,
+	// its own.
+	RunnerJobQueues = "queues"
+	// RunnerJobRefused: the label matches a pool, and the job declares
+	// something the pool cannot serve.
+	RunnerJobRefused = "refused"
+	// RunnerJobGitHub: a GitHub-hosted label. The job runs, on GitHub's
+	// minutes rather than on your pool. Not a fault.
+	RunnerJobGitHub = "github"
+	// RunnerJobUndetermined: `runs-on` is an expression, so which runner it
+	// picks is not knowable from the text.
+	RunnerJobUndetermined = "undetermined"
+)
+
+// RunnerWorkflowJob is one job's verdict.
+type RunnerWorkflowJob struct {
+	Workflow string   `json:"workflow"`
+	Job      string   `json:"job"`
+	RunsOn   []string `json:"runs_on,omitempty"`
+	Verdict  string   `json:"verdict"`
+	// Pool is the pool the label resolved to, when it resolved to one.
+	Pool string `json:"pool,omitempty"`
+	// Reason says what is wrong, in the terms of the thing the platform read:
+	// which label matched nothing, or which field the pool cannot serve.
+	Reason string `json:"reason,omitempty"`
+}
+
+// RunnerWorkflowCheck is the answer. Pools names the labels the workflows were
+// compared against, so a project with no pools reads as "you have no pools"
+// rather than as a workflow full of errors.
+type RunnerWorkflowCheck struct {
+	Pools []string            `json:"pools"`
+	Jobs  []RunnerWorkflowJob `json:"jobs"`
+}
+
 // CreateRunnerRequest is the request body for declaring a runner pool.
 //
 // It names no GitHub account with the default "platform" credential: the
