@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/mod/semver"
 	"io"
 	"net/http"
+	"os"
 	"slices"
 	"time"
 
@@ -57,6 +59,7 @@ with no network at all, use --help-llm on any command.`,
 				return err
 			}
 			fmt.Print(body)
+			warnDocsSkew(apiURL)
 			return nil
 		}
 
@@ -127,4 +130,31 @@ func fetchDocsIndex(apiURL string) ([]docEntry, error) {
 func init() {
 	docsCmd.Flags().Bool("all", false, "Print every guide as one markdown stream")
 	rootCmd.AddCommand(docsCmd)
+}
+
+// warnDocsSkew says, on stderr, when the docs just printed describe a control
+// plane newer than this client. The pool is served by the control plane and
+// released with it, so a page can name a command that a client behind the
+// release does not carry — and a reader on that client went looking for a
+// client bug (fogpipe/cloud-workspace#351). Best effort: a control plane that
+// does not answer the version question leaves the page as it was.
+func warnDocsSkew(apiURL string) {
+	server, err := fetchServerVersion(apiURL)
+	if err != nil {
+		return
+	}
+	if note := docsSkewNote(version, server.Version); note != "" {
+		fmt.Fprintln(os.Stderr, mutedStyle.Render(note))
+	}
+}
+
+// docsSkewNote is the note for a client older than the control plane whose
+// docs it is reading; empty when the two are level, the client is newer, or
+// either is not a release (a dev build reads the docs of whatever it points
+// at, and cannot be behind anything).
+func docsSkewNote(client, server string) string {
+	if !semver.IsValid(client) || !semver.IsValid(server) || semver.Compare(client, server) >= 0 {
+		return ""
+	}
+	return fmt.Sprintf("note: these docs describe control plane %s; this client is %s and may not carry a command shown here — `fpcloud upgrade` brings it level.", server, client)
 }
