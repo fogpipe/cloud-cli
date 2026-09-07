@@ -31,7 +31,11 @@ var dbConnectCmd = &cobra.Command{
 		"The URL says sslmode=verify-full and means it: the tunnel serves a\n" +
 		"certificate minted for 127.0.0.1 and names its CA in the URL, so a client\n" +
 		"that insists on verifying connects unmodified. The CA file lives for the\n" +
-		"tunnel and is removed with it.",
+		"tunnel and is removed with it.\n\n" +
+		"It also says channel_binding=disable, and means that too: the tunnel is\n" +
+		"two TLS sessions (yours to 127.0.0.1, the platform's to the primary), and\n" +
+		"SCRAM channel binding ties a login to one session's certificate, so it\n" +
+		"cannot hold across both. What verify-full protects is the hop you can see.",
 	Args: cobra.ExactArgs(1),
 	RunE: runDBConnect,
 }
@@ -66,13 +70,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 	}
 	defer tunnelCert.remove()
 
-	localURL := url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword(conn.Username, conn.Password),
-		Host:     fmt.Sprintf("127.0.0.1:%d", local),
-		Path:     "/" + conn.Database,
-		RawQuery: "sslmode=verify-full&sslrootcert=" + url.QueryEscape(tunnelCert.caPath),
-	}
+	localURL := tunnelURL(conn, local, tunnelCert.caPath)
 
 	if isStructured(rootCmd.Flag("output").Value.String()) {
 		if err := renderData(map[string]any{
@@ -195,4 +193,25 @@ func relayLocal(local net.Conn, ws *websocket.Conn) {
 func init() {
 	dbConnectCmd.Flags().Int("port", 0, "Local port to listen on (default: a random free port)")
 	dbCmd.AddCommand(dbConnectCmd)
+}
+
+// tunnelURL is the connection the tunnel offers, stated exactly.
+//
+// verify-full names the local hop's certificate and CA (ADR-154).
+// channel_binding=disable names what that design cannot give: the primary
+// offers SCRAM-SHA-256-PLUS because the platform's hop to it is TLS, libpq
+// defaults to prefer and so binds the login to the LOCAL session's
+// certificate, and the server checks it against its own — two certificates,
+// and every modern psql was refused with "SCRAM channel binding check failed"
+// (fogpipe/cloud-workspace#770). Channel binding cannot cross a relay that
+// re-terminates TLS, and the URL says so rather than leaving it to the client
+// to find out.
+func tunnelURL(conn *client.DatabaseConnection, port int, caPath string) url.URL {
+	return url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(conn.Username, conn.Password),
+		Host:     fmt.Sprintf("127.0.0.1:%d", port),
+		Path:     "/" + conn.Database,
+		RawQuery: "sslmode=verify-full&sslrootcert=" + url.QueryEscape(caPath) + "&channel_binding=disable",
+	}
 }

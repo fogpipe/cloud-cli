@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
 // A client that verifies connects: the tunnel's certificate names 127.0.0.1
@@ -83,4 +85,22 @@ func TestTunnelTLS_APlaintextClientIsRelayedIntact(t *testing.T) {
 	_, err = io.ReadFull(session, got)
 	require.NoError(t, err)
 	require.Equal(t, startup, got)
+}
+
+// The URL states the connection the tunnel can actually give: verified TLS on
+// the local hop, and no channel binding, because the login crosses two TLS
+// sessions and SCRAM-SHA-256-PLUS binds it to one certificate — libpq's
+// default of prefer picked PLUS and every modern psql was refused with
+// "SCRAM channel binding check failed" (fogpipe/cloud-workspace#770).
+func TestTunnelURL_SaysWhatTheTwoHopsCanAndCannotVerify(t *testing.T) {
+	u := tunnelURL(&client.DatabaseConnection{Database: "app", Username: "app", Password: "s3cr et"}, 55432, "/state/tunnel-55432-ca.pem")
+
+	require.Equal(t, "127.0.0.1:55432", u.Host)
+	require.Equal(t, "/app", u.Path)
+	q := u.Query()
+	require.Equal(t, "verify-full", q.Get("sslmode"))
+	require.Equal(t, "/state/tunnel-55432-ca.pem", q.Get("sslrootcert"))
+	require.Equal(t, "disable", q.Get("channel_binding"))
+	pw, _ := u.User.Password()
+	require.Equal(t, "s3cr et", pw)
 }
