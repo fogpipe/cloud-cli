@@ -888,7 +888,7 @@ func init() {
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 1Gi")
 	dbCreateCmd.Flags().String("storage", "", "Persistent storage size (e.g. 20Gi); default 10Gi")
 	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (adds DATABASE_POOL_URL)")
-	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable (needs Postgres 18+)")
+	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable; name or name:schema (needs Postgres 18+)")
 
 	dbUpdateCmd.Flags().String("display-name", "", "New cosmetic label")
 	dbUpdateCmd.Flags().String("cpu", "", "New CPU request/limit per instance (e.g. 500m)")
@@ -896,7 +896,7 @@ func init() {
 	dbUpdateCmd.Flags().String("storage", "", "New storage size (grow only, e.g. 20Gi)")
 	dbUpdateCmd.Flags().String("postgres-version", "", "New Postgres major version (forward only)")
 	dbUpdateCmd.Flags().Bool("pooler", false, "Enable/disable the PgBouncer pooler")
-	dbUpdateCmd.Flags().StringSlice("extension", nil, "Replace the installed extensions, repeatable (empty uninstalls them)")
+	dbUpdateCmd.Flags().StringSlice("extension", nil, "Replace the installed extensions, repeatable; name or name:schema (empty uninstalls them)")
 	dbUpdateCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt when --extension uninstalls one")
 
 	dbDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
