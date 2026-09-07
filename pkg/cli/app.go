@@ -1680,9 +1680,17 @@ var appDeploymentsCmd = &cobra.Command{
 			// Render status with appropriate style.
 			status := renderDeploymentStatus(d.Status)
 
-			rows[i] = []string{id, releaseCell(d.Release), d.Image, status, duration, created}
+			// Why a deploy failed is the one thing worth reading off this table:
+			// a rollout past its progress deadline records the cluster's reason
+			// (fogpipe/cloud-workspace#350).
+			reason := mutedStyle.Render("—")
+			if d.Status == "failed" && d.Message != "" {
+				reason = d.Message
+			}
+
+			rows[i] = []string{id, releaseCell(d.Release), d.Image, status, duration, created, reason}
 		}
-		render([]string{"ID", "RELEASE", "IMAGE", "STATUS", "DURATION", "CREATED"}, rows, deployments)
+		render([]string{"ID", "RELEASE", "IMAGE", "STATUS", "DURATION", "CREATED", "REASON"}, rows, deployments)
 		return nil
 	},
 }
