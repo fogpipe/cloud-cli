@@ -2731,6 +2731,46 @@ func (c *Client) UpdateRunner(ctx context.Context, id string, req UpdateRunnerRe
 }
 
 // DeleteRunner removes a runner pool and deregisters it from GitHub.
+// RestartRunner asks for a pool recycle and returns the pool with the accepted
+// request on it; the platform carries it out (ADR-079), and WaitRunnerRestarted
+// reads it until it is done (fogpipe/cloud-workspace#145).
+func (c *Client) RestartRunner(ctx context.Context, id string, req RestartRunnerRequest) (*Runner, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/runners/"+id+"/restart", req)
+	if err != nil {
+		return nil, err
+	}
+	var runner Runner
+	if err := c.do(httpReq, &runner); err != nil {
+		return nil, err
+	}
+	return &runner, nil
+}
+
+// WaitRunnerRestarted reads the pool until no restart is in progress on it,
+// calling progress with each reading so a caller can say what the drain is
+// waiting for — a drain waiting on a twelve-minute job is otherwise
+// indistinguishable from a hang. Bounded by ctx only: the drain is bounded by
+// the longest running job, which the caller cannot know.
+func (c *Client) WaitRunnerRestarted(ctx context.Context, id string, poll time.Duration, progress func(*Runner)) (*Runner, error) {
+	for {
+		runner, err := c.GetRunner(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if runner.Restart == nil {
+			return runner, nil
+		}
+		if progress != nil {
+			progress(runner)
+		}
+		select {
+		case <-ctx.Done():
+			return runner, ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+}
+
 func (c *Client) DeleteRunner(ctx context.Context, id string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/runners/"+id, nil)
 	if err != nil {

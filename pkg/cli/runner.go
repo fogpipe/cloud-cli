@@ -293,6 +293,112 @@ var runnerDeleteCmd = &cobra.Command{
 	},
 }
 
+var runnerRestartCmd = &cobra.Command{
+	Use:   "restart <name>",
+	Short: "Recycle a runner pool, letting running jobs finish first",
+	Long: `Replace every runner in the pool and its listener, so a pool that has
+stopped taking work is recovered without deleting anything by hand.
+
+Draining by default: a runner serving a job finishes it before it goes, and
+this command says which jobs it is waiting on while it waits. An ephemeral
+runner takes exactly one job, so the drain is bounded by the longest running
+job, never open-ended. --force recycles at once and kills whatever is
+running — for a pool wedged on a runner that will never finish. The safe
+action is the default and the destructive one has to be typed
+(fogpipe/cloud-workspace#145).
+
+The restart is accepted and carried out by the platform (ADR-079); --no-wait
+returns as soon as it is accepted, and ` + "`fpcloud runner show`" + ` reports
+the restart in progress.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		force, _ := cmd.Flags().GetBool("force")
+		yes, _ := cmd.Flags().GetBool("yes")
+		noWait, _ := cmd.Flags().GetBool("no-wait")
+		c := getClient()
+		id, err := resolveRunnerID(c, args[0])
+		if err != nil {
+			return err
+		}
+		if force && !yes {
+			ok, err := confirm(
+				fmt.Sprintf("Force-restart runner pool %q?", args[0]),
+				"Every runner is replaced now, and any job one of them is running is killed — GitHub does not re-offer a job whose runner died.",
+				"Yes, kill running jobs")
+			if err != nil || !ok {
+				return err
+			}
+		}
+		runner, err := c.RestartRunner(context.Background(), id, client.RestartRunnerRequest{Force: force})
+		if err != nil {
+			return err
+		}
+		outputFormat := rootCmd.Flag("output").Value.String()
+		if isStructured(outputFormat) {
+			if noWait {
+				return renderData(runner)
+			}
+		} else if noWait {
+			fmt.Println(renderInfoBox("Restart Accepted", [][]string{
+				{"Runner", runner.Name},
+				{"Mode", restartMode(force)},
+				{"", mutedStyle.Render("Carried out by the platform; `fpcloud runner show " + args[0] + "` reports it.")},
+			}))
+			return nil
+		}
+		var last string
+		progress := func(r *client.Runner) {
+			if isStructured(outputFormat) {
+				return
+			}
+			note := runnerRestartNote(r)
+			if note != last {
+				fmt.Fprintln(os.Stderr, mutedStyle.Render("  "+note))
+				last = note
+			}
+		}
+		done, err := c.WaitRunnerRestarted(context.Background(), id, 3*time.Second, progress)
+		if err != nil {
+			return err
+		}
+		if isStructured(outputFormat) {
+			return renderData(done)
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+				fmt.Sprintf(" Runner %q restarted: every runner and the listener are new.", args[0]),
+		))
+		return nil
+	},
+}
+
+func restartMode(force bool) string {
+	if force {
+		return "immediate — running jobs killed"
+	}
+	return "drain — running jobs finish first"
+}
+
+// runnerRestartNote says what a restart in progress is waiting for, because a
+// drain that silently waits on a twelve-minute job is indistinguishable from a
+// hang (docs/reading-a-zero.md, fogpipe/cloud-workspace#145).
+func runnerRestartNote(r *client.Runner) string {
+	if r.Restart == nil {
+		return "restart complete"
+	}
+	if r.Restart.Note != "" && len(r.Restart.Waiting) == 0 {
+		return r.Restart.Note
+	}
+	if len(r.Restart.Waiting) == 0 {
+		return "waiting for the platform to replace the pool's runners and listener"
+	}
+	jobs := make([]string, 0, len(r.Restart.Waiting))
+	for _, in := range r.Restart.Waiting {
+		jobs = append(jobs, fmt.Sprintf("%q on %s (%s)", in.Job, in.Repository, time.Since(in.StartedAt).Round(time.Second)))
+	}
+	return fmt.Sprintf("draining: waiting for %d running job(s) to finish — %s", len(jobs), strings.Join(jobs, ", "))
+}
+
 // runnerScope renders the GitHub account the pool serves — every repository in
 // it. Derived from the project's connection, never typed.
 // runnerBusy is "N of M" — runners executing a job beside the most the pool
@@ -384,6 +490,10 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		{"Busy", runnerBusy(r)},
 		{"Waiting", runnerWaiting(r)},
 		{"Status", renderStatus(r.Status)},
+	}
+	if r.Restart != nil {
+		rows = append(rows, []string{"Restart", restartMode(r.Restart.Force) + ", asked " +
+			time.Since(r.Restart.RequestedAt).Round(time.Second).String() + " ago — " + runnerRestartNote(r)})
 	}
 	if r.Builder != nil {
 		rows = append(rows, []string{"Builder", fmt.Sprintf("rootless BuildKit, %s (BUILDKIT_HOST is set in the job)",
@@ -512,6 +622,9 @@ func init() {
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-cpu")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-memory")
 
-	runnerCmd.AddCommand(runnerCreateCmd, runnerListCmd, runnerShowCmd, runnerUpdateCmd, runnerDeleteCmd)
+	runnerRestartCmd.Flags().Bool("force", false, "Recycle at once, killing any job a runner is running (default: let running jobs finish)")
+	runnerRestartCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt on --force")
+	runnerRestartCmd.Flags().Bool("no-wait", false, "Return once the restart is accepted instead of waiting for it to finish")
+	runnerCmd.AddCommand(runnerCreateCmd, runnerListCmd, runnerShowCmd, runnerUpdateCmd, runnerDeleteCmd, runnerRestartCmd)
 	rootCmd.AddCommand(runnerCmd)
 }

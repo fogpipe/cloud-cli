@@ -1655,6 +1655,11 @@ type Runner struct {
 	// and never zero in its place (fogpipe/cloud-workspace#146).
 	Queue *RunnerQueue `json:"queue,omitempty"`
 
+	// Restart is the recycle in progress, when one is: when it was asked for,
+	// whether it may kill running jobs, and which runners it is still waiting
+	// on (fogpipe/cloud-workspace#145). Absent when none is in progress.
+	Restart *RunnerRestart `json:"restart,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -1684,6 +1689,25 @@ type RunnerQueue struct {
 	// AsOf is when the listener's figures were read; the metrics store is a
 	// scrape behind the listener, and the age is part of the reading.
 	AsOf time.Time `json:"as_of"`
+}
+
+// RunnerRestart is a pool recycle the platform has accepted and is carrying
+// out (ADR-079): every runner is replaced, the listener with them. Draining
+// by default — a busy runner finishes its job first, and Waiting names those
+// — or at once with Force, which kills what those runners are running.
+type RunnerRestart struct {
+	RequestedAt time.Time `json:"requested_at"`
+	Force       bool      `json:"force"`
+	// Waiting are the runners still serving a job the drain is letting finish.
+	Waiting []RunnerInstance `json:"waiting,omitempty"`
+	// Note is what the last pass of the restart found or could not do.
+	Note string `json:"note,omitempty"`
+}
+
+// RestartRunnerRequest asks for a pool recycle. Force kills running jobs
+// rather than waiting for them.
+type RestartRunnerRequest struct {
+	Force bool `json:"force"`
 }
 
 // CreateRunnerRequest is the request body for declaring a runner pool.
