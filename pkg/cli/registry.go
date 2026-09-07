@@ -165,6 +165,43 @@ var registryTagsListCmd = &cobra.Command{
 	},
 }
 
+var registryCVEsCmd = &cobra.Command{
+	Use:     "cves <repo> <tag>",
+	Aliases: []string{"cve", "vulnerabilities"},
+	Short:   "List the CVEs the registry's scanner found in one image",
+	Long: `List the CVEs the registry's scanner found in one image.
+
+Each row is one CVE in one package: the package and the version the image
+carries, and the version that fixes it — empty when no upstream fix exists,
+which is the row to assess for reachability rather than bump. Most severe
+first, then by package.
+
+  fpcloud registry cves web v42
+  fpcloud registry cves web v42 -o json`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := requireProject()
+		if err != nil {
+			return err
+		}
+		list, err := getClient().ListRegistryCVEs(context.Background(), projectID, args[0], args[1])
+		if err != nil {
+			return err
+		}
+		var rows [][]string
+		for _, cve := range list.CVEs {
+			if len(cve.Packages) == 0 {
+				rows = append(rows, []string{cve.Severity, cve.ID, "", "", "", cve.Title})
+			}
+			for _, p := range cve.Packages {
+				rows = append(rows, []string{cve.Severity, cve.ID, p.Name, p.InstalledVersion, p.FixedVersion, cve.Title})
+			}
+		}
+		render([]string{"SEVERITY", "CVE", "PACKAGE", "INSTALLED", "FIXED", "TITLE"}, rows, list)
+		return nil
+	},
+}
+
 var registryTagsDeleteCmd = &cobra.Command{
 	Use:     "delete <repo> <tag>",
 	Aliases: []string{"rm"},
@@ -443,7 +480,7 @@ func init() {
 
 	registryCmd.AddCommand(
 		registryGetLoginPasswordCmd, registryLoginCmd,
-		registryReposCmd, registryTagsCmd, registryRetentionCmd, registryVisibilityCmd,
+		registryReposCmd, registryTagsCmd, registryCVEsCmd, registryRetentionCmd, registryVisibilityCmd,
 	)
 	rootCmd.AddCommand(registryCmd)
 }

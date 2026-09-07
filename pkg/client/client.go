@@ -420,6 +420,35 @@ type RegistryImageList struct {
 	Images     []RegistryImage `json:"images"`
 }
 
+// RegistryCVEPackage is one package an image carries that a CVE affects.
+// FixedVersion is empty when no upstream fix exists — the column that separates
+// "bump and move on" from "assess reachability".
+type RegistryCVEPackage struct {
+	Name             string `json:"name"`
+	Path             string `json:"path,omitempty"`
+	InstalledVersion string `json:"installed_version,omitempty"`
+	FixedVersion     string `json:"fixed_version,omitempty"`
+}
+
+// RegistryCVE is one vulnerability the scanner found in an image, with the
+// packages it reaches the image through.
+type RegistryCVE struct {
+	ID          string               `json:"id"`
+	Severity    string               `json:"severity"`
+	Title       string               `json:"title,omitempty"`
+	Description string               `json:"description,omitempty"`
+	Reference   string               `json:"reference,omitempty"`
+	Packages    []RegistryCVEPackage `json:"packages"`
+}
+
+// RegistryCVEList is every CVE the scanner found in one image, most severe
+// first — the list behind the count RegistryImage.Vulnerabilities reports.
+type RegistryCVEList struct {
+	Repository string        `json:"repository"`
+	Tag        string        `json:"tag"`
+	CVEs       []RegistryCVE `json:"cves"`
+}
+
 // RegistryRetentionPolicy is an auto-delete rule for a project's registry repos.
 // An empty Repo is the project-wide default. KeepLast keeps the newest N tags;
 // MaxAgeDays deletes tags older than N days (newest KeepLast always protected).
@@ -498,6 +527,21 @@ func (c *Client) ListRegistryTags(ctx context.Context, projectID, repo string) (
 		return nil, err
 	}
 	return &tags, nil
+}
+
+// ListRegistryCVEs lists the CVEs the registry's scanner found in one image
+// (project-relative repository name and tag).
+func (c *Client) ListRegistryCVEs(ctx context.Context, projectID, repo, tag string) (*RegistryCVEList, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet,
+		"/api/v1/projects/"+projectID+"/repositories/cves?repo="+url.QueryEscape(repo)+"&tag="+url.QueryEscape(tag), nil)
+	if err != nil {
+		return nil, err
+	}
+	var out RegistryCVEList
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // DeleteRegistryTag deletes one tag from a repository (project-relative name).
