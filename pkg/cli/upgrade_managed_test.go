@@ -53,6 +53,27 @@ func TestNoPathIsBothNixAndHomebrew(t *testing.T) {
 // package manager on someone's machine is not a decision it gets to make. Read
 // back from the pure message rather than from brewUpgradeNotice, which looks up
 // the latest release over the network.
+//
+// That indirection is here for a second reason, and it is the one to read if
+// you are about to reach for a skip. This test first went through
+// brewUpgradeNotice and carried
+//
+//	if err == nil { t.Skip("this build is already the latest release") }
+//
+// which is CONDITIONAL, so ADR-127's rule — an unconditional skip is refused,
+// a conditional one declines because its inputs are not here — reads it as
+// legitimate. It is not, and the rule is not fine-grained enough to say so.
+//
+// The sharper form: a skip conditional on WHAT THE TEST IS TESTING AGAINST
+// declines exactly where the answer matters. This one skipped on every install
+// already at the latest release — that is every machine except one carrying the
+// bug, so the test would have been quiet on the only build that could fail it.
+// A skip is legitimate when it names something absent from the ENVIRONMENT (no
+// database, no cluster, no API key); it is not when it names a property of the
+// subject.
+//
+// The remedy is nearly always the same one as here: make the thing under test a
+// pure function of its inputs, and the condition stops existing.
 func TestTheBrewNoticeNamesTheCommandRatherThanRunningIt(t *testing.T) {
 	msg := brewUpgradeMessage("v0.166.1", "v0.170.0")
 	require.Contains(t, msg, "brew update && brew upgrade fpcloud")
