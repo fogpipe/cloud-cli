@@ -144,7 +144,7 @@ var runnerCreateCmd = &cobra.Command{
 		}
 		fmt.Println(renderInfoBox("Runner Created", runnerInfoRows(runner)))
 		fmt.Println()
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Use it from a workflow with: runs-on: %s", strings.Join(runner.Labels, ", "))))
+		fmt.Println(mutedStyle.Render(runnerUseNote(runner)))
 		fmt.Println()
 		return nil
 	},
@@ -199,6 +199,8 @@ var runnerShowCmd = &cobra.Command{
 			return renderData(runner)
 		}
 		fmt.Println(renderInfoBox("Runner", runnerInfoRows(runner)))
+		fmt.Println()
+		fmt.Println(mutedStyle.Render(runnerUseNote(runner)))
 		fmt.Println()
 		return nil
 	},
@@ -292,6 +294,25 @@ var runnerDeleteCmd = &cobra.Command{
 
 // runnerScope renders the GitHub account the pool serves — every repository in
 // it. Derived from the project's connection, never typed.
+// runnerUseNote says where the pool's label works, not only what it is. GitHub
+// registers self-hosted runners per account, so a workflow in a repository
+// outside the one the pool serves names a label nobody offers it and queues
+// forever with no error on either side (fogpipe/cloud-workspace#305) — the
+// label alone reads as if any repository could use it.
+func runnerUseNote(r *client.Runner) string {
+	return fmt.Sprintf("  Use it from a workflow in a github.com/%s repository with: runs-on: %s\n"+
+		"  A workflow in any other account's repository never sees this pool: its job queues forever.",
+		runnerScope(r), strings.Join(r.Labels, ", "))
+}
+
+// repoOutsideAccount reports whether an owner/name repository lives outside
+// the GitHub account a project's pools serve. GitHub logins are
+// case-insensitive.
+func repoOutsideAccount(repo, account string) bool {
+	owner, _, ok := strings.Cut(repo, "/")
+	return ok && account != "" && owner != "" && !strings.EqualFold(owner, account)
+}
+
 func runnerScope(r *client.Runner) string {
 	return strings.TrimPrefix(strings.TrimPrefix(r.GitHubConfigURL, "https://github.com/"), "https://")
 }

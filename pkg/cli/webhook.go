@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
@@ -62,6 +64,7 @@ var webhookSetupCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(wh)
 		}
+		warnRepoOutsidePools(c, repo)
 
 		// Show the webhook URL and secret prominently.
 		secretStyle := lipgloss.NewStyle().Bold(true).Foreground(colorWarning)
@@ -204,4 +207,32 @@ func init() {
 
 	webhookCmd.AddCommand(webhookSetupCmd, webhookStatusCmd, webhookRemoveCmd)
 	rootCmd.AddCommand(webhookCmd)
+}
+
+// warnRepoOutsidePools says so when the repository a webhook was just set up
+// for lives outside the GitHub account this project's runner pools serve: a
+// workflow in it that names one of the pools' labels queues forever, with no
+// error anywhere (fogpipe/cloud-workspace#305). This is the one place the CLI
+// is told which repository a project deploys from, so it is where the check
+// can be made. Advisory and best effort: a connection or pool list that cannot
+// be read leaves the webhook as set up and says nothing.
+func warnRepoOutsidePools(c *client.Client, repo string) {
+	project, err := requireProject()
+	if err != nil {
+		return
+	}
+	status, err := c.GetGitHubConnection(context.Background(), project)
+	if err != nil || status.Connection == nil || !repoOutsideAccount(repo, status.Connection.AccountLogin) {
+		return
+	}
+	runners, err := c.ListRunners(context.Background(), project)
+	if err != nil || len(runners) == 0 {
+		return
+	}
+	labels := make([]string, 0, len(runners))
+	for _, r := range runners {
+		labels = append(labels, r.Labels...)
+	}
+	fmt.Fprintf(os.Stderr, "warning: %s is outside github.com/%s, which this project's runner pool(s) serve — a workflow in it cannot use runs-on: %s\n",
+		repo, status.Connection.AccountLogin, strings.Join(labels, ", "))
 }
