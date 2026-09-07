@@ -374,7 +374,10 @@ var jobRunCmd = &cobra.Command{
 			return err
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
-			return renderData(finished)
+			if err := renderData(finished); err != nil {
+				return err
+			}
+			return runOutcome(finished)
 		}
 		logs, _ := c.GetJobLogs(context.Background(), id, run.RunName)
 		if strings.TrimSpace(logs) != "" {
@@ -383,11 +386,19 @@ var jobRunCmd = &cobra.Command{
 		}
 		fmt.Println(renderInfoBox("Job Run", runInfoRows(finished)))
 		fmt.Println()
-		if finished.Status == "failed" {
-			return fmt.Errorf("run %s failed", finished.RunName)
-		}
-		return nil
+		return runOutcome(finished)
 	},
+}
+
+// runOutcome is the exit status a finished run earns, whatever was printed
+// about it: a failed run is a non-zero exit on every output format. The JSON
+// path used to return nil after rendering, so a script gating on
+// `job run --wait -o json` went green on failure (fogpipe/cloud-workspace#333).
+func runOutcome(finished *client.JobRun) error {
+	if finished.Status == "failed" {
+		return fmt.Errorf("run %s failed", finished.RunName)
+	}
+	return nil
 }
 
 var jobRunsCmd = &cobra.Command{
