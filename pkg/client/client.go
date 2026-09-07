@@ -1475,6 +1475,24 @@ func (c *Client) GetDatabaseConnection(ctx context.Context, id string) (*Databas
 	return &conn, nil
 }
 
+// RotateDatabasePassword issues the database a new password and returns the
+// live connection info carrying it — the one response that does
+// (fogpipe/cloud-workspace#297). The platform writes the new password where
+// Postgres reads it, waits for the role to carry it, and re-renders every app
+// in the project onto it before answering, so by the time this returns the
+// old password authenticates no new connection.
+func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*DatabaseConnection, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+id+"/rotate-password", nil)
+	if err != nil {
+		return nil, err
+	}
+	var conn DatabaseConnection
+	if err := c.do(httpReq, &conn); err != nil {
+		return nil, err
+	}
+	return &conn, nil
+}
+
 // DialTunnel opens the server-side db-connect tunnel (ADR-045): a WebSocket
 // carrying raw Postgres wire-protocol bytes, relayed by the API to the
 // database's CNPG -rw Service. No k8s/FKE credentials involved — this rides

@@ -226,6 +226,61 @@ var dbDeleteCmd = &cobra.Command{
 	},
 }
 
+var dbRotatePasswordCmd = &cobra.Command{
+	Use:   "rotate-password <name>",
+	Short: "Issue the database a new password and roll every app onto it",
+	Long: `Rotate a database's password (fogpipe/cloud-workspace#297).
+
+A credential that cannot be rotated cannot be revoked: any copy of the
+password — Terraform state, a CI log, a screenshot — is valid for the life of
+the database. This issues a new one, in the order that makes it safe: the
+platform writes it where Postgres reads it and waits for the role to carry
+it, then re-renders every app in the project so their injected DATABASE_URLs
+name it and rolls the pods. The old password stops authenticating new
+connections the moment the new one is live; sessions already open keep
+running until they close.
+
+The new password is printed once. Anything outside the platform that holds
+the old one — a local psql, a Terraform state, another service — is what you
+update next; ` + "`fpcloud db connect`" + ` reads the live one whenever you need it again.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			ok, err := confirm(
+				fmt.Sprintf("Rotate the password of database %q?", args[0]),
+				"Every app in the project is rolled onto the new password. Anything else holding the old one stops authenticating.",
+				"Yes, rotate")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return nil
+			}
+		}
+
+		c := getClient()
+		id, err := resolveDatabaseID(c, args[0])
+		if err != nil {
+			return err
+		}
+		conn, err := c.RotateDatabasePassword(context.Background(), id)
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(conn)
+		}
+		fmt.Println(renderInfoBox("Password Rotated", [][]string{
+			{"Database", args[0]},
+			{"Username", conn.Username},
+			{"Password", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(conn.Password)},
+			{"URL", conn.URL},
+		}))
+		return nil
+	},
+}
+
 var dbBackupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Manage database backups",
@@ -818,8 +873,9 @@ func init() {
 	dbBackupCmd.AddCommand(dbBackupCreateCmd, dbBackupListCmd, dbBackupDeleteCmd,
 		dbBackupConfigCmd, dbBackupDestCmd)
 
+	dbRotatePasswordCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	dbCmd.AddCommand(dbCreateCmd, dbListCmd, dbGetCmd, dbUpdateCmd, dbDeleteCmd,
-		dbBackupCmd, dbRestoreCmd)
+		dbRotatePasswordCmd, dbBackupCmd, dbRestoreCmd)
 	rootCmd.AddCommand(dbCmd)
 }
 
