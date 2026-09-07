@@ -1646,7 +1646,13 @@ type Runner struct {
 	Status          string `json:"status,omitempty"`
 	CurrentRunners  int    `json:"current_runners,omitempty"`
 	AdmittedRunners int    `json:"admitted_runners,omitempty"`
-	Message         string `json:"message,omitempty"`
+	// RunningRunners are the runners executing a job and PendingRunners the ones
+	// that exist without one — waiting for a pod the ceiling refuses, above all.
+	// CurrentRunners is their sum; a control plane that predates the split
+	// sends only that (fogpipe/cloud-workspace#120).
+	RunningRunners int    `json:"running_runners,omitempty"`
+	PendingRunners int    `json:"pending_runners,omitempty"`
+	Message        string `json:"message,omitempty"`
 
 	// Problems are failures on the pool's own pods — a runner killed for
 	// exceeding its memory above all. They do not make the pool unhealthy: the
