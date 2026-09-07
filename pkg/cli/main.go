@@ -44,6 +44,9 @@ var rootCmd = &cobra.Command{
 	// available. The version check is skipped for machine-consumed commands so it
 	// never adds latency or noise to scripted use.
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := refuseBrokenConfig(configErr); err != nil {
+			return err
+		}
 		format := cmd.Flag("output").Value.String()
 		if !isValidOutputFormat(format) {
 			return fmt.Errorf("invalid output format %q (valid: %s)", format, strings.Join(outputFormats, ", "))
@@ -57,8 +60,13 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+// configErr is why config.yaml could not be read at startup, if it could not.
+// init cannot return it, so PersistentPreRunE does (refuseBrokenConfig).
+var configErr error
+
 func init() {
-	cfg, _ := loadConfig()
+	cfg, err := loadConfig()
+	configErr = err
 
 	// Released binaries default to the prod control plane; a plain `go build`
 	// (version "dev") defaults to localhost. Config and --api-url override either.
@@ -100,6 +108,19 @@ func init() {
 	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return usageError{err}
 	})
+}
+
+// refuseBrokenConfig turns an unreadable config.yaml into a refusal. It used to
+// be dropped, and a broken file then read as an empty one: every default came
+// back — the API URL among them, which for a released binary is PRODUCTION — so
+// a typo in a dev config pointed the next command at the live control plane
+// with nothing said (fogpipe/cloud-workspace#333). Nothing here can decide what
+// the file was meant to say; the person who wrote it can.
+func refuseBrokenConfig(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s cannot be read (%w); fix or delete it before running fpcloud", configPath(), err)
 }
 
 // unknownSubcommand reports a typo under a group: `fpcloud project show` names
