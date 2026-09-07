@@ -1308,6 +1308,19 @@ type BackupDestination struct {
 	Enabled         bool   `json:"enabled"`
 	LastRunAt       string `json:"last_run_at,omitempty"`
 	LastRunStatus   string `json:"last_run_status,omitempty"`
+	// Restore is what the platform has proved about this destination's dumps
+	// (ADR-160): the drill restores the latest scheduled dump into its scratch
+	// copy on the database's turn. Nil for an on-demand destination, which is
+	// not enrolled.
+	Restore *DestinationRestore `json:"restore,omitempty"`
+}
+
+// DestinationRestore is the external half of the last restore drill on a
+// scheduled destination.
+type DestinationRestore struct {
+	LastRestoredAt string `json:"last_restored_at,omitempty"`
+	LastAttemptAt  string `json:"last_attempt_at,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 // BackupDestinationRun identifies an on-demand external backup that was started.

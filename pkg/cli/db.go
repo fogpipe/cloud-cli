@@ -525,7 +525,29 @@ func backupDestRows(d *client.BackupDestination) [][]string {
 	if d.LastRunStatus != "" {
 		rows = append(rows, []string{"Last Run", d.LastRunStatus + " (" + d.LastRunAt + ")"})
 	}
+	// What was proved, beside what was uploaded: the platform restores the
+	// latest scheduled dump into a scratch copy on its own rotation
+	// (ADR-160), and this is that reading (fogpipe/cloud-workspace#775).
+	rows = append(rows, []string{"Restore Proved", destinationRestoreLabel(d)})
 	return rows
+}
+
+func destinationRestoreLabel(d *client.BackupDestination) string {
+	r := d.Restore
+	switch {
+	case r == nil:
+		return mutedStyle.Render("not drilled — an on-demand destination is restore-tested by hand")
+	case r.LastRestoredAt != "" && r.Error == "":
+		return "restored " + r.LastRestoredAt
+	case r.LastRestoredAt != "":
+		return lipgloss.NewStyle().Foreground(colorWarning).Render(
+			"last restored " + r.LastRestoredAt + "; latest attempt " + r.LastAttemptAt + " failed: " + r.Error)
+	case r.Error != "":
+		return lipgloss.NewStyle().Foreground(colorDanger).Render(
+			"never restored; latest attempt " + r.LastAttemptAt + " failed: " + r.Error)
+	default:
+		return mutedStyle.Render("enrolled, not yet drilled")
+	}
 }
 
 var dbBackupConfigCmd = &cobra.Command{
