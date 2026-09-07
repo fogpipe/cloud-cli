@@ -2826,17 +2826,20 @@ func (c *Client) StartGitHubConnect(ctx context.Context, projectID, account stri
 	return &start, nil
 }
 
-// GetGitHubConnection returns the GitHub account a project is connected to.
-func (c *Client) GetGitHubConnection(ctx context.Context, projectID string) (*GitHubConnection, error) {
+// GetGitHubConnection returns the GitHub account a project is connected to,
+// and the latest connect attempt either way. Not connected is a 200 with a nil
+// Connection, not a 404: the attempt that just failed is part of the answer
+// (fogpipe/cloud-workspace#307).
+func (c *Client) GetGitHubConnection(ctx context.Context, projectID string) (*GitHubConnectionStatus, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/github", nil)
 	if err != nil {
 		return nil, err
 	}
-	var conn GitHubConnection
-	if err := c.do(httpReq, &conn); err != nil {
+	var status GitHubConnectionStatus
+	if err := c.do(httpReq, &status); err != nil {
 		return nil, err
 	}
-	return &conn, nil
+	return &status, nil
 }
 
 // DisconnectGitHub drops a project's GitHub connection.

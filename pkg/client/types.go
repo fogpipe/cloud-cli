@@ -1776,6 +1776,27 @@ type GitHubConnection struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// GitHubConnectAttempt is the latest outcome of `github connect` for a project,
+// decided after the caller has gone: connected, or failed with the reason the
+// browser was shown — the install link included (fogpipe/cloud-workspace#307).
+type GitHubConnectAttempt struct {
+	ProjectID   string    `json:"project_id"`
+	AttemptedAt time.Time `json:"attempted_at"`
+	AttemptedBy string    `json:"attempted_by,omitempty"`
+	Account     string    `json:"account,omitempty"`
+	// Outcome is "connected" or "failed".
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// GitHubConnectionStatus is what a project's GitHub connection reads as: the
+// binding if there is one, and the latest attempt either way, so "not
+// connected" comes with the reason when there is one.
+type GitHubConnectionStatus struct {
+	Connection  *GitHubConnection     `json:"connection"`
+	LastAttempt *GitHubConnectAttempt `json:"last_attempt"`
+}
+
 // GitHubConnectStart is where to send someone to install the Fogpipe GitHub App
 // and authorize the connection. The URL is single-use in effect: it carries a
 // signed, short-lived state naming the project.
