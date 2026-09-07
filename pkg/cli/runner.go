@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,8 +20,11 @@ var runnerCmd = &cobra.Command{
 	Long: `Manage managed GitHub Actions runners.
 
 A runner is a pool, not a machine: pods are created for one job and destroyed
-when it ends, so an idle pool costs nothing. A pool serves every repository in
-the GitHub account this project is connected to.
+when it ends, so a pool that scales to zero (--min 0, the default) costs
+nothing while idle. A runner kept warm by --min is a pod that exists while
+idle, and it is billed for its cpu and memory the whole time, at the rates
+your org's price list shows (fpcloud billing prices). A pool serves every
+repository in the GitHub account this project is connected to.
 
 Workflows opt in by naming the pool in ` + "`runs-on`" + `.
 
@@ -169,11 +171,11 @@ var runnerListCmd = &cobra.Command{
 				r.Name,
 				runnerScope(r),
 				fmt.Sprintf("%d-%d", r.MinRunners, r.MaxRunners),
-				strconv.Itoa(r.CurrentRunners),
+				runnerActivity(r),
 				renderStatus(r.Status),
 			}
 		}
-		render([]string{"NAME", "SERVES", "SCALE", "ACTIVE", "STATUS"}, rows, runners)
+		render([]string{"NAME", "SERVES", "SCALE", "RUNNERS", "STATUS"}, rows, runners)
 		return nil
 	},
 }
@@ -294,10 +296,22 @@ func runnerScope(r *client.Runner) string {
 	return strings.TrimPrefix(strings.TrimPrefix(r.GitHubConfigURL, "https://github.com/"), "https://")
 }
 
+// runnerActivity says what the pool's runners are doing, not how many objects
+// exist: a runner executing a job and one waiting for a pod the ceiling refuses
+// were one "active" count, and the two call for opposite responses
+// (fogpipe/cloud-workspace#120). A control plane that sends only the sum is
+// rendered as the sum.
+func runnerActivity(r *client.Runner) string {
+	if r.RunningRunners == 0 && r.PendingRunners == 0 {
+		return fmt.Sprintf("%d active", r.CurrentRunners)
+	}
+	return fmt.Sprintf("%d running, %d pending", r.RunningRunners, r.PendingRunners)
+}
+
 func runnerInfoRows(r *client.Runner) [][]string {
-	scale := fmt.Sprintf("%d-%d (%d active)", r.MinRunners, r.MaxRunners, r.CurrentRunners)
+	scale := fmt.Sprintf("%d-%d (%s)", r.MinRunners, r.MaxRunners, runnerActivity(r))
 	if r.AdmittedRunners > 0 {
-		scale = fmt.Sprintf("%d-%d (%d active, ceiling admits %d)", r.MinRunners, r.MaxRunners, r.CurrentRunners, r.AdmittedRunners)
+		scale = fmt.Sprintf("%d-%d (%s, ceiling admits %d)", r.MinRunners, r.MaxRunners, runnerActivity(r), r.AdmittedRunners)
 	}
 	rows := [][]string{
 		{"Name", r.Name},
@@ -410,7 +424,7 @@ func setRunnerBuilder(c *client.Client, id string, cmd *cobra.Command, req *clie
 func runnerSpecFlags(cmd *cobra.Command) {
 	cmd.Flags().String("github-account", "", "GitHub account the runner serves (only with --credential app or token; the Fogpipe App uses this project's connection)")
 	cmd.Flags().String("runner-group", "", "GitHub runner group to join (default Default)")
-	cmd.Flags().Int("min", 0, "Runners kept idle and ready (default 0, scale to zero)")
+	cmd.Flags().Int("min", 0, "Runners kept idle and ready (default 0, scale to zero); each one is billed for its cpu and memory while idle")
 	cmd.Flags().Int("max", 2, "Jobs the pool runs at once")
 	cmd.Flags().String("image", "", "Runner image (defaults to the platform's)")
 	cmd.Flags().String("cpu", "", "CPU limit for the runner itself, e.g. 2")
