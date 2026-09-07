@@ -52,6 +52,13 @@ var versionCmd = &cobra.Command{
 			return nil
 		}
 		fmt.Printf("Minimum Client Version: %s\n", server.MinClientVersion)
+		// The number to pin. It is the whole product's — the same version has a
+		// downloadable binary and a provider the OpenTofu registry serves — so
+		// it is what a stack pinning both should name, and it is regularly
+		// below Server Version while the registry catches up.
+		if server.LatestRelease != "" {
+			fmt.Printf("Latest Release: %s\n", server.LatestRelease)
+		}
 		if semver.IsValid(version) && semver.IsValid(server.MinClientVersion) &&
 			semver.Compare(version, server.MinClientVersion) < 0 {
 			fmt.Printf("\n%s\n", lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render(
@@ -98,6 +105,11 @@ type serverVersion struct {
 	// DeployedAt is when the control plane's version first began serving, by
 	// the fleet's account; empty from a deployment that does not say.
 	DeployedAt string `json:"deployed_at,omitempty"`
+	// LatestRelease is the newest version of the product installable on every
+	// surface — this binary and the OpenTofu provider alike. Empty when the
+	// platform cannot currently say, which is not the same as nothing being
+	// installable and is never filled in with Version.
+	LatestRelease string `json:"latest_release,omitempty"`
 }
 
 // fetchServerVersion asks the control plane for its build version (GET /version,
@@ -128,13 +140,16 @@ func fetchServerVersion(apiURL string) (serverVersion, error) {
 	return body, nil
 }
 
-// latestVersion returns the latest *released* CLI version, using the on-disk
-// cache when fresh and otherwise refreshing it from the distribution repo.
+// latestVersion returns the newest version of the product that is installable,
+// using the on-disk cache when fresh and otherwise asking the control plane.
 //
-// Deliberately not the control plane's version: the API deploys on every merge
-// while the CLI is released per tag, so /version is regularly ahead of the newest
-// published binary. Warning about a version nobody can install — and then having
-// `upgrade` 404 on it — is exactly what that mismatch produced (#781).
+// Deliberately neither of the two numbers this has been in the past. Not the
+// control plane's own `version`, which is a tag the API is serving and says
+// nothing about anything having been published — warning about a version nobody
+// can install, and then 404ing on it, is what that produced (#781). And not
+// github's newest cli release either, which is right about this binary and
+// silent about the OpenTofu provider that carries the same version, so it moves
+// half of a tenant's install (fogpipe/cloud-workspace#813).
 func latestVersion() (string, error) {
 	if data, err := os.ReadFile(versionCachePath()); err == nil {
 		var c versionCache

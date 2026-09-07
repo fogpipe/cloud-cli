@@ -1,35 +1,29 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 )
 
 // upgradeRepo is the PUBLIC distribution repo the release workflow publishes
-// binaries to (release-fpcloud.yml's DIST_REPO). It used to name the private
-// monorepo, which no tenant can see — anyone who installed via the documented
-// curl|sh, Homebrew or Nix path got an undocumented `gh` requirement and then a
-// 404 on a repo they have no access to (#558). Being public also means the
-// assets are plain HTTPS downloads, so no GitHub CLI or login is involved and
-// upgrade works inside a container or CI image.
+// binaries to. It used to name the private monorepo, which no tenant can see —
+// anyone who installed via the documented curl|sh, Homebrew or Nix path got an
+// undocumented `gh` requirement and then a 404 on a repo they have no access to
+// (#558). Being public also means the assets are plain HTTPS downloads, so no
+// GitHub CLI or login is involved and upgrade works inside a container or CI
+// image.
 //
-// The target version is the latest release published to that repo — never the
-// control plane's build version (GET /version). The API is deployed per merge
-// and the CLI is released per tag, so the control plane routinely runs a version
-// that was never published as a CLI release; taking it as the upgrade target
-// nagged about, and then 404'd on, a tag that does not exist (#781).
+// This is where a binary is FETCHED from. Which version to fetch is a different
+// question and is not asked here — see latestReleaseVersion.
 const upgradeRepo = "fogpipe/cloud-cli"
 
 // nixStorePrefix is where Nix keeps installed binaries, and brewCellarSegment is
@@ -84,8 +78,8 @@ var upgradeCmd = &cobra.Command{
 
 		latest, err := latestReleaseVersion()
 		if err != nil {
-			return fmt.Errorf("couldn't determine the latest fpcloud release from %s: %w\n"+
-				"  Releases: https://github.com/%s/releases", upgradeRepo, err, upgradeRepo)
+			return fmt.Errorf("couldn't ask the control plane which fpcloud release to install: %w\n"+
+				"  Releases: https://github.com/%s/releases", err, upgradeRepo)
 		}
 
 		if isUpToDate(version, latest) {
@@ -187,51 +181,45 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 }
 
-// releaseCheckTimeout bounds the "what is the latest release?" lookup. It sits in
-// front of `upgrade` and (once a day) every other command, so a slow or blocked
-// github.com must not hang the CLI.
-const releaseCheckTimeout = 3 * time.Second
-
-// fetchLatestReleaseVersion resolves the newest release tag in the public
-// distribution repo by following the /releases/latest redirect, which points at
-// /releases/tag/<tag>. That is a plain unauthenticated HTTPS request to
-// github.com rather than api.github.com, so it needs no token and is not subject
-// to the 60-per-hour anonymous API rate limit that a shared CI egress IP burns
-// through. Drafts and prereleases are excluded by GitHub, so the tag returned is
-// always one whose assets are downloadable.
-func fetchLatestReleaseVersion() (string, error) {
-	return latestReleaseTagFrom(fmt.Sprintf("https://github.com/%s/releases/latest", upgradeRepo))
+// fetchLatestRelease asks the control plane which version of the product is
+// installable, and that is the upgrade target.
+//
+// Deliberately not github.com's own newest release, which is what this asked
+// before. One version number names one release of the whole product — the cli,
+// the API and the OpenTofu provider carry the same tag — and the three
+// publishing paths do not land together: the provider's is ingested by
+// registry.opentofu.org on a schedule of its own, so for a stretch after every
+// release the newest cli tag has no provider beside it. Upgrading to it moves
+// half of a tenant's install and leaves `version = "= x"` naming something the
+// registry cannot serve.
+//
+// Nor the control plane's own `version` field, which is the other end of the
+// same mistake: it is a tag the API is serving and says nothing about whether
+// anything was published, which is how this once nagged about and then 404'd on
+// a tag that did not exist (#781). `latest_release` is the answer to the
+// question both of those were being asked as a proxy for — the platform reads
+// both publishers and names the newest version present in both
+// (fogpipe/cloud-workspace#813).
+func fetchLatestRelease() (string, error) {
+	server, err := fetchServerVersion(resolveAPIURL())
+	if err != nil {
+		return "", err
+	}
+	if server.LatestRelease == "" {
+		return "", errors.New("the control plane is not currently naming an installable release")
+	}
+	return server.LatestRelease, nil
 }
 
 // latestReleaseVersion is the seam the rest of the CLI resolves the upgrade
-// target through, so tests can supply a version without reaching github.com.
-var latestReleaseVersion = fetchLatestReleaseVersion
+// target through, so tests can supply a version without reaching the network.
+//
+// Bound in init rather than in the declaration: the target now comes from the
+// control plane, so resolving it reads --api-url off rootCmd, and a package
+// variable whose initializer names it is part of rootCmd's own initialization.
+var latestReleaseVersion func() (string, error)
 
-func latestReleaseTagFrom(url string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), releaseCheckTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	tag := path.Base(resp.Header.Get("Location"))
-	if !semver.IsValid(tag) {
-		// No releases yet (the redirect lands on /releases), or GitHub answered
-		// with something other than a redirect.
-		return "", fmt.Errorf("%s returned %s with no release tag", url, resp.Status)
-	}
-	return tag, nil
-}
+func init() { latestReleaseVersion = fetchLatestRelease }
 
 // downloadReleaseAsset fetches one release asset from the public distribution
 // repo straight over HTTPS, into dst.

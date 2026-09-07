@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,34 +63,41 @@ func stubLatestRelease(t *testing.T, tag string, err error) func() {
 	return func() { latestReleaseVersion = prev }
 }
 
-// The upgrade target is the newest *published* release, read off the
-// /releases/latest redirect. The control plane's own version is deployed per
-// merge and is regularly a tag that was never released, so it must not drive
-// this (#781).
-func TestLatestReleaseTagFollowsTheRedirect(t *testing.T) {
+// The upgrade target is what the platform says is installable on every surface,
+// never the version the control plane happens to be serving. The two differ for
+// a stretch after every release — the provider's registry ingestion is the slow
+// one — and taking the second moves the cli past the provider that carries the
+// same version (fogpipe/cloud-workspace#813).
+func TestLatestReleaseIsThePlatformsInstallableVersion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/fogpipe/cloud-cli/releases/tag/v0.112.1", http.StatusFound)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"version":"v0.3.0","min_client_version":"v0.1.0","latest_release":"v0.2.0"}`)
 	}))
 	defer srv.Close()
+	t.Setenv("FPCLOUD_API_URL", srv.URL)
 
-	got, err := latestReleaseTagFrom(srv.URL)
+	got, err := fetchLatestRelease()
 	if err != nil {
-		t.Fatalf("latestReleaseTagFrom: %v", err)
+		t.Fatalf("fetchLatestRelease: %v", err)
 	}
-	if got != "v0.112.1" {
-		t.Errorf("got %q, want v0.112.1", got)
+	if got != "v0.2.0" {
+		t.Errorf("got %q, want v0.2.0 — the installable version, not the deployed one", got)
 	}
 }
 
-// A repo with no releases redirects to /releases, which carries no tag. That is
-// an error, not an upgrade to a garbage version.
-func TestLatestReleaseTagRejectsANonTagRedirect(t *testing.T) {
+// A deployment that cannot currently name an installable release omits the
+// field. That is an error rather than a fall back to `version`: the whole point
+// of the field is that the deployed version is not always installable, so
+// substituting it is the failure this exists to prevent.
+func TestLatestReleaseRefusesToSubstituteTheDeployedVersion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/fogpipe/cloud-cli/releases", http.StatusFound)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"version":"v0.3.0","min_client_version":"v0.1.0"}`)
 	}))
 	defer srv.Close()
+	t.Setenv("FPCLOUD_API_URL", srv.URL)
 
-	if got, err := latestReleaseTagFrom(srv.URL); err == nil {
-		t.Errorf("want an error for a tagless redirect, got %q", got)
+	if got, err := fetchLatestRelease(); err == nil {
+		t.Errorf("want an error when the platform names no installable release, got %q", got)
 	}
 }
