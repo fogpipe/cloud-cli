@@ -810,6 +810,26 @@ var dbUpdateCmd = &cobra.Command{
 			req.Pooler == nil && req.Extensions == nil {
 			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --storage --postgres-version --pooler --extension")
 		}
+		// Removing one uninstalls it, and `drop extension` takes what it created
+		// along — for pg_statecharts, the state machines in its own schema. That
+		// is data loss from an update flag, so it is confirmed like a delete
+		// (fogpipe/cloud-workspace#295); the platform refuses the removal outright
+		// when anything the tenant made still depends on it.
+		if dropped := removedExtensions(existing.Extensions, req); len(dropped) > 0 {
+			yes, _ := cmd.Flags().GetBool("yes")
+			if !yes {
+				ok, err := confirm(
+					fmt.Sprintf("Uninstall %s from %q?", strings.Join(dropped, ", "), args[0]),
+					"The extension is dropped from the database, and everything it created — its schema, types and tables — goes with it. This cannot be undone.",
+					"Yes, uninstall")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
+		}
 
 		db, err := c.UpdateDatabase(context.Background(), existing.ID, req)
 		if err != nil {
@@ -877,6 +897,7 @@ func init() {
 	dbUpdateCmd.Flags().String("postgres-version", "", "New Postgres major version (forward only)")
 	dbUpdateCmd.Flags().Bool("pooler", false, "Enable/disable the PgBouncer pooler")
 	dbUpdateCmd.Flags().StringSlice("extension", nil, "Replace the installed extensions, repeatable (empty uninstalls them)")
+	dbUpdateCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt when --extension uninstalls one")
 
 	dbDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
@@ -942,4 +963,24 @@ func orDash(v string) string {
 		return mutedStyle.Render("—")
 	}
 	return v
+}
+
+// removedExtensions is what an update would uninstall: every extension the
+// database has that the new set no longer names. A request with no opinion
+// about extensions removes none.
+func removedExtensions(installed []string, req client.UpdateDatabaseRequest) []string {
+	if req.Extensions == nil {
+		return nil
+	}
+	keep := map[string]bool{}
+	for _, name := range *req.Extensions {
+		keep[name] = true
+	}
+	var dropped []string
+	for _, name := range installed {
+		if !keep[name] {
+			dropped = append(dropped, name)
+		}
+	}
+	return dropped
 }
