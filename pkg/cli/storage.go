@@ -339,20 +339,14 @@ var storageBucketCredentialsCmd = &cobra.Command{
 		}
 
 		if format == "env" {
-			fmt.Printf("export AWS_ACCESS_KEY_ID=%s\n", creds.AccessKeyID)
-			fmt.Printf("export AWS_ENDPOINT_URL_S3=%s\n", creds.Endpoint)
-			fmt.Printf("export AWS_REGION=%s\n", creds.Region)
-			// The S3 bucket name is the global alias, not the name you typed, and it
-			// is the one value a caller cannot derive — without it every `aws s3`
-			// command against this bucket answers NoSuchBucket (#559).
-			fmt.Printf("export AWS_S3_BUCKET=%s\n", creds.Bucket)
+			fmt.Print(s3Env(creds.AccessKeyID, "", creds.Endpoint, creds.Region, creds.Bucket))
 			// The secret is never returned here: it exists only at the moment a key
 			// is minted (#263). Say so on STDERR, because the documented use of this
 			// format is `eval "$(...)"`, which captures stdout — a note printed there
 			// is swallowed, and the reader debugs an opaque SigV4 failure instead of
 			// reading the line that explained it (#559).
 			fmt.Fprintln(os.Stderr, "note: AWS_SECRET_ACCESS_KEY was not set — this command never returns the secret.")
-			fmt.Fprintln(os.Stderr, "      Mint one with: fpcloud storage keys create "+args[0]+" --read --write")
+			fmt.Fprintln(os.Stderr, "      Mint one with: fpcloud storage keys create "+args[0]+" --read --write --format env")
 			return nil
 		}
 
@@ -657,6 +651,7 @@ var storageKeysCreateCmd = &cobra.Command{
 		read, _ := cmd.Flags().GetBool("read")
 		write, _ := cmd.Flags().GetBool("write")
 		owner, _ := cmd.Flags().GetBool("owner")
+		format, _ := cmd.Flags().GetString("format")
 
 		c := getClient()
 		bucketID, err := resolveBucketID(c, args[0])
@@ -665,6 +660,9 @@ var storageKeysCreateCmd = &cobra.Command{
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
+		if format == "env" {
+			outputFormat = "env"
+		}
 		var key *client.BucketKey
 		var createErr error
 		action := func() {
@@ -683,7 +681,24 @@ var storageKeysCreateCmd = &cobra.Command{
 		if createErr != nil {
 			return createErr
 		}
-		if isStructured(outputFormat) {
+		if format == "env" {
+			// The one command that holds the secret is the one that has to be
+			// eval'able: the id and secret of THIS key beside the bucket's
+			// coordinates, so a shell gets a self-consistent set in one step
+			// rather than the default key's id from get-credentials paired
+			// with a scoped key's secret — a SigV4 failure with nothing to
+			// say why (fogpipe/cloud-workspace#331). The coordinates are the
+			// same read get-credentials does; the key response carries none.
+			creds, err := c.GetBucketCredentials(context.Background(), bucketID)
+			if err != nil {
+				return fmt.Errorf("the key %s was created, but its bucket's coordinates could not be read: %w", key.AccessKeyID, err)
+			}
+			fmt.Print(s3Env(key.AccessKeyID, key.SecretAccessKey, creds.Endpoint, creds.Region, creds.Bucket))
+			// STDERR, because stdout is inside an `eval "$(...)"` (#526).
+			fmt.Fprintln(os.Stderr, "note: AWS_SECRET_ACCESS_KEY is shown once — it is not retrievable later.")
+			return nil
+		}
+		if isStructured(outputFormat) || format == "json" {
 			return renderData(key)
 		}
 		fmt.Println(renderInfoBox("Access Key Created", [][]string{
@@ -931,6 +946,7 @@ func init() {
 	storageBucketUnbindCmd.Flags().String("app", "", "App to unbind the bucket from (name or id, required)")
 
 	storageKeysCreateCmd.Flags().String("name", "", "Optional label for the key")
+	storageKeysCreateCmd.Flags().String("format", "table", "Output form: table | env (shell-eval'able, with the secret) | json")
 	storageKeysCreateCmd.Flags().Bool("read", false, "Grant read (GetObject/ListBucket)")
 	storageKeysCreateCmd.Flags().Bool("write", false, "Grant write (PutObject/DeleteObject)")
 	storageKeysCreateCmd.Flags().Bool("owner", false, "Grant owner (bucket-admin) permissions")
@@ -1252,4 +1268,25 @@ func lifecycleDays(days int) string {
 		return "—"
 	}
 	return strconv.Itoa(days) + "d"
+}
+
+// s3Env renders the variables the AWS CLI and SDKs read, in the one spelling
+// every surface uses (the console's "Copy as env" prints the same five). The
+// endpoint is the S3-scoped variable, not AWS_ENDPOINT_URL, so a shell that
+// evals this still reaches AWS itself for anything that is not S3. The secret
+// line is omitted rather than printed empty when there is none: an empty
+// export would shadow a secret the shell already had.
+func s3Env(accessKeyID, secret, endpoint, region, bucket string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "export AWS_ACCESS_KEY_ID=%s\n", accessKeyID)
+	if secret != "" {
+		fmt.Fprintf(&b, "export AWS_SECRET_ACCESS_KEY=%s\n", secret)
+	}
+	fmt.Fprintf(&b, "export AWS_ENDPOINT_URL_S3=%s\n", endpoint)
+	fmt.Fprintf(&b, "export AWS_REGION=%s\n", region)
+	// The S3 bucket name is the global alias, not the name you typed, and it is
+	// the one value a caller cannot derive — without it every `aws s3` command
+	// against this bucket answers NoSuchBucket (#559).
+	fmt.Fprintf(&b, "export AWS_S3_BUCKET=%s\n", bucket)
+	return b.String()
 }
