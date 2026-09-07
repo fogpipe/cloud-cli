@@ -497,7 +497,7 @@ var websiteUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
 	Short: "Update a website's serving conventions or vanity slug",
 	Long: "Update a website's index/error documents, SPA fallback, or vanity slug.\n" +
-		"--slug moves the site to <slug>.web.<platform-domain> (globally unique);\n" +
+		"--slug moves the site to <slug>.<tenant-domain> (globally unique);\n" +
 		"--slug \"\" reverts to the derived host.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -751,7 +751,7 @@ func init() {
 		cmd.Flags().Bool("spa", false, "Single-page app: serve the index document on misses (client-side routing)")
 	}
 
-	websiteUpdateCmd.Flags().String("slug", "", "Vanity host label: site moves to <slug>.web.<platform-domain> (\"\" reverts)")
+	websiteUpdateCmd.Flags().String("slug", "", "Vanity host label: site moves to <slug>.<tenant-domain> (\"\" reverts)")
 
 	websiteDeployCmd.Flags().Bool("keep-extra", false, "Keep site files that no longer exist locally (default prunes)")
 	websiteDeployCmd.Flags().Bool("dryrun", false, "Print what would change without transferring")
