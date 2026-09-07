@@ -95,6 +95,9 @@ func versionCachePath() string {
 type serverVersion struct {
 	Version          string `json:"version"`
 	MinClientVersion string `json:"min_client_version"`
+	// DeployedAt is when the control plane's version first began serving, by
+	// the fleet's account; empty from a deployment that does not say.
+	DeployedAt string `json:"deployed_at,omitempty"`
 }
 
 // fetchServerVersion asks the control plane for its build version (GET /version,
