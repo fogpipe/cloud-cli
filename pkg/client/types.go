@@ -655,14 +655,22 @@ type Bucket struct {
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 
-	// Static-website serving on Garage's s3_web plane (#342). When enabled the
-	// bucket is served anonymously over HTTP (public read) at WebsiteURL.
+	// PublicRead is whether the bucket's objects can be read without a
+	// signature (ADR-161). A website is a bucket that is public and carries the
+	// serving conventions below; the conventions imply the property, and
+	// nothing implies the conventions.
+	PublicRead bool `json:"public_read"`
+
+	// Static-website serving conventions on Garage's s3_web plane (#342).
 	WebsiteEnabled       bool   `json:"website_enabled"`
 	WebsiteIndexDocument string `json:"website_index_document,omitempty"`
 	WebsiteErrorDocument string `json:"website_error_document,omitempty"`
 	URLSlug              string `json:"url_slug"`
-	WebsiteURL           string `json:"website_url,omitempty"`
-	WebsiteVersion       int    `json:"website_version"`
+	// URL is where the bucket answers, present whenever PublicRead: the
+	// platform host while that is served, the tenant's own domain once one is
+	// active (ADR-130).
+	URL            string `json:"url,omitempty"`
+	WebsiteVersion int    `json:"website_version"`
 }
 
 // WebsiteVersion is one published version of a static site (#476). It exists
@@ -692,6 +700,9 @@ type CreateBucketRequest struct {
 	Name            string `json:"name"`
 	QuotaMaxSize    *int64 `json:"quota_max_size,omitempty"`
 	QuotaMaxObjects *int64 `json:"quota_max_objects,omitempty"`
+	// PublicRead makes the bucket's objects readable without a signature from
+	// the moment it exists (ADR-161). Nil leaves it private.
+	PublicRead *bool `json:"public_read,omitempty"`
 }
 
 // SetBucketQuotaRequest is the request body for updating a bucket's quotas. It
@@ -709,6 +720,12 @@ type SetBucketWebsiteRequest struct {
 	Enabled       bool   `json:"enabled"`
 	IndexDocument string `json:"index_document,omitempty"`
 	ErrorDocument string `json:"error_document,omitempty"`
+}
+
+// SetBucketPublicReadRequest is the request body for whether a bucket's objects
+// can be read without a signature (ADR-161).
+type SetBucketPublicReadRequest struct {
+	PublicRead bool `json:"public_read"`
 }
 
 // PublishBucketWebsiteRequest is the request body for atomically flipping a
@@ -2137,7 +2154,8 @@ type BucketStatus struct {
 	Name           string `json:"name"`
 	Status         string `json:"status"`
 	WebsiteEnabled bool   `json:"website_enabled"`
-	WebsiteURL     string `json:"website_url,omitempty"`
+	PublicRead     bool   `json:"public_read"`
+	URL            string `json:"url,omitempty"`
 	UsedBytes      *int64 `json:"used_bytes,omitempty"`
 	ObjectCount    *int64 `json:"object_count,omitempty"`
 	QuotaMaxSize   int64  `json:"quota_max_size,omitempty"`

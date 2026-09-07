@@ -1796,8 +1796,24 @@ func (c *Client) ClearBucketCORSRules(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// SetBucketWebsite toggles static-website serving on a bucket (#342). Enabling
-// serves the bucket anonymously over HTTP at the returned WebsiteURL.
+// SetBucketPublicRead decides whether a bucket's objects can be read without a
+// signature (ADR-161). Clearing it clears the website conventions with it.
+func (c *Client) SetBucketPublicRead(ctx context.Context, id string, public bool) (*Bucket, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+id+"/public-read",
+		SetBucketPublicReadRequest{PublicRead: public})
+	if err != nil {
+		return nil, err
+	}
+	var b Bucket
+	if err := c.do(httpReq, &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// SetBucketWebsite toggles a bucket's static-website conventions (#342).
+// Enabling makes the bucket publicly readable if it is not already, and it is
+// then served at the returned URL.
 func (c *Client) SetBucketWebsite(ctx context.Context, id string, req SetBucketWebsiteRequest) (*Bucket, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+id+"/website", req)
 	if err != nil {

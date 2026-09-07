@@ -164,6 +164,11 @@ var storageBucketCreateCmd = &cobra.Command{
 			v, _ := cmd.Flags().GetInt64("quota-objects")
 			maxObjects = &v
 		}
+		var publicRead *bool
+		if cmd.Flags().Changed("public-read") {
+			v, _ := cmd.Flags().GetBool("public-read")
+			publicRead = &v
+		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
@@ -175,6 +180,7 @@ var storageBucketCreateCmd = &cobra.Command{
 				Name:            args[0],
 				QuotaMaxSize:    maxSize,
 				QuotaMaxObjects: maxObjects,
+				PublicRead:      publicRead,
 			})
 		}
 		if !isStructured(outputFormat) {
@@ -229,9 +235,12 @@ var storageBucketListCmd = &cobra.Command{
 		}
 		rows := make([][]string, len(buckets))
 		for i, b := range buckets {
-			rows[i] = []string{b.Name, bucketUsage(b), b.Region, renderStatus(b.Status)}
+			// PUBLIC is the one thing about a bucket a reader most needs to
+			// know and could not see here before (ADR-161): whether anyone with
+			// the URL can fetch its objects.
+			rows[i] = []string{b.Name, bucketUsage(b), yesNo(b.PublicRead), dashIfEmpty(b.URL), renderStatus(b.Status)}
 		}
-		render([]string{"NAME", "USED/QUOTA", "REGION", "STATUS"}, rows, buckets)
+		render([]string{"NAME", "USED/QUOTA", "PUBLIC", "URL", "STATUS"}, rows, buckets)
 		return nil
 	},
 }
@@ -422,6 +431,58 @@ var storageBucketWebsiteCmd = &cobra.Command{
 	Use:     "website",
 	Aliases: []string{"web"},
 	Short:   "Serve a bucket as a static website (Garage s3_web plane)",
+}
+
+// storageBucketUpdateCmd is what turns the two flags on and off after create.
+// `--website=false` is the way out of being a website that keeps the reads —
+// before ADR-161 the only way was deleting the site, which took the public
+// access with it.
+var storageBucketUpdateCmd = &cobra.Command{
+	Use:   "update <bucket>",
+	Short: "Change whether a bucket is publicly readable, and whether it serves a website",
+	Long: "Set either flag on an existing bucket.\n\n" +
+		"--public-read decides whether the bucket's objects can be fetched by anyone\n" +
+		"with the URL, without a signature. --website adds the static-site conventions\n" +
+		"on top: an index document for a directory request, an error document for a\n" +
+		"miss, and eligibility for SPA fallback and versioned publishing.\n\n" +
+		"The conventions need the reads, so --website implies --public-read, and\n" +
+		"--public-read=false turns the website off with it. --website=false is how a\n" +
+		"site becomes a plain public bucket without losing its readers.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("public-read") && !cmd.Flags().Changed("website") {
+			return fmt.Errorf("nothing to update: set --public-read or --website")
+		}
+		c := getClient()
+		id, err := resolveBucketID(c, args[0])
+		if err != nil {
+			return err
+		}
+
+		var b *client.Bucket
+		if cmd.Flags().Changed("public-read") {
+			public, _ := cmd.Flags().GetBool("public-read")
+			if b, err = c.SetBucketPublicRead(context.Background(), id, public); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("website") {
+			website, _ := cmd.Flags().GetBool("website")
+			index, _ := cmd.Flags().GetString("index")
+			errorDoc, _ := cmd.Flags().GetString("error")
+			if b, err = c.SetBucketWebsite(context.Background(), id, client.SetBucketWebsiteRequest{
+				Enabled: website, IndexDocument: index, ErrorDocument: errorDoc,
+			}); err != nil {
+				return err
+			}
+		}
+
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(b)
+		}
+		fmt.Println(renderInfoBox("Bucket Updated", websiteInfoPairs(b)))
+		return nil
+	},
 }
 
 var storageBucketWebsiteEnableCmd = &cobra.Command{
@@ -825,7 +886,7 @@ func websiteInfoPairs(b *client.Bucket) [][]string {
 		{"Website", yesNo(b.WebsiteEnabled)},
 	}
 	if b.WebsiteEnabled {
-		url := b.WebsiteURL
+		url := b.URL
 		if url == "" {
 			url = mutedStyle.Render("(served host not configured on this API)")
 		} else {
@@ -912,6 +973,11 @@ func bucketQuota(maxSize, maxObjects int64) string {
 func init() {
 	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); unset takes the platform default. Reserved against the organization's ceiling")
 	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count; unset takes the platform default. Reserved against the organization's ceiling")
+	storageBucketCreateCmd.Flags().Bool("public-read", false, "Serve the bucket's objects to anyone, without a signature")
+	storageBucketUpdateCmd.Flags().Bool("public-read", false, "Whether the bucket's objects can be read without a signature")
+	storageBucketUpdateCmd.Flags().Bool("website", false, "Whether the bucket carries the static-website conventions")
+	storageBucketUpdateCmd.Flags().String("index", "", "Index document, with --website")
+	storageBucketUpdateCmd.Flags().String("error", "", "Error document, with --website")
 
 	storageBucketDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
@@ -960,6 +1026,7 @@ func init() {
 		storageBucketDeleteCmd,
 		storageBucketCredentialsCmd,
 		storageBucketSetQuotaCmd,
+		storageBucketUpdateCmd,
 		storageBucketWebsiteCmd,
 		storageBucketLifecycleCmd,
 		storageBucketCORSCmd,

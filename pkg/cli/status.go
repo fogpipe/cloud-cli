@@ -341,7 +341,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 	for _, bk := range s.Buckets {
 		website := "—"
 		if bk.WebsiteEnabled {
-			website = bk.WebsiteURL
+			website = bk.URL
 			if website == "" {
 				website = "enabled"
 			}

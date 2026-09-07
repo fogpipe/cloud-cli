@@ -181,7 +181,7 @@ var websiteDeployCmd = &cobra.Command{
 		if err := pruneWebsiteVersions(context.Background(), c, b, keep); err != nil {
 			fmt.Println(mutedStyle.Render("note: could not prune old versions: " + err.Error()))
 		}
-		url := b.WebsiteURL
+		url := b.URL
 		if url == "" {
 			url = mutedStyle.Render("(served host not configured on this API)")
 		}
@@ -364,7 +364,7 @@ var websiteRollbackCmd = &cobra.Command{
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Rolled back %s to v%d → %s", args[0], target, lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(b.WebsiteURL)),
+				fmt.Sprintf(" Rolled back %s to v%d → %s", args[0], target, lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(b.URL)),
 		))
 		return nil
 	},
@@ -432,7 +432,7 @@ var websiteListCmd = &cobra.Command{
 		}
 		rows := make([][]string, len(sites))
 		for i, b := range sites {
-			rows[i] = []string{b.Name, dashIfEmpty(b.WebsiteURL)}
+			rows[i] = []string{b.Name, dashIfEmpty(b.URL)}
 		}
 		render([]string{"NAME", "URL"}, rows, sites)
 		return nil
