@@ -139,12 +139,6 @@ type BillingAccount struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// SetPriceBookRequest points an org's billing account at a price book.
-// Operator-only.
-type SetPriceBookRequest struct {
-	PriceBook string `json:"price_book"`
-}
-
 // Invoice is what an org owed for one closed period (#111). Amounts are decimal
 // strings; a finalized invoice is immutable.
 type Invoice struct {
@@ -248,21 +242,6 @@ type GrantBillingBindingRequest struct {
 type UpdateProjectRequest struct {
 	DisplayName string `json:"display_name,omitempty"`
 	Egress      string `json:"egress,omitempty"`
-}
-
-// SetQuotaRequest carries an org's resource ceiling. Operator-only: it targets
-// PUT /admin/orgs/{id}/quota, not any tenant route (#710).
-type SetQuotaRequest struct {
-	MaxCPU     *string `json:"max_cpu,omitempty"`
-	MaxMemory  *string `json:"max_memory,omitempty"`
-	MaxPods    *int    `json:"max_pods,omitempty"`
-	MaxStorage *string `json:"max_storage,omitempty"`
-	// The axes no ResourceQuota carries, bounded in the control plane alone
-	// (ADR-128): what the org's bucket quotas may sum to, and what its projects
-	// may hold in the registry.
-	MaxObjectStorage   *string `json:"max_object_storage,omitempty"`
-	MaxObjects         *int64  `json:"max_objects,omitempty"`
-	MaxRegistryStorage *string `json:"max_registry_storage,omitempty"`
 }
 
 // TrustBinding is a per-project OIDC federation trust binding: a repo (matched by
@@ -1076,13 +1055,6 @@ type Organization struct {
 // DisplayName changes the mutable cosmetic label.
 type UpdateOrgRequest struct {
 	DisplayName string `json:"display_name,omitempty"`
-}
-
-// SetOrgFKERequest toggles the FKE entitlement. Operator-only: it targets
-// PUT /admin/orgs/{id}/fke, not the tenant PATCH (#710). Pointer so an omitted
-// field is refused rather than read as "disable".
-type SetOrgFKERequest struct {
-	Enabled *bool `json:"enabled"`
 }
 
 // OrgSecret is a Fogpipe Secrets Manager bundle (ADR-028): an org-scoped named

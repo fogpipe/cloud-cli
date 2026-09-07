@@ -733,24 +733,6 @@ func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*P
 	return &project, nil
 }
 
-// UpdateOrgQuota sets an organization's operator-only resource ceiling; only the
-// non-nil axes of req are changed.
-//
-// The ceiling is the org's rather than a project's because a tenant decides how
-// many projects it has: bounding each one bounded a number the tenant could
-// raise by creating another.
-func (c *Client) UpdateOrgQuota(ctx context.Context, id string, req SetQuotaRequest) (*Organization, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+id+"/quota", req)
-	if err != nil {
-		return nil, err
-	}
-	var org Organization
-	if err := c.do(httpReq, &org); err != nil {
-		return nil, err
-	}
-	return &org, nil
-}
-
 // ListAudit returns audit log entries, optionally filtered by query params
 // (resource_type, resource_id, actor, limit, offset).
 func (c *Client) ListAudit(ctx context.Context, query string) ([]*AuditEntry, error) {
@@ -863,36 +845,6 @@ func (c *Client) OrgPrices(ctx context.Context, orgID string) (*OrgPriceList, er
 		return nil, err
 	}
 	return &out, nil
-}
-
-// OrgPriceBook returns which book an org is billed against. Operator-only, and
-// the read half of UpdateOrgPriceBook — a field that can be written and not read
-// is one a declarative client cannot refresh.
-func (c *Client) OrgPriceBook(ctx context.Context, orgID string) (*BillingAccount, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/admin/orgs/"+orgID+"/price-book", nil)
-	if err != nil {
-		return nil, err
-	}
-	var account BillingAccount
-	if err := c.do(httpReq, &account); err != nil {
-		return nil, err
-	}
-	return &account, nil
-}
-
-// UpdateOrgPriceBook moves an org's billing account onto a price book.
-// Operator-only: which rates an org is billed at is a commercial grant, not
-// something a tenant sets for itself.
-func (c *Client) UpdateOrgPriceBook(ctx context.Context, orgID, book string) (*BillingAccount, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+orgID+"/price-book", SetPriceBookRequest{PriceBook: book})
-	if err != nil {
-		return nil, err
-	}
-	var account BillingAccount
-	if err := c.do(httpReq, &account); err != nil {
-		return nil, err
-	}
-	return &account, nil
 }
 
 // ListInvoices returns an org's invoices, newest period first.
@@ -2295,21 +2247,6 @@ func (c *Client) ListOrgs(ctx context.Context) ([]*Organization, error) {
 // at its route boundary (ADR-121).
 func (c *Client) GetOrg(ctx context.Context, id string) (*Organization, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+id, nil)
-	if err != nil {
-		return nil, err
-	}
-	var org Organization
-	if err := c.do(httpReq, &org); err != nil {
-		return nil, err
-	}
-	return &org, nil
-}
-
-// UpdateOrgFKE toggles an organization's FKE entitlement (kubectl/kubeconfig
-// access). Operator-only: it lives under /admin, which is gated on administrate
-// over the platform-operator org (#710).
-func (c *Client) UpdateOrgFKE(ctx context.Context, id string, enabled bool) (*Organization, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/admin/orgs/"+id+"/fke", SetOrgFKERequest{Enabled: &enabled})
 	if err != nil {
 		return nil, err
 	}
