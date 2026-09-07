@@ -144,6 +144,47 @@ var registryReposListCmd = &cobra.Command{
 	},
 }
 
+// The push path a project's images live on, so a build command can be written
+// at all (ADR-165, fogpipe/cloud-workspace#210). `registry repos list` prints
+// names with the project's prefix stripped, which is right for browsing and
+// useless for `docker build -t`.
+//
+// Derived from the platform rather than typed: the org's frozen short_id and
+// the project's name are read back over the API, so a workflow cannot hold a
+// stale spelling of either (ADR-094). A build cache is an ordinary repository
+// on this path like any other (ADR-081), which is why this is one command and
+// not a cache-specific one.
+var registryRepoPathCmd = &cobra.Command{
+	Use:   "repo-path [name]",
+	Short: "Print the full registry path a repository lives on",
+	Long: "Print the registry path this project's images are pushed to, with an\n" +
+		"optional repository name appended. Use it to write a build command, or to\n" +
+		"name a build cache that outlives a per-job runner:\n\n" +
+		"  docker build -t \"$(fpcloud registry repo-path api):v1\" .",
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectRef, err := requireProject()
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		proj, err := c.GetProject(cmd.Context(), projectRef)
+		if err != nil {
+			return err
+		}
+		org, err := c.GetOrg(cmd.Context(), proj.OrganizationID)
+		if err != nil {
+			return err
+		}
+		path := fmt.Sprintf("%s/%s/%s", registryHost, org.ShortID, proj.Name)
+		if len(args) == 1 {
+			path += "/" + args[0]
+		}
+		fmt.Println(path)
+		return nil
+	},
+}
+
 var registryTagsCmd = &cobra.Command{
 	Use:     "tags",
 	Aliases: []string{"tag"},
@@ -533,7 +574,7 @@ func init() {
 
 	registryCmd.AddCommand(
 		registryGetLoginPasswordCmd, registryLoginCmd,
-		registryReposCmd, registryTagsCmd, registryCVEsCmd, registryRetentionCmd, registryVisibilityCmd,
+		registryReposCmd, registryRepoPathCmd, registryTagsCmd, registryCVEsCmd, registryRetentionCmd, registryVisibilityCmd,
 	)
 	rootCmd.AddCommand(registryCmd)
 }
