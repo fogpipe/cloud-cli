@@ -128,10 +128,13 @@ func currentCredential() (credential, signIn string) {
 // resolved context is still useful without a live identity.
 func currentIdentity() string {
 	me, err := getClient().GetMe(context.Background())
-	if err != nil || me.User == nil {
+	if err != nil {
 		return ""
 	}
-	return me.User.Email
+	// Whichever principal the credential is: a CI shell authenticated as a
+	// service account has an identity worth showing, and blanking it reads as
+	// "not logged in".
+	return me.Email()
 }
 
 // orDefault returns s, or def when s is empty (with muted styling for display).

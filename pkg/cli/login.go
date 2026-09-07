@@ -255,7 +255,7 @@ func storeAPIKey(ctx context.Context, apiKey string) error {
 	}
 	fmt.Println(successBox.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-			fmt.Sprintf(" Logged in as %s (%s)", me.User.Name, me.User.Email),
+			fmt.Sprintf(" Logged in as %s (%s)", me.DisplayName(), me.Email()),
 	))
 	return nil
 }

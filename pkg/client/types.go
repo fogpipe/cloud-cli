@@ -1146,9 +1146,58 @@ type AuthSecurityResponse struct {
 	Methods   []string `json:"methods"`
 }
 
+// MeResponse answers "who is this credential". It answers for every principal
+// the platform issues, which includes a service account: refusing to identify
+// an identity the platform created would leave a caller inferring who it is
+// from what works (fogpipe/cloud-workspace#802).
+//
+// Branch on Type, never on which field is populated. The two principals are
+// different kinds and neither is a degenerate case of the other, so no
+// user-only field is ever filled with something plausible for a machine.
 type MeResponse struct {
-	User         *User         `json:"user"`
+	// Type is "user" or "serviceAccount".
+	Type string `json:"type"`
+	// User is set when Type is "user", ServiceAccount when it is
+	// "serviceAccount". Exactly one is ever populated.
+	User           *User           `json:"user,omitempty"`
+	ServiceAccount *ServiceAccount `json:"service_account,omitempty"`
+	// Organization answers for both kinds: it is the org whose budget the
+	// caller's requests are spent against.
 	Organization *Organization `json:"organization"`
+}
+
+// Email is the address of whichever principal answered, or "" if neither did.
+// DisplayName is its human-readable name, falling back to the address.
+//
+// These exist so a caller that only wants to say WHO is speaking does not have
+// to branch on Type itself. A predicate every consumer must restate identically
+// is one that will eventually be restated differently (ADR-137, ADR-166) — and
+// the CLI had already got it wrong in the other direction, printing
+// `me.User.Name` unguarded, which is a nil dereference for every service
+// account (fogpipe/cloud-workspace#802).
+func (m *MeResponse) Email() string {
+	switch {
+	case m == nil:
+		return ""
+	case m.User != nil:
+		return m.User.Email
+	case m.ServiceAccount != nil:
+		return m.ServiceAccount.Email
+	}
+	return ""
+}
+
+// DisplayName is what to show a person, never empty when Email is not.
+func (m *MeResponse) DisplayName() string {
+	switch {
+	case m == nil:
+		return ""
+	case m.User != nil && m.User.Name != "":
+		return m.User.Name
+	case m.ServiceAccount != nil && m.ServiceAccount.DisplayName != "":
+		return m.ServiceAccount.DisplayName
+	}
+	return m.Email()
 }
 
 // ServiceAccount represents a service account.
