@@ -133,46 +133,6 @@ var orgInviteCmd = &cobra.Command{
 	},
 }
 
-var orgAddUserCmd = &cobra.Command{
-	Use:   "add-user <email>",
-	Short: "Provision a new user + API key in the organization (admin-only)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-
-		name, _ := cmd.Flags().GetString("name")
-		role, _ := cmd.Flags().GetString("role")
-		if role == "" {
-			role = "viewer"
-		}
-		email := args[0]
-		if name == "" {
-			name = email
-		}
-
-		c := getClient()
-		var resp *client.RegisterResponse
-		withSpinner("Provisioning user...", func() {
-			resp, err = c.ProvisionUser(cmd.Context(), orgID, email, name, role)
-		})
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(renderInfoBox("User Provisioned", [][]string{
-			{"Email", resp.User.Email},
-			{"User ID", resp.User.ID},
-			{"Role", role},
-			{"API Key", resp.APIKey},
-		}))
-		fmt.Println(mutedStyle.Render("Store the API key now — it is only shown once."))
-		return nil
-	},
-}
-
 var orgSetRoleCmd = &cobra.Command{
 	Use:   "set-role <user-id|email>",
 	Short: "Change a member's role",
@@ -364,8 +324,6 @@ func init() {
 	// --org is inherited from the root persistent flag (default: current org from
 	// `org switch`); these commands must not shadow it with a local --org.
 	orgInviteCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
-	orgAddUserCmd.Flags().String("name", "", "Display name (defaults to email)")
-	orgAddUserCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
 	orgSetRoleCmd.Flags().String("role", "", "New role (owner, editor, viewer)")
 
 	orgRenameCmd.Flags().String("name", "", "The organization's new readable name")
@@ -374,7 +332,6 @@ func init() {
 	orgCmd.AddCommand(orgSwitchCmd)
 	orgCmd.AddCommand(orgMembersCmd)
 	orgCmd.AddCommand(orgInviteCmd)
-	orgCmd.AddCommand(orgAddUserCmd)
 	orgCmd.AddCommand(orgSetRoleCmd)
 	orgCmd.AddCommand(orgRemoveCmd)
 

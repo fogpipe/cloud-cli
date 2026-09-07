@@ -2284,24 +2284,6 @@ func (c *Client) ListOrgMembers(ctx context.Context, orgID string) ([]*OrgMember
 	return members, nil
 }
 
-// ProvisionUser creates a new user in an existing organization and mints an
-// API key. Admin-only; replaces self-service registration in the internal model.
-func (c *Client) ProvisionUser(ctx context.Context, orgID, email, name, role string) (*RegisterResponse, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/users", ProvisionUserRequest{
-		Email: email,
-		Name:  name,
-		Role:  role,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var resp RegisterResponse
-	if err := c.do(httpReq, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
 // InviteOrgMember invites a user to an organization by email.
 func (c *Client) InviteOrgMember(ctx context.Context, orgID, email, role string) (*OrgMember, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/members", InviteOrgMemberRequest{

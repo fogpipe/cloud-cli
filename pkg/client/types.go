@@ -1092,21 +1092,6 @@ type AppWebhook struct {
 	LastDeploySHA string  `json:"last_deploy_sha,omitempty"`
 }
 
-// RegisterResponse is the response from provisioning a user account.
-type RegisterResponse struct {
-	User         *User         `json:"user"`
-	Organization *Organization `json:"organization"`
-	APIKey       string        `json:"api_key"`
-}
-
-// ProvisionUserRequest is the request body for admin-provisioning a user
-// into an existing organization (POST /api/v1/orgs/{orgID}/users).
-type ProvisionUserRequest struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Role  string `json:"role,omitempty"`
-}
-
 // MeResponse is the response from the /auth/me endpoint.
 // AuthConfigResponse is where humans sign in (ADR-132): the issuer, its
 // endpoints, and the public clients the platform registered for the CLI and
