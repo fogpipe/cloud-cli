@@ -127,15 +127,38 @@ var domainRemoveCmd = &cobra.Command{
 
 var domainListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List domains for an app",
+	Short:   "List every hostname the project serves, or one app's domains with --app",
 	Aliases: []string{"ls"},
+	Long: `List the hostnames a project serves, whatever backs them.
+
+Without --app this is the whole project in one table: every custom domain on
+an app or a website, and every platform host, with what serves each — the
+same list the console's Domains page shows (fogpipe/cloud-workspace#14). A
+domain is a route table over apps (ADR-060), so the SERVES column names the
+app or bucket the host lands on by default.
+
+With --app it is that app's own domains, with their routing.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appRef, _ := cmd.Flags().GetString("app")
+		c := getClient()
+
 		if appRef == "" {
-			return fmt.Errorf("--app is required")
+			project, err := requireProject()
+			if err != nil {
+				return err
+			}
+			status, _, err := c.ProjectStatus(context.Background(), project, "")
+			if err != nil {
+				return err
+			}
+			render(
+				[]string{"DOMAIN", "MODE", "STATUS", "TLS", "SERVES"},
+				domainStatusRows(status.Domains),
+				status.Domains,
+			)
+			return nil
 		}
 
-		c := getClient()
 		appID, err := resolveAppID(c, appRef)
 		if err != nil {
 			return err
@@ -161,6 +184,25 @@ var domainListCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// domainStatusRows shapes the project's hostnames for a table: one row per
+// host, app- and bucket-owned alike, a platform host showing its source where
+// a custom one shows its mode, and the owner as kind/name.
+func domainStatusRows(domains []client.DomainStatus) [][]string {
+	rows := make([][]string, 0, len(domains))
+	for _, d := range domains {
+		owner := d.Owner
+		if owner != "" && d.OwnerKind != "" {
+			owner = d.OwnerKind + "/" + d.Owner
+		}
+		mode := d.Mode
+		if mode == "" {
+			mode = mutedStyle.Render(d.Source)
+		}
+		rows = append(rows, []string{d.Domain, mode, renderStatus(d.Status), tlsLabel(d.TLSStatus), owner})
+	}
+	return rows
 }
 
 var domainStatusCmd = &cobra.Command{
@@ -398,7 +440,7 @@ func init() {
 	domainAddCmd.Flags().String("app", "", "App name or ID (required)")
 	domainAddCmd.Flags().String("mode", "", "Attachment mode: verified (default), edge (TLS terminated upstream, no cert), on_demand (no TXT ownership proof, HTTP-01 cert on pointing), or wildcard (*.zone, DNS-01 cert)")
 	domainRemoveCmd.Flags().String("app", "", "App name or ID (required)")
-	domainListCmd.Flags().String("app", "", "App name or ID (required)")
+	domainListCmd.Flags().String("app", "", "List one app's domains instead of the whole project's")
 	domainStatusCmd.Flags().String("app", "", "App name or ID (required)")
 	domainSetRoutesCmd.Flags().String("app", "", "App name or ID owning the domain (required)")
 	domainSetRoutesCmd.Flags().StringArray("route", nil, "Route a path prefix to another app: path=app (repeatable, e.g. /api/=api)")
