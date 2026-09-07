@@ -239,8 +239,10 @@ func listWebsiteVersions(ctx context.Context, c *client.Client, name string) ([]
 //
 // Allocating from what is there burns the number instead: the abandoned prefix
 // is left alone, retention prunes it later, and every version prefix stays a
-// faithful snapshot of one deploy. The live pointer is still consulted, because
-// it can legitimately run ahead of the store after a partly-failed flip (#554).
+// faithful snapshot of one deploy. The live pointer is consulted as a floor:
+// the pointer only moves once a flip has landed (fogpipe/cloud-workspace#327),
+// so it never runs ahead of the store, but a listing that missed the live
+// prefix must still not hand its number out again.
 func nextWebsiteVersion(present []int, live int) int {
 	highest := live
 	for _, v := range present {
