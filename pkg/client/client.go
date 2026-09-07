@@ -2371,6 +2371,37 @@ func (c *Client) CreateServiceAccount(ctx context.Context, projectID string, req
 	return &sa, nil
 }
 
+// CreateOrgServiceAccount mints a machine identity the ORGANIZATION holds
+// rather than one of its projects (fogpipe/cloud-workspace#778): for a
+// credential that outlives every project, such as a CI suite that creates and
+// destroys its own. Requires org administrate, the same bar as granting an org
+// binding.
+func (c *Client) CreateOrgServiceAccount(ctx context.Context, orgID string, req CreateServiceAccountRequest) (*ServiceAccount, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/service-accounts", req)
+	if err != nil {
+		return nil, err
+	}
+	var sa ServiceAccount
+	if err := c.do(httpReq, &sa); err != nil {
+		return nil, err
+	}
+	return &sa, nil
+}
+
+// ListOrgServiceAccounts lists an organization's own machine identities — not
+// the ones its projects hold, which each project lists.
+func (c *Client) ListOrgServiceAccounts(ctx context.Context, orgID string) ([]*ServiceAccount, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/service-accounts", nil)
+	if err != nil {
+		return nil, err
+	}
+	var accounts []*ServiceAccount
+	if err := c.do(httpReq, &accounts); err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
+
 // UpdateServiceAccountDisplayName changes a service account's mutable, cosmetic
 // display name. The frozen name and email are untouched.
 func (c *Client) UpdateServiceAccountDisplayName(ctx context.Context, id, displayName string) (*ServiceAccount, error) {

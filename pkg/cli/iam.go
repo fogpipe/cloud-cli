@@ -85,6 +85,83 @@ var saListCmd = &cobra.Command{
 	},
 }
 
+// A machine identity the ORGANIZATION holds, rather than one of its projects
+// (fogpipe/cloud-workspace#778). For a credential that outlives every project —
+// a CI suite that creates and destroys its own, a tofu root — which had no home
+// in the schema and was written as a user row instead, so the identity
+// provisioning task mailed CI an invitation (#741).
+var saCreateOrgCmd = &cobra.Command{
+	Use:   "create-org <name>",
+	Short: "Create a service account the organization holds, not a project",
+	Long: "Mint a machine identity scoped to the organization itself, for a credential\n" +
+		"that outlives any single project. Requires org administrate. Its address\n" +
+		"carries the org and no project: <name>@<org>.<platform domain>.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		displayName, _ := cmd.Flags().GetString("display-name")
+
+		c := getClient()
+		var sa *client.ServiceAccount
+		withSpinner("Creating service account...", func() {
+			sa, err = c.CreateOrgServiceAccount(cmd.Context(), orgID, client.CreateServiceAccountRequest{
+				Name:        args[0],
+				DisplayName: displayName,
+			})
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(renderInfoBox("Service Account Created", [][]string{
+			{"ID", sa.ID},
+			{"Name", sa.Name},
+			{"Email", sa.Email},
+			{"Scope", "organization"},
+			{"Status", renderStatus(sa.Status)},
+		}))
+		return nil
+	},
+}
+
+// The org's OWN identities, not its projects' — which each project lists.
+var saListOrgCmd = &cobra.Command{
+	Use:   "list-org",
+	Short: "List the service accounts the organization holds",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+
+		c := getClient()
+		var accounts []*client.ServiceAccount
+		withSpinner("Fetching service accounts...", func() {
+			accounts, err = c.ListOrgServiceAccounts(cmd.Context(), orgID)
+		})
+		if err != nil {
+			return err
+		}
+
+		headers := []string{"ID", "NAME", "EMAIL", "STATUS", "CREATED"}
+		var rows [][]string
+		for _, sa := range accounts {
+			rows = append(rows, []string{
+				sa.ID,
+				sa.Name,
+				sa.Email,
+				renderStatus(sa.Status),
+				sa.CreatedAt.Format("2006-01-02 15:04"),
+			})
+		}
+		render(headers, rows, accounts)
+		return nil
+	},
+}
+
 var saUpdateCmd = &cobra.Command{
 	Use:   "update <id>",
 	Short: "Update a service account's display name",
@@ -331,6 +408,9 @@ func init() {
 	saCreateCmd.Flags().String("display-name", "", "Display name for the service account")
 	saUpdateCmd.Flags().String("display-name", "", "New display name")
 	saCmd.AddCommand(saCreateCmd)
+	saCreateOrgCmd.Flags().String("display-name", "", "Human-readable name")
+	saCmd.AddCommand(saCreateOrgCmd)
+	saCmd.AddCommand(saListOrgCmd)
 	saCmd.AddCommand(saUpdateCmd)
 	saCmd.AddCommand(saListCmd)
 	saCmd.AddCommand(saDeleteCmd)

@@ -1123,9 +1123,14 @@ type MeResponse struct {
 
 // ServiceAccount represents a service account.
 type ServiceAccount struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	Name        string    `json:"name"`
+	ID string `json:"id"`
+	// Exactly one of ProjectID and OrganizationID is set: a machine identity
+	// belongs to a project, or to the organization itself when it outlives
+	// every project — a CI suite that creates and destroys its own, a tofu
+	// root (fogpipe/cloud-workspace#778).
+	ProjectID      string    `json:"project_id,omitempty"`
+	OrganizationID string    `json:"organization_id,omitempty"`
+	Name           string    `json:"name"`
 	DisplayName string    `json:"display_name"`
 	Email       string    `json:"email"`
 	Status      string    `json:"status"`
