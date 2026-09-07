@@ -1943,6 +1943,8 @@ func init() {
 	// shorthand (the flag wins when both are given).
 	appCmd.PersistentFlags().String("app", "", "App name or ID (the positional <name> is a shorthand)")
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
+	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
+	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)
 }
