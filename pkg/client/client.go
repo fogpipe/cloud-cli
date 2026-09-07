@@ -1425,7 +1425,23 @@ func (c *Client) GetDatabase(ctx context.Context, id string) (*Database, error) 
 // GetDatabaseConnection retrieves a database's live connection info (incl. the
 // real CNPG password) for the `db connect` tunnel path.
 func (c *Client) GetDatabaseConnection(ctx context.Context, id string) (*DatabaseConnection, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/databases/"+id+"/connection", nil)
+	return c.databaseConnection(ctx, id, false)
+}
+
+// GetReadOnlyDatabaseConnection asks for a credential that cannot write
+// (fogpipe/cloud-workspace#719). Refused rather than downgraded on a database
+// that cannot mint one, so a caller never gets a writable credential it did not
+// ask for.
+func (c *Client) GetReadOnlyDatabaseConnection(ctx context.Context, id string) (*DatabaseConnection, error) {
+	return c.databaseConnection(ctx, id, true)
+}
+
+func (c *Client) databaseConnection(ctx context.Context, id string, readOnly bool) (*DatabaseConnection, error) {
+	path := "/api/v1/databases/" + id + "/connection"
+	if readOnly {
+		path += "?read_only=true"
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1514,6 +1530,52 @@ func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.
 			return nil, apiErr
 		}
 		return nil, fmt.Errorf("dial tunnel: %w", err)
+	}
+	return ws, nil
+}
+
+// DialAppExec opens a session that runs command in one of an app's running
+// containers, streamed over the API (fogpipe/cloud-workspace#317). A WebSocket
+// for the reason the db tunnel is one: it rides the same Authorization header
+// as every other call, with no kubeconfig anywhere — FKE is an operator
+// entitlement, so inspecting your own app must not require one.
+//
+// Each argv element travels as its own `cmd` parameter, so nothing is split or
+// quoted on the way and an argument containing a space or a `$(…)` reaches the
+// container as bytes. An empty container takes the pod's first, as kubectl
+// does.
+func (c *Client) DialAppExec(ctx context.Context, appID string, command []string, container string, tty bool) (*websocket.Conn, error) {
+	wsURL := strings.Replace(strings.Replace(c.BaseURL, "https://", "wss://", 1), "http://", "ws://", 1)
+	q := url.Values{}
+	for _, arg := range command {
+		q.Add("cmd", arg)
+	}
+	if container != "" {
+		q.Set("container", container)
+	}
+	if tty {
+		q.Set("tty", "true")
+	}
+	wsURL += "/api/v1/apps/" + appID + "/exec?" + q.Encode()
+
+	header := http.Header{}
+	if c.APIKey != "" {
+		header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	if c.Version != "" {
+		header.Set(ClientVersionHeader, c.Version)
+	}
+	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		if resp != nil {
+			defer resp.Body.Close()
+			apiErr := &APIError{StatusCode: resp.StatusCode}
+			if jerr := json.NewDecoder(resp.Body).Decode(apiErr); jerr != nil {
+				return nil, &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+			}
+			return nil, apiErr
+		}
+		return nil, fmt.Errorf("dial app exec: %w", err)
 	}
 	return ws, nil
 }

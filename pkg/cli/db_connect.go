@@ -35,7 +35,11 @@ var dbConnectCmd = &cobra.Command{
 		"It also says channel_binding=disable, and means that too: the tunnel is\n" +
 		"two TLS sessions (yours to 127.0.0.1, the platform's to the primary), and\n" +
 		"SCRAM channel binding ties a login to one session's certificate, so it\n" +
-		"cannot hold across both. What verify-full protects is the hop you can see.",
+		"cannot hold across both. What verify-full protects is the hop you can see.\n\n" +
+		"--read-only mints a credential that can read what you own and cannot\n" +
+		"write or drop any of it, for a session opened to look rather than to\n" +
+		"change. It covers tables you create later too. The default stays\n" +
+		"writable, because this is the documented path for migrations and psql.",
 	Args: cobra.ExactArgs(1),
 	RunE: runDBConnect,
 }
@@ -49,7 +53,12 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := c.GetDatabaseConnection(ctx, id)
+	readOnly, _ := cmd.Flags().GetBool("read-only")
+	get := c.GetDatabaseConnection
+	if readOnly {
+		get = c.GetReadOnlyDatabaseConnection
+	}
+	conn, err := get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -192,6 +201,7 @@ func relayLocal(local net.Conn, ws *websocket.Conn) {
 
 func init() {
 	dbConnectCmd.Flags().Int("port", 0, "Local port to listen on (default: a random free port)")
+	dbConnectCmd.Flags().Bool("read-only", false, "Mint a credential that can read but not write")
 	dbCmd.AddCommand(dbConnectCmd)
 }
 
