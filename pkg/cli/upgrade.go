@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,18 +32,36 @@ import (
 // nagged about, and then 404'd on, a tag that does not exist (#781).
 const upgradeRepo = "fogpipe/cloud-cli"
 
-// nixStorePrefix is where Nix keeps installed binaries. The store is read-only
-// by design, so a Nix-installed fpcloud can never replace itself — upgrade
-// explains the Nix update path instead of failing on a permission error.
-const nixStorePrefix = "/nix/store/"
+// nixStorePrefix is where Nix keeps installed binaries, and brewCellarSegment is
+// where Homebrew keeps its own. Both are managed installs: replacing the binary
+// underneath either one is the package manager's business, not ours, so upgrade
+// prints that manager's update command instead of writing anything.
+//
+// Worth stating why only one of these existed until now, because it is the rule
+// for whatever packaging path is added next. **The Nix store is read-only, so
+// replacing a Nix-installed binary FAILED and got a branch. Homebrew's Cellar is
+// writable, so the identical mistake SUCCEEDED and did not.** We had fixed the
+// case that could not hide and left the one that could — and the one that could
+// is worse, because it reports success: the tenant is told to run
+// `fpcloud upgrade`, does, and is put back below the client floor by their next
+// `brew upgrade`, having done exactly what we asked
+// (fogpipe/cloud-workspace#803).
+//
+// A packaging path is judged by whether getting this wrong is loud, never by
+// how popular it is.
+const (
+	nixStorePrefix    = "/nix/store/"
+	brewCellarSegment = "/Cellar/"
+)
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Download and install the latest fpcloud release",
 	Long: "Replace the running fpcloud binary in place with the latest release\n" +
 		"published to " + upgradeRepo + ", fetched over HTTPS.\n\n" +
-		"When fpcloud was installed with Nix, the binary is immutable and upgrade\n" +
-		"prints the Nix update path instead of replacing anything.",
+		"When fpcloud was installed by a package manager — Nix or Homebrew — the\n" +
+		"binary belongs to that manager, and upgrade prints its update command\n" +
+		"instead of replacing anything.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		exePath, err := os.Executable()
 		if err != nil {
@@ -52,8 +71,15 @@ var upgradeCmd = &cobra.Command{
 			exePath = resolved
 		}
 
+		// Both checks read the RESOLVED path, so a symlinked install is caught
+		// rather than the link's target being written: Homebrew puts the binary
+		// in the Cellar and links it into `bin`, which is exactly the shape that
+		// made this succeed silently.
 		if strings.HasPrefix(exePath, nixStorePrefix) {
 			return nixUpgradeNotice()
+		}
+		if strings.Contains(exePath, brewCellarSegment) {
+			return brewUpgradeNotice()
 		}
 
 		latest, err := latestReleaseVersion()
@@ -115,6 +141,46 @@ func nixUpgradeNotice() error {
 		"    nix flake update fpcloud     # a flake input — then re-enter the dev shell\n"+
 		"    nix profile upgrade fpcloud  # an ad-hoc profile install\n"+
 		"  Details: https://github.com/fogpipe/cloud-cli", versions)
+}
+
+// brewUpgradeNotice explains the Homebrew update path rather than replacing the
+// binary in the Cellar (fogpipe/cloud-workspace#803).
+//
+// Replacing it appears to work — the file really is the new version — and leaves
+// Homebrew's own record wrong in three ways at once: `brew list --versions`
+// still reports the old version, because the Cellar directory is named after it;
+// the formula's sha256 no longer matches what is on disk; and the next
+// `brew upgrade` reinstalls the version the formula pins, silently returning the
+// tenant to the binary the control plane just refused.
+//
+// It PRINTS the command rather than running it. Invoking another package manager
+// on someone's machine is not a thing a CLI should decide to do, and a tenant
+// who wants to see it first is the ordinary case.
+func brewUpgradeNotice() error {
+	latest, err := latestReleaseVersion()
+	if err == nil && isUpToDate(version, latest) {
+		fmt.Printf("Already up to date (%s). Installed with Homebrew — updates come from `brew upgrade`, not `fpcloud upgrade`.\n", version)
+		return nil
+	}
+	if err != nil {
+		latest = ""
+	}
+	return errors.New(brewUpgradeMessage(version, latest))
+}
+
+// brewUpgradeMessage is the notice itself, separated from the release lookup so
+// it can be read back in a test without a network call. An empty latest means
+// the lookup failed, which is not a reason to withhold the instruction — the
+// tenant still cannot upgrade this binary in place.
+func brewUpgradeMessage(have, latest string) string {
+	versions := "You have " + have
+	if latest != "" {
+		versions += "; the latest release is " + latest
+	}
+	return "this fpcloud was installed with Homebrew, which owns the binary — replacing it here would leave brew reporting the old version and put it back on your next `brew upgrade`.\n" +
+		"  " + versions + ". Update it through Homebrew instead:\n" +
+		"    brew update && brew upgrade fpcloud\n" +
+		"  Details: https://github.com/fogpipe/cloud-cli"
 }
 
 func init() {
