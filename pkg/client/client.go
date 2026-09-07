@@ -2248,19 +2248,6 @@ func (c *Client) ListDeployments(ctx context.Context, appID string) ([]*Deployme
 	return deployments, nil
 }
 
-// GetDeployment retrieves a single deployment by ID.
-func (c *Client) GetDeployment(ctx context.Context, appID, deploymentID string) (*Deployment, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+appID+"/deployments/"+deploymentID, nil)
-	if err != nil {
-		return nil, err
-	}
-	var deployment Deployment
-	if err := c.do(httpReq, &deployment); err != nil {
-		return nil, err
-	}
-	return &deployment, nil
-}
-
 // --- Organization methods ---
 
 func (c *Client) ListOrgs(ctx context.Context) ([]*Organization, error) {
