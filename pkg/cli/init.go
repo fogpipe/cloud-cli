@@ -24,8 +24,13 @@ how two people, or two accounts, work on one machine at the same time.
 There is nothing to init globally: ~/.fpcloud is written the first time a
 command has something to put there.
 
-  fpcloud init && fpcloud switch acme web   # this directory's context
-  fpcloud init && fpcloud login             # …and its own identity
+  fpcloud init && fpcloud switch acme web                 # this directory's context
+  fpcloud init && fpcloud login --account you@example.com # …and its own identity
+
+Name the account. A bare "fpcloud login" asks the issuer for a picker, and if
+it signs you in as whoever it already had, nothing refuses it — the wrong
+identity is refused later, per request, by the org it is not a member of, as
+"forbidden" with nothing pointing back at the login that chose it.
 
 A token written here is a token inside your checkout — ignore .fpcloud/ in
 version control.`,
