@@ -347,13 +347,58 @@ func renderRetentionItems(preview *client.RetentionPreview) {
 		// "First seen", not "pushed": this is when fpcloud first held the
 		// manifest, which is all a registry can honestly report — an image's own
 		// timestamp is written by whatever built it.
-		firstSeen := "—"
-		if item.FirstSeenAt != nil {
-			firstSeen = item.FirstSeenAt.Format("2006-01-02 15:04")
-		}
-		rows[i] = []string{item.Repo, item.Tag, item.Reason, firstSeen}
+		rows[i] = []string{item.Repo, item.Tag, item.Reason, firstSeenLabel(item)}
 	}
 	render([]string{"REPOSITORY", "TAG", "REASON", "FIRST SEEN"}, rows, preview)
+	if isStructured(rootCmd.Flag("output").Value.String()) {
+		return
+	}
+	// An empty table is only half an answer: what the policy could not order
+	// it kept, and what it could not read it left out (fogpipe/cloud-workspace#283).
+	for _, line := range retentionCaveats(preview) {
+		fmt.Println(mutedStyle.Render("  " + line))
+	}
+}
+
+func firstSeenLabel(item client.RetentionPreviewItem) string {
+	if item.FirstSeenAt == nil {
+		return "—"
+	}
+	return item.FirstSeenAt.Format("2006-01-02 15:04")
+}
+
+// retentionCaveats says what a preview's deletion list leaves unsaid: the tags
+// a tie at the keep_last boundary kept, per repository, and the repositories
+// the preview could not read. Twenty-two tags first seen by one listing under
+// keep_last 3 are all kept, by decision (ADR-063); rendered as an empty table
+// that read as a policy with nothing to do.
+func retentionCaveats(preview *client.RetentionPreview) []string {
+	var out []string
+	byRepo := map[string][]client.RetentionPreviewItem{}
+	var repos []string
+	for _, item := range preview.Tied {
+		if _, seen := byRepo[item.Repo]; !seen {
+			repos = append(repos, item.Repo)
+		}
+		byRepo[item.Repo] = append(byRepo[item.Repo], item)
+	}
+	for _, repo := range repos {
+		tied := byRepo[repo]
+		out = append(out, fmt.Sprintf("%s: %d tag(s) beyond keep_last kept — they tie with the newest kept image (all first seen %s), and a tie is never cut through; they prune once newer images arrive.",
+			repo, len(tied), firstSeenLabel(tied[0])))
+	}
+	if preview.Skipped > 0 {
+		out = append(out, fmt.Sprintf("%d repositor%s could not be read and %s left out of this preview.",
+			preview.Skipped, plural(preview.Skipped, "y", "ies"), plural(preview.Skipped, "is", "are")))
+	}
+	return out
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 var registryRetentionPreviewCmd = &cobra.Command{

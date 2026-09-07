@@ -500,6 +500,15 @@ type RetentionPreviewItem struct {
 // RetentionPreview is the dry-run (or applied) set of retention deletions.
 type RetentionPreview struct {
 	Items []RetentionPreviewItem `json:"items"`
+	// Tied are the tags beyond keep_last a policy keeps only because their
+	// first-seen time ties with the Nth — a plan that cannot order a group
+	// keeps it whole rather than choosing (ADR-063). Reported so an empty
+	// Items never reads as a policy with nothing to do
+	// (fogpipe/cloud-workspace#283).
+	Tied []RetentionPreviewItem `json:"tied"`
+	// Skipped is how many repositories could not be read; each is absent from
+	// Items rather than represented as having nothing to delete.
+	Skipped int `json:"skipped"`
 }
 
 // ListRegistryRepositories lists a project's registry repositories.
