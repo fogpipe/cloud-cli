@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -25,11 +26,18 @@ const registryHost = "registry.cloud.fogpipe.com"
 // (FPCLOUD_API_KEY — e.g. minted in CI by OIDC federation via `fogpipe/cloud-auth`)
 // when set, otherwise the ID token from `fpcloud login` (auto-refreshed).
 // The username is a Docker-side label the broker ignores — identity is the password.
+// registryPushWindow is how long the credential handed to docker must stay
+// valid: docker fetches it once and re-mints registry tokens with it until the
+// push's last request, so a credential that expired mid-push ended an
+// eight-minute push with `unauthorized` at the manifest (fogpipe/cloud-workspace#285).
+// The broker bounds the tokens it mints to this credential's remaining life.
+const registryPushWindow = time.Hour
+
 func fetchRegistryCreds() (username, password string, err error) {
 	if key := os.Getenv("FPCLOUD_API_KEY"); key != "" {
 		return dockerCredHelperName, key, nil
 	}
-	token, err := currentIDToken()
+	token, err := idTokenValidFor(registryPushWindow)
 	if err != nil {
 		return "", "", fmt.Errorf("no registry credential — run `fpcloud login` or set FPCLOUD_API_KEY: %w", err)
 	}

@@ -391,13 +391,22 @@ func runLogin(ctx context.Context, port int, account string) error {
 // credential for the control plane and, through the registry broker, the
 // registry (see registry.go).
 func currentIDToken() (string, error) {
+	return idTokenValidFor(60 * time.Second)
+}
+
+// idTokenValidFor is currentIDToken with a stated horizon: the token is
+// refreshed unless it stays valid for at least that long. A request needs a
+// minute; docker needs the whole push, because it fetches the credential once
+// and re-mints registry tokens with it until the last manifest lands
+// (fogpipe/cloud-workspace#285).
+func idTokenValidFor(horizon time.Duration) (string, error) {
 	t, err := loadToken()
 	if err != nil {
 		return "", fmt.Errorf("not logged in — run `fpcloud login`: %w", err)
 	}
 	idToken := t.IDToken
 	exp := idTokenExpiry(idToken)
-	if idToken == "" || time.Now().After(exp.Add(-60*time.Second)) {
+	if idToken == "" || tokenNeedsRefresh(exp, time.Now(), horizon) {
 		ctx := context.Background()
 		idp, err := resolveIdP(ctx)
 		if err != nil {
@@ -560,4 +569,10 @@ func init() {
 	loginCmd.Flags().Int("port", 0, "Port for the local OAuth callback (0 picks a free one)")
 	loginCmd.Flags().String("account", "", "Sign in as this login name without the account picker")
 	rootCmd.AddCommand(loginCmd, logoutCmd, getTokenCmd)
+}
+
+// tokenNeedsRefresh reports whether a token expiring at exp fails to cover the
+// horizon from now.
+func tokenNeedsRefresh(exp, now time.Time, horizon time.Duration) bool {
+	return now.After(exp.Add(-horizon))
 }
