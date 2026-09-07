@@ -633,7 +633,7 @@ func shortDuration(d time.Duration) string {
 
 // configLabel says how much configuration an app carries — never what it is.
 // The count is the useful part of the answer: an app with no config where you
-// expected six is a diagnosis, and the values themselves are `fpcloud config
+// expected six is a diagnosis, and the values themselves are `fpcloud app env
 // list`'s business, behind its own permission check.
 func configLabel(c *client.ConfigCount) string {
 	if c == nil || c.Values == 0 {

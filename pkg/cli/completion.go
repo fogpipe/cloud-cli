@@ -225,15 +225,23 @@ func completeDomains(cmd *cobra.Command, args []string, toComplete string) ([]st
 	return out, noFile
 }
 
-// completeConfigKeys completes a config key argument scoped to the --app flag.
-func completeConfigKeys(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	appID, _ := cmd.Flags().GetString("app")
-	if appID == "" {
+// completeEnvKeys completes `app env unset <app> KEY`: the app first, then
+// the keys that app holds.
+func completeEnvKeys(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) == 0 {
+		return completeAppIDs(cmd, args, toComplete)
+	}
+	if len(args) > 1 {
 		return nil, noFile
 	}
 	ctx, cancel := compCtx()
 	defer cancel()
-	cfgs, err := getClient().ListConfig(ctx, appID)
+	c := getClient()
+	appID, err := resolveAppID(c, args[0])
+	if err != nil {
+		return nil, noFile
+	}
+	cfgs, err := c.ListConfig(ctx, appID)
 	if err != nil {
 		return nil, noFile
 	}
@@ -276,7 +284,10 @@ func registerCompletions() {
 	for _, c := range []*cobra.Command{domainRemoveCmd, domainStatusCmd} {
 		c.ValidArgsFunction = completeDomains
 	}
-	configUnsetCmd.ValidArgsFunction = completeConfigKeys
+	appEnvUnsetCmd.ValidArgsFunction = completeEnvKeys
+	for _, c := range []*cobra.Command{appEnvSetCmd, appEnvListCmd} {
+		c.ValidArgsFunction = firstArgOnly(completeAppIDs)
+	}
 
 	// Persistent flags (defined on rootCmd).
 	reg(rootCmd, "output", fixed("table", "json", "yaml"))
@@ -300,7 +311,7 @@ func registerCompletions() {
 	}
 
 	// --app flags take an app ID.
-	for _, c := range []*cobra.Command{appDeployCmd, domainAddCmd, domainRemoveCmd, domainListCmd, domainStatusCmd, configSetCmd, configListCmd, configUnsetCmd, webhookSetupCmd, webhookStatusCmd, webhookRemoveCmd} {
+	for _, c := range []*cobra.Command{appDeployCmd, domainAddCmd, domainRemoveCmd, domainListCmd, domainStatusCmd, webhookSetupCmd, webhookStatusCmd, webhookRemoveCmd} {
 		reg(c, "app", completeAppIDs)
 	}
 }

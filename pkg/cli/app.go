@@ -1870,7 +1870,7 @@ func init() {
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
 	appCreateCmd.Flags().StringArray("env", nil, "Set a plain config value on the new app: KEY=VALUE (repeatable). Set before the release command runs, so a migration sees it")
-	appCreateCmd.Flags().StringArray("secret", nil, "Set a secret config value on the new app: KEY=VALUE (repeatable). Stored encrypted and hidden from `config list`")
+	appCreateCmd.Flags().StringArray("secret", nil, "Set a secret config value on the new app: KEY=VALUE (repeatable). Stored encrypted and hidden from `app env list`")
 	appCreateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; repeat for exec form)")
 	appCreateCmd.Flags().String("display-name", "", "Cosmetic display name (defaults to the app name); mutable later via `app update --display-name`")
 	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.<tenant-domain> instead of the derived host (always-on apps; globally unique)")
