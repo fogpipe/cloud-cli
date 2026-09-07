@@ -367,7 +367,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		}
 		runnerRows = append(runnerRows, statusRow{
 			cells: []string{r.Name, renderStatus(r.Status),
-				fmt.Sprintf("%d (%d–%d)", r.CurrentRunners, r.MinRunners, r.MaxRunners), waiting},
+				fmt.Sprintf("%s (%d–%d)", runnerCounts(r.CurrentRunners, r.RunningRunners, r.PendingRunners), r.MinRunners, r.MaxRunners), waiting},
 			notes: notes,
 		})
 	}

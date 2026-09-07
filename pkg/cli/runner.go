@@ -470,10 +470,25 @@ func runnerScope(r *client.Runner) string {
 // (fogpipe/cloud-workspace#120). A control plane that sends only the sum is
 // rendered as the sum.
 func runnerActivity(r *client.Runner) string {
-	if r.RunningRunners == 0 && r.PendingRunners == 0 {
-		return fmt.Sprintf("%d active", r.CurrentRunners)
+	return runnerCounts(r.CurrentRunners, r.RunningRunners, r.PendingRunners)
+}
+
+// runnerCounts renders how many of a pool's runners are executing a job and how
+// many exist without running one. Shared by `runner list`/`runner show` and by
+// `project status`, so the two cannot come to different words for the same
+// three numbers.
+//
+// A pool with 2 running and 2 pending reads identically to one with 4 running
+// under a single count, and the two call for opposite responses: runners
+// executing jobs means the ceiling is working and a queue is expected, while
+// runners pending means declared capacity is absent and the queue is the
+// symptom (fogpipe/cloud-workspace#120). Both zero falls back to the sum, which
+// is what a control plane that sends only the sum can support.
+func runnerCounts(current, running, pending int) string {
+	if running == 0 && pending == 0 {
+		return fmt.Sprintf("%d active", current)
 	}
-	return fmt.Sprintf("%d running, %d pending", r.RunningRunners, r.PendingRunners)
+	return fmt.Sprintf("%d running, %d pending", running, pending)
 }
 
 func runnerInfoRows(r *client.Runner) [][]string {

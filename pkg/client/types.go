@@ -2037,6 +2037,15 @@ type RunnerStatus struct {
 	MinRunners     int    `json:"min_runners"`
 	MaxRunners     int    `json:"max_runners"`
 	Message        string `json:"message,omitempty"`
+	// RunningRunners are the runners executing a job and PendingRunners the
+	// ones that exist as objects but are not — unschedulable, most often
+	// because the org's ceiling cannot hold them. CurrentRunners is their sum,
+	// and the two states call for opposite responses, so a single count cannot
+	// stand for both (fogpipe/cloud-workspace#120). Both zero means a control
+	// plane that predates the split, or a genuinely empty pool; the sum is what
+	// renders then.
+	RunningRunners int `json:"running_runners,omitempty"`
+	PendingRunners int `json:"pending_runners,omitempty"`
 	// WaitingJobs is how many jobs GitHub has assigned the pool that no runner
 	// has started; nil when the queue could not be read, which Message says.
 	WaitingJobs *int `json:"waiting_jobs,omitempty"`
