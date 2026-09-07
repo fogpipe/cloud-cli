@@ -1092,6 +1092,19 @@ type AppWebhook struct {
 	LastDeploySHA string  `json:"last_deploy_sha,omitempty"`
 }
 
+// DatabaseAuditEntry is one statement a person ran through a database tunnel,
+// recorded by the database itself and attributed to the fpcloud identity behind
+// the session (ADR-163).
+type DatabaseAuditEntry struct {
+	At        time.Time `json:"at"`
+	Role      string    `json:"role"`
+	Actor     string    `json:"actor,omitempty"`
+	Class     string    `json:"class"`
+	Command   string    `json:"command"`
+	Object    string    `json:"object,omitempty"`
+	Statement string    `json:"statement"`
+}
+
 // MeResponse is the response from the /auth/me endpoint.
 // AuthConfigResponse is where humans sign in (ADR-132): the issuer, its
 // endpoints, and the public clients the platform registered for the CLI and
@@ -1131,11 +1144,11 @@ type ServiceAccount struct {
 	ProjectID      string    `json:"project_id,omitempty"`
 	OrganizationID string    `json:"organization_id,omitempty"`
 	Name           string    `json:"name"`
-	DisplayName string    `json:"display_name"`
-	Email       string    `json:"email"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	DisplayName    string    `json:"display_name"`
+	Email          string    `json:"email"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // CreateServiceAccountRequest is the request body for creating a service account.

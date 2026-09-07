@@ -1436,6 +1436,39 @@ func (c *Client) GetDatabaseConnection(ctx context.Context, id string) (*Databas
 	return &conn, nil
 }
 
+// DatabaseAuditLog reads what people ran through a database's tunnels, newest
+// first. `since` and `until` take a duration ago ("24h") or an RFC3339
+// timestamp; both may be empty for the last day.
+//
+// Reads only as far back as the platform's log store keeps, which is where the
+// database writes these records — the control plane records that a session
+// happened, never what was said inside it.
+func (c *Client) DatabaseAuditLog(ctx context.Context, id, since, until string, limit int) ([]DatabaseAuditEntry, error) {
+	q := url.Values{}
+	if since != "" {
+		q.Set("since", since)
+	}
+	if until != "" {
+		q.Set("until", until)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/databases/" + id + "/audit"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []DatabaseAuditEntry
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RotateDatabasePassword issues the database a new password and returns the
 // live connection info carrying it — the one response that does
 // (fogpipe/cloud-workspace#297). The platform writes the new password where
