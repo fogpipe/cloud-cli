@@ -17,9 +17,7 @@ import (
 // had been told their credentials were gone. On a shared or borrowed machine
 // that is the difference between logging out and believing you have (#568).
 func TestLogout_RemovesBothCredentials(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("FPCLOUD_STATE_DIR", dir)
-	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
+	isolateState(t)
 
 	require.NoError(t, saveConfig(&Config{APIKey: "fp-key-abc"}))
 	require.NoError(t, os.WriteFile(tokenCachePath(), []byte(`{"id_token":"x","refresh_token":"y"}`), 0o600))
@@ -38,9 +36,7 @@ func TestLogout_RemovesBothCredentials(t *testing.T) {
 // logged in — the command reports what it cleared rather than claiming a removal
 // that did not happen.
 func TestLogout_IsIdempotent(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("FPCLOUD_STATE_DIR", dir)
-	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
+	dir := isolateState(t)
 
 	assert.NoError(t, logoutCmd.RunE(logoutCmd, nil))
 

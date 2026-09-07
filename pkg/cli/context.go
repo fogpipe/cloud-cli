@@ -18,9 +18,11 @@ authenticates you (an API key or the browser login) and, for a browser login,
 the factors you sign in with.
 
 Values follow the usual precedence — an explicit --org/--project flag wins over
-the config file (which FPCLOUD_CONFIG_DIR, or FPCLOUD_STATE_DIR for the whole
-state dir, may scope to a per-directory location), which wins over the built-in
-default.
+the config file, which wins over the built-in default.
+
+Config and Token say which files answered, so a directory that keeps its own
+state (fpcloud init) shows it. They are resolved one file at a time: a local
+config.yaml beside a global token is the ordinary case.
 
   fpcloud context                     # human-readable summary
   fpcloud context -o json             # machine-readable
@@ -65,13 +67,15 @@ or {identity} appears in --format, so prompt use stays fast.`,
 
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(map[string]string{
-				"org":        org,
-				"project":    project,
-				"api_url":    apiURL,
-				"identity":   identity,
-				"credential": credential,
-				"mfa":        signIn,
-				"org_access": access,
+				"org":         org,
+				"project":     project,
+				"api_url":     apiURL,
+				"identity":    identity,
+				"credential":  credential,
+				"mfa":         signIn,
+				"org_access":  access,
+				"config_path": configPath(),
+				"token_path":  tokenCachePath(),
 			})
 		}
 
@@ -91,6 +95,10 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		if signIn != "" {
 			rows = append(rows, []string{"MFA", signIn})
 		}
+		rows = append(rows,
+			[]string{"Config", configPath()},
+			[]string{"Token", tokenCachePath()},
+		)
 		fmt.Println(renderInfoBox("Context", rows))
 		return nil
 	},

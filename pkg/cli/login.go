@@ -166,20 +166,24 @@ type cachedToken struct {
 	Expiry       time.Time `json:"expiry"`
 }
 
-// The OIDC token is per-account, not per-project, so it lives in stateDir()
-// (~/.fpcloud, or FPCLOUD_STATE_DIR) and is unaffected by FPCLOUD_CONFIG_DIR — a
-// per-project config dir reuses the same login.
-func tokenCachePath() string { return filepath.Join(stateDir(), "oidc-token.json") }
+// The token resolves like every other state file: the nearest .fpcloud/ holding
+// one, else ~/.fpcloud. So a directory that has never been logged into keeps
+// using your global login, and one that has keeps its own identity.
+func tokenCachePath() string { return statePath("oidc-token.json") }
 
+// A login writes into the nearest .fpcloud/, whether or not a token is already
+// there — that is what `fpcloud init` then `fpcloud login` buys, and it is the
+// one place the read and the write deliberately differ.
 func saveToken(t *cachedToken) error {
-	if err := os.MkdirAll(stateDir(), 0o700); err != nil {
+	dir := stateDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokenCachePath(), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, "oidc-token.json"), data, 0o600)
 }
 
 func loadToken() (*cachedToken, error) {
@@ -265,6 +269,12 @@ var logoutCmd = &cobra.Command{
 		// it — so the session kept working with full access after the user was told
 		// their credentials were removed (#568). On a shared machine that is the
 		// difference between logging out and believing you have.
+		//
+		// Each credential names the file it came out of, because there can be
+		// more than one state directory in play — a login below a .fpcloud/ is
+		// that directory's — and the two need not resolve to the same one.
+		// "Removed" that does not say from where is not checkable.
+		configFile, tokenPath := configPath(), tokenCachePath()
 		var cleared []string
 
 		cfg, err := loadConfig()
@@ -276,11 +286,11 @@ var logoutCmd = &cobra.Command{
 			if err := saveConfig(cfg); err != nil {
 				return err
 			}
-			cleared = append(cleared, "API key")
+			cleared = append(cleared, "API key ("+configFile+")")
 		}
 
-		if err := os.Remove(tokenCachePath()); err == nil {
-			cleared = append(cleared, "browser session")
+		if err := os.Remove(tokenPath); err == nil {
+			cleared = append(cleared, "browser session ("+tokenPath+")")
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("remove cached login token: %w", err)
 		}

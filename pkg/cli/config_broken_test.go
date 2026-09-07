@@ -15,8 +15,7 @@ import (
 // means "the production control plane" on a released binary
 // (fogpipe/cloud-workspace#333).
 func TestRefuseBrokenConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
+	dir := isolateState(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("api_url: [not: yaml"), 0o600))
 
 	_, err := loadConfig()

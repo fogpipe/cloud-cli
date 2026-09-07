@@ -158,7 +158,7 @@ func TestOAuthConfig_PublicAndConfidentialClients(t *testing.T) {
 // names its issuer, and a mismatch is a new login, not a confusing 401.
 func TestCurrentIDToken_RefusesAnotherIssuersSession(t *testing.T) {
 	issuer := fakeIssuer(t, nil, nil)
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_OIDC_ISSUER", issuer.URL)
 	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "cli")
 	expired := unsignedJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})
@@ -179,7 +179,7 @@ func TestCurrentIDToken_PersistsRotatedRefreshToken(t *testing.T) {
 	issuer := fakeIssuer(t, nil, map[string]any{
 		"access_token": "at2", "refresh_token": "rotated", "id_token": fresh, "token_type": "Bearer", "expires_in": 3600,
 	})
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_OIDC_ISSUER", issuer.URL)
 	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "cli")
 	expired := unsignedJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})

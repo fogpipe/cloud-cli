@@ -22,7 +22,7 @@ func setAPIKeyFlag(t *testing.T, value string, changed bool) {
 // A credential in FPCLOUD_API_KEY authenticates every API call, not just the
 // registry — a CI job that authenticated over OIDC can use the CLI.
 func TestResolveAPIKey_UsesEnv(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_KEY", "fp-env")
 	setAPIKeyFlag(t, "", false)
 
@@ -33,7 +33,7 @@ func TestResolveAPIKey_UsesEnv(t *testing.T) {
 
 // An explicit --api-key wins over the environment.
 func TestResolveAPIKey_FlagBeatsEnv(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_KEY", "fp-env")
 	setAPIKeyFlag(t, "fp-flag", true)
 
@@ -45,7 +45,7 @@ func TestResolveAPIKey_FlagBeatsEnv(t *testing.T) {
 // config.yaml supplies the flag's default, so a stored key must not shadow the
 // environment the way a passed flag does.
 func TestResolveAPIKey_EnvBeatsConfig(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_KEY", "fp-env")
 	setAPIKeyFlag(t, "fp-config", false)
 
@@ -56,7 +56,7 @@ func TestResolveAPIKey_EnvBeatsConfig(t *testing.T) {
 
 // With no env var the stored key still authenticates.
 func TestResolveAPIKey_FallsBackToConfig(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_KEY", "")
 	setAPIKeyFlag(t, "fp-config", false)
 
@@ -68,7 +68,7 @@ func TestResolveAPIKey_FallsBackToConfig(t *testing.T) {
 // Nothing anywhere resolves to no credential, which is what the 401 hint keys
 // off — an unauthenticated request has to be distinguishable from a rejected one.
 func TestResolveAPIKey_EmptyWhenNothingSet(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_KEY", "")
 	setAPIKeyFlag(t, "", false)
 

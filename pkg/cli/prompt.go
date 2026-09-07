@@ -16,12 +16,26 @@ import (
 // depends on is read inside the function body, so a shell that loaded it in
 // one directory renders the right thing in the next one.
 //
-// The org and project come straight out of config.yaml, resolving the
-// directory the same way the CLI does (FPCLOUD_CONFIG_DIR, else
-// FPCLOUD_STATE_DIR, else ~/.fpcloud) — so a directory-scoped context renders
-// as that context.
-const promptSegmentBody = `_fpcloud_prompt_read() {
-	_fp_file="${FPCLOUD_CONFIG_DIR:-${FPCLOUD_STATE_DIR:-$HOME/.fpcloud}}/config.yaml"
+// The org and project come straight out of config.yaml, found the same way the
+// CLI finds it — the nearest .fpcloud/ holding one at or above $PWD, else
+// ~/.fpcloud — so a directory that keeps its own context renders as that
+// context, and cd-ing out of it renders what is true outside.
+//
+// The walk uses parameter expansion rather than dirname, because this runs on
+// every prompt and a subprocess per ancestor is what it exists to avoid.
+const promptSegmentBody = `_fpcloud_prompt_file() {
+	_fp_dir=$PWD
+	while :; do
+		_fp_file="$_fp_dir/.fpcloud/config.yaml"
+		[ -r "$_fp_file" ] && return 0
+		[ -z "$_fp_dir" ] && break
+		_fp_dir=${_fp_dir%/*}
+	done
+	_fp_file="$HOME/.fpcloud/config.yaml"
+}
+
+_fpcloud_prompt_read() {
+	_fpcloud_prompt_file
 	[ -r "$_fp_file" ] || return 0
 	sed -n "s/^$1:[[:space:]]*//p" "$_fp_file" 2>/dev/null | head -n1 |
 		sed -e 's/^["'"'"']//' -e 's/["'"'"']$//' -e 's/[[:space:]]*$//'

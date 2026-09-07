@@ -87,8 +87,7 @@ type versionCache struct {
 }
 
 func versionCachePath() string {
-	// Global, per-account state — not per-project — so keep it in stateDir().
-	return filepath.Join(stateDir(), "version-check.json")
+	return statePath("version-check.json")
 }
 
 // serverVersion is what GET /version reports: the deployment's own build
@@ -147,8 +146,9 @@ func latestVersion() (string, error) {
 	}
 
 	if data, err := json.Marshal(versionCache{Latest: latest, CheckedAt: time.Now()}); err == nil {
-		_ = os.MkdirAll(stateDir(), 0o700)
-		_ = os.WriteFile(versionCachePath(), data, 0o600)
+		dir := stateDir()
+		_ = os.MkdirAll(dir, 0o700)
+		_ = os.WriteFile(filepath.Join(dir, "version-check.json"), data, 0o600)
 	}
 	return latest, nil
 }

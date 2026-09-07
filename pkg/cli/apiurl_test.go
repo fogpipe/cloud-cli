@@ -53,7 +53,7 @@ func TestResolveAPIURL_FallsBackToFlagDefault(t *testing.T) {
 // getClient is the path every API-backed command takes; it must land on the
 // same control plane the resolution promises.
 func TestGetClient_UsesResolvedURL(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	t.Setenv("FPCLOUD_API_URL", "https://api.env.test")
 	t.Setenv("FPCLOUD_API_KEY", "fp-env")
 	setAPIURLFlag(t, "https://api.default.test", false)

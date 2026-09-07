@@ -45,7 +45,7 @@ func TestWatchPollRecoversWhenCredentialsBecomeValid(t *testing.T) {
 // prompt segment and the view on the same screen disagreed about what current
 // meant after a switch.
 func TestWatchProjectSourceFollowsSwitchUnlessPinned(t *testing.T) {
-	t.Setenv("FPCLOUD_CONFIG_DIR", t.TempDir())
+	isolateState(t)
 	require.NoError(t, saveConfig(&Config{CurrentProject: "before"}))
 
 	current := projectSource(nil)

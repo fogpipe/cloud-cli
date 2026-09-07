@@ -14,7 +14,7 @@ import (
 // A client that verifies connects: the tunnel's certificate names 127.0.0.1
 // and chains to the CA the URL points at (fogpipe/cloud-workspace#212).
 func TestTunnelTLS_AVerifyingClientConnects(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer ln.Close()
@@ -67,7 +67,7 @@ func TestTunnelTLS_AVerifyingClientConnects(t *testing.T) {
 // A client that asked for no TLS is relayed as it is, with its opening bytes
 // still ahead of the stream.
 func TestTunnelTLS_APlaintextClientIsRelayedIntact(t *testing.T) {
-	t.Setenv("FPCLOUD_STATE_DIR", t.TempDir())
+	isolateState(t)
 	tt, err := mintTunnelTLS(0)
 	require.NoError(t, err)
 	defer tt.remove()

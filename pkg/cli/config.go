@@ -19,35 +19,76 @@ type Config struct {
 	SuppressVersionWarning bool   `yaml:"suppress_version_warning,omitempty"`
 }
 
-// stateDir is the fpcloud state dir (~/.fpcloud by default). It holds per-account,
-// non-project state — the cached OIDC token, the version-check stamp, the storage
-// key cache. FPCLOUD_STATE_DIR relocates it (gcloud's CLOUDSDK_CONFIG), so a repo
-// can keep every byte of fpcloud state inside the project dir; FPCLOUD_CONFIG_DIR
-// alone deliberately does not, so a per-directory config still reuses your global
-// login instead of forcing a re-auth per directory.
+// stateDirName is what fpcloud calls its state directory, in $HOME and inside a
+// project alike — there is one name, so there is one thing to look for.
+const stateDirName = ".fpcloud"
+
+// stateDir is where a state file the CLI writes goes: the nearest .fpcloud/ at
+// or above the working directory, else ~/.fpcloud. `fpcloud init` creating one
+// is therefore all it takes for a directory to keep its context — and its
+// login — to itself, and two directories can hold two identities at once.
 func stateDir() string {
-	if dir := os.Getenv("FPCLOUD_STATE_DIR"); dir != "" {
+	if dir := localStateDir(); dir != "" {
 		return dir
 	}
+	return homeStateDir()
+}
+
+// statePath resolves one state file for reading: the nearest .fpcloud/ at or
+// above the working directory that HOLDS IT, else ~/.fpcloud.
+//
+// The fallback is per file rather than per directory, which is the whole reason
+// there is no second variable to know about: a project dir holding only
+// config.yaml gets its own org and project and goes on using your global login,
+// with nothing to configure and no re-auth per repo.
+func statePath(name string) string {
+	dir, err := os.Getwd()
+	if err == nil {
+		for {
+			p := filepath.Join(dir, stateDirName, name)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return filepath.Join(homeStateDir(), name)
+}
+
+// localStateDir is the nearest .fpcloud/ directory at or above the working
+// directory, or "" when there is none.
+func localStateDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		candidate := filepath.Join(dir, stateDirName)
+		if fi, err := os.Stat(candidate); err == nil && fi.IsDir() {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func homeStateDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".fpcloud")
-}
-
-// configDir is where config.yaml lives. FPCLOUD_CONFIG_DIR overrides it so
-// org/project context can be scoped per-directory (e.g. via direnv) without
-// moving the login; otherwise it follows stateDir().
-func configDir() string {
-	if dir := os.Getenv("FPCLOUD_CONFIG_DIR"); dir != "" {
-		return dir
-	}
-	return stateDir()
+	return filepath.Join(home, stateDirName)
 }
 
 func configPath() string {
-	return filepath.Join(configDir(), "config.yaml")
+	return statePath("config.yaml")
 }
 
 func loadConfig() (*Config, error) {
@@ -66,7 +107,7 @@ func loadConfig() (*Config, error) {
 }
 
 func saveConfig(cfg *Config) error {
-	dir := configDir()
+	dir := stateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
@@ -74,7 +115,7 @@ func saveConfig(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
-	if err := os.WriteFile(configPath(), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0o600); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 	return nil

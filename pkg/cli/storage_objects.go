@@ -116,12 +116,15 @@ type cachedS3Creds struct {
 // rather than its first request.
 const credsExpiryMargin = 2 * time.Minute
 
-func storageCredsDir() string {
+// storageCredsWriteDir is where a freshly minted credential is cached — the
+// directory the CLI writes state into, so a bucket key follows the login that
+// minted it rather than leaking into $HOME from a repo-local identity.
+func storageCredsWriteDir() string {
 	return filepath.Join(stateDir(), "storage")
 }
 
 func storageCredsPath(bucketID string) string {
-	return filepath.Join(storageCredsDir(), bucketID+".json")
+	return statePath(filepath.Join("storage", bucketID+".json"))
 }
 
 func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
@@ -143,14 +146,15 @@ func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
 }
 
 func saveCachedS3Creds(bucketID string, creds *cachedS3Creds) error {
-	if err := os.MkdirAll(storageCredsDir(), 0o700); err != nil {
+	dir := storageCredsWriteDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.Marshal(creds)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(storageCredsPath(bucketID), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, bucketID+".json"), data, 0o600)
 }
 
 // mintS3Creds mints a fresh expiring session credential for the bucket and

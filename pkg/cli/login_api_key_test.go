@@ -15,9 +15,7 @@ import (
 // already replaced a working one by the time it was checked (#568); the
 // consolidation onto the root `login` keeps that order (fogpipe/cloud-workspace#360).
 func TestLoginAPIKey_RejectedKeyLeavesTheStoredOneAlone(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("FPCLOUD_STATE_DIR", dir)
-	t.Setenv("FPCLOUD_CONFIG_DIR", dir)
+	isolateState(t)
 	require.NoError(t, saveConfig(&Config{APIKey: "fp-working"}))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
