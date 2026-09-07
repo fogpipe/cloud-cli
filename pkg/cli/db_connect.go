@@ -27,7 +27,11 @@ var dbConnectCmd = &cobra.Command{
 		"The tunnel rides the API server itself (ADR-045) — no kubectl/FKE access is\n" +
 		"needed, only the same database permission `db connection` already requires.\n" +
 		"Stays open until Ctrl-C; each local connection (e.g. `pg_dump -j N`'s N\n" +
-		"parallel workers) gets its own independent tunnel.",
+		"parallel workers) gets its own independent tunnel.\n\n" +
+		"The URL says sslmode=verify-full and means it: the tunnel serves a\n" +
+		"certificate minted for 127.0.0.1 and names its CA in the URL, so a client\n" +
+		"that insists on verifying connects unmodified. The CA file lives for the\n" +
+		"tunnel and is removed with it.",
 	Args: cobra.ExactArgs(1),
 	RunE: runDBConnect,
 }
@@ -53,22 +57,32 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 	defer ln.Close()
 	local := ln.Addr().(*net.TCPAddr).Port
 
+	// The tunnel terminates TLS for the client with a certificate it mints
+	// for 127.0.0.1, so the URL can ask for verification and get it
+	// (ADR-154). The API verifies the primary on its side.
+	tunnelCert, err := mintTunnelTLS(local)
+	if err != nil {
+		return fmt.Errorf("mint tunnel certificate: %w", err)
+	}
+	defer tunnelCert.remove()
+
 	localURL := url.URL{
 		Scheme:   "postgres",
 		User:     url.UserPassword(conn.Username, conn.Password),
 		Host:     fmt.Sprintf("127.0.0.1:%d", local),
 		Path:     "/" + conn.Database,
-		RawQuery: "sslmode=require",
+		RawQuery: "sslmode=verify-full&sslrootcert=" + url.QueryEscape(tunnelCert.caPath),
 	}
 
 	if isStructured(rootCmd.Flag("output").Value.String()) {
 		if err := renderData(map[string]any{
-			"url":      localURL.String(),
-			"host":     "127.0.0.1",
-			"port":     local,
-			"database": conn.Database,
-			"username": conn.Username,
-			"password": conn.Password,
+			"url":         localURL.String(),
+			"host":        "127.0.0.1",
+			"port":        local,
+			"database":    conn.Database,
+			"username":    conn.Username,
+			"password":    conn.Password,
+			"sslrootcert": tunnelCert.caPath,
 		}); err != nil {
 			return err
 		}
@@ -76,6 +90,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 		fmt.Println(renderInfoBox("Database Tunnel", [][]string{
 			{"Database", args[0]},
 			{"Local port", fmt.Sprintf("%d", local)},
+			{"CA", tunnelCert.caPath},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(localURL.String())},
 		}))
 		fmt.Println(mutedStyle.Render("Tunnel open — press Ctrl-C to close."))
@@ -93,7 +108,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleTunnelConn(ctx, c, id, localConn)
+				handleTunnelConn(ctx, c, id, tunnelCert, localConn)
 			}()
 		}
 	}()
@@ -112,8 +127,14 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 
 // handleTunnelConn relays one local connection (one psql session, one
 // pg_dump worker) over its own db-connect tunnel (ADR-045).
-func handleTunnelConn(ctx context.Context, c *client.Client, databaseID string, local net.Conn) {
+func handleTunnelConn(ctx context.Context, c *client.Client, databaseID string, tunnelCert *tunnelTLS, local net.Conn) {
 	defer local.Close()
+	session, err := tunnelCert.terminate(local)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tunnel: %v\n", err)
+		return
+	}
+	local = session
 	ws, err := c.DialTunnel(ctx, databaseID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tunnel: %v\n", err)
