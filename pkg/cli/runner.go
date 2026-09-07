@@ -172,10 +172,11 @@ var runnerListCmd = &cobra.Command{
 				runnerScope(r),
 				fmt.Sprintf("%d-%d", r.MinRunners, r.MaxRunners),
 				runnerActivity(r),
+				runnerWaitingCell(r),
 				renderStatus(r.Status),
 			}
 		}
-		render([]string{"NAME", "SERVES", "SCALE", "RUNNERS", "STATUS"}, rows, runners)
+		render([]string{"NAME", "SERVES", "SCALE", "RUNNERS", "WAITING", "STATUS"}, rows, runners)
 		return nil
 	},
 }
@@ -294,6 +295,46 @@ var runnerDeleteCmd = &cobra.Command{
 
 // runnerScope renders the GitHub account the pool serves — every repository in
 // it. Derived from the project's connection, never typed.
+// runnerBusy is "N of M" — runners executing a job beside the most the pool
+// may run at once — because a bare count under any heading is ambiguous in a
+// way the pair is not (fogpipe/cloud-workspace#146). M is what the org's
+// ceiling admits when that is below the pool's own max.
+func runnerBusy(r *client.Runner) string {
+	most := r.MaxRunners
+	if r.AdmittedRunners > 0 && r.AdmittedRunners < most {
+		most = r.AdmittedRunners
+	}
+	return fmt.Sprintf("%d of %d", r.RunningRunners, most)
+}
+
+// runnerWaiting is the queue as GitHub sees it: jobs assigned to the pool that
+// no runner has started. It is the whole diagnosis — an idle pool and one
+// that cannot schedule look alike until this number is known — so a queue
+// that could not be read is said to be unreadable, never rendered as empty
+// (docs/reading-a-zero.md, fogpipe/cloud-workspace#146).
+func runnerWaiting(r *client.Runner) string {
+	if r.Queue != nil {
+		if r.Queue.Waiting == 0 {
+			return fmt.Sprintf("none (as of %s)", r.Queue.AsOf.Local().Format("15:04:05"))
+		}
+		return fmt.Sprintf("%d job(s) assigned by GitHub and not started (as of %s)", r.Queue.Waiting, r.Queue.AsOf.Local().Format("15:04:05"))
+	}
+	for _, p := range r.Problems {
+		if p.Reason == "QueueUnread" {
+			return mutedStyle.Render("unreadable — " + p.Detail)
+		}
+	}
+	return mutedStyle.Render("not reported by this control plane")
+}
+
+// runnerWaitingCell is runnerWaiting for a table column.
+func runnerWaitingCell(r *client.Runner) string {
+	if r.Queue != nil {
+		return fmt.Sprintf("%d", r.Queue.Waiting)
+	}
+	return mutedStyle.Render("?")
+}
+
 // runnerUseNote says where the pool's label works, not only what it is. GitHub
 // registers self-hosted runners per account, so a workflow in a repository
 // outside the one the pool serves names a label nobody offers it and queues
@@ -340,6 +381,8 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		{"runs-on", strings.Join(r.Labels, ", ")},
 		{"Group", r.RunnerGroup},
 		{"Scale", scale},
+		{"Busy", runnerBusy(r)},
+		{"Waiting", runnerWaiting(r)},
 		{"Status", renderStatus(r.Status)},
 	}
 	if r.Builder != nil {

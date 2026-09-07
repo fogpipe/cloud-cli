@@ -1636,6 +1636,11 @@ type Runner struct {
 	// is serving — the platform's own answer to "is my pool working?"
 	// (fogpipe/cloud-workspace#129).
 	Instances []RunnerInstance `json:"instances,omitempty"`
+	// Queue is GitHub's view of the pool's demand, read from the pool's own
+	// listener: jobs assigned to the pool, jobs running, and so jobs waiting
+	// for a runner. Absent when it could not be read — a Problem says why —
+	// and never zero in its place (fogpipe/cloud-workspace#146).
+	Queue *RunnerQueue `json:"queue,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -1654,6 +1659,18 @@ type RunnerInstance struct {
 	// WorkflowRunID is the GitHub Actions run the job belongs to; 0 unless busy.
 	WorkflowRunID int64     `json:"workflow_run_id,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
+}
+
+// RunnerQueue is what GitHub has handed a pool and what has not started yet.
+// Waiting is Assigned minus Running: the number that separates a pool that is
+// idle from one that cannot schedule, and the one no per-runner row can show.
+type RunnerQueue struct {
+	Assigned int `json:"assigned"`
+	Running  int `json:"running"`
+	Waiting  int `json:"waiting"`
+	// AsOf is when the listener's figures were read; the metrics store is a
+	// scrape behind the listener, and the age is part of the reading.
+	AsOf time.Time `json:"as_of"`
 }
 
 // CreateRunnerRequest is the request body for declaring a runner pool.
@@ -1983,4 +2000,7 @@ type RunnerStatus struct {
 	MinRunners     int    `json:"min_runners"`
 	MaxRunners     int    `json:"max_runners"`
 	Message        string `json:"message,omitempty"`
+	// WaitingJobs is how many jobs GitHub has assigned the pool that no runner
+	// has started; nil when the queue could not be read, which Message says.
+	WaitingJobs *int `json:"waiting_jobs,omitempty"`
 }

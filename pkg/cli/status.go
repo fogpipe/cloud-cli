@@ -358,13 +358,20 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		if r.Message != "" {
 			notes = append(notes, r.Message)
 		}
+		// The queue is what separates an idle pool from a starved one, so a
+		// queue that could not be read is a "?" and never a 0
+		// (fogpipe/cloud-workspace#146).
+		waiting := mutedStyle.Render("?")
+		if r.WaitingJobs != nil {
+			waiting = fmt.Sprintf("%d", *r.WaitingJobs)
+		}
 		runnerRows = append(runnerRows, statusRow{
 			cells: []string{r.Name, renderStatus(r.Status),
-				fmt.Sprintf("%d (%d–%d)", r.CurrentRunners, r.MinRunners, r.MaxRunners)},
+				fmt.Sprintf("%d (%d–%d)", r.CurrentRunners, r.MinRunners, r.MaxRunners), waiting},
 			notes: notes,
 		})
 	}
-	b.WriteString(renderStatusSection("RUNNERS", []string{"STATUS", "ACTIVE"}, runnerRows))
+	b.WriteString(renderStatusSection("RUNNERS", []string{"STATUS", "ACTIVE", "WAITING"}, runnerRows))
 
 	if len(s.Unchecked) > 0 {
 		lines := []string{lipgloss.NewStyle().Bold(true).Render("Not checked — this report is incomplete:")}
