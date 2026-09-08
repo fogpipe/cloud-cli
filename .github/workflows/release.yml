@@ -1,7 +1,7 @@
 name: release
 
 # Build fpcloud for each platform, publish the binaries to a GitHub Release, and
-# point the Homebrew formula and Nix package at the new version. No credential is
+# point the Homebrew formula at the new version. No credential is
 # injected: the Google client secret lives on the platform, which brokers the
 # token exchange, so a release binary is what anyone gets from `go build`.
 # Trigger by pushing a tag, e.g.:  git tag v0.1.0 && git push origin v0.1.0
@@ -62,14 +62,17 @@ jobs:
             fpcloud-* \
           || gh release upload "$TAG" fpcloud-* --clobber
 
-      - name: Update Homebrew formula + Nix package
+      # Only the formula: it needs the built assets' hashes, so it cannot exist
+      # before the release does. The Nix package's version is stamped into the
+      # tagged commit itself by the workspace's release recipe — a nix build
+      # from a tag used to state the previous release's number, which is what
+      # the API's client floor reads (fogpipe/cloud-workspace#859).
+      - name: Update Homebrew formula
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           ver="${TAG#v}"
-          # Homebrew still ships the binary, so it needs per-asset hashes; the Nix
-          # package builds from source and only needs the version.
           python3 - "$ver" <<'PY'
           import hashlib, pathlib, re, sys
           ver = sys.argv[1]
@@ -98,15 +101,17 @@ jobs:
                   r'/(fpcloud-[a-z0-9-]+)"', r'sha256 "[^"]*"',
                   {a: f'sha256 "{h}"' for a, h in hexd.items()},
                   r'version "[^"]*"', f'version "{ver}"')
-          # Nix builds from source, so only the version moves — no asset hashes.
-          pathlib.Path("package.nix").write_text(
-              re.sub(r'version = "[^"]*"', f'version = "{ver}"',
-                     pathlib.Path("package.nix").read_text(), count=1))
           PY
           git config user.name "fogpipe-release"
           git config user.email "release@fogpipe.com"
-          git add Formula/fpcloud.rb package.nix
-          git commit -m "fpcloud ${TAG}" && git push origin HEAD:main || echo "no formula/package changes to commit"
+          git add Formula/fpcloud.rb
+          git commit -m "fpcloud ${TAG} formula"
+          # Onto whatever main is by now, never a push that a moved main rejects
+          # and this step swallows — that is how the formula went a release
+          # stale in silence.
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
 
   # Post the release notes to Slack on every successful release.
   notify-slack:

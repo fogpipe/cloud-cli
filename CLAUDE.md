@@ -82,8 +82,12 @@ tagged** — a merged-but-untagged client change is invisible to both, and reads
 as the method not existing rather than as a missing tag.
 
 Pushing a `v*` tag builds the binaries, publishes the release and bumps the
-version in the Homebrew formula and the Nix package. No secrets are needed for
-a release, so a tag is all it takes.
+version in the Homebrew formula. The Nix package's version is already in the
+tagged commit — the workspace's release recipe stamps `package.nix` before it
+tags, because a nix build from a tag is what states the version the API's
+client floor reads, and it used to state the previous release's
+(`fogpipe/cloud-workspace#859`). No secrets are needed for a release, so a tag
+is all it takes.
 
 The tag is also what a deployment judges a caller by. `pkg/client` states its
 version on every request (`X-Fpcloud-Client-Version`), read from the caller's
