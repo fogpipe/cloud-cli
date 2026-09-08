@@ -39,7 +39,15 @@ var dbConnectCmd = &cobra.Command{
 		"--read-only mints a credential that can read what you own and cannot\n" +
 		"write or drop any of it, for a session opened to look rather than to\n" +
 		"change. It covers tables you create later too. The default stays\n" +
-		"writable, because this is the documented path for migrations and psql.",
+		"writable, because this is the documented path for migrations and psql.\n\n" +
+		"--replica connects to the database's replica rather than its primary,\n" +
+		"so a heavy read does not compete with the traffic serving your writes.\n" +
+		"READS THERE CAN BE STALE: replication is asynchronous, so a row you just\n" +
+		"wrote may not have arrived, and reading your own write can miss.\n\n" +
+		"The two flags are different questions and compose. --read-only is what\n" +
+		"the session may DO and still answers from the primary, so it sees\n" +
+		"everything committed; --replica is WHICH INSTANCE answers, and trades\n" +
+		"that guarantee for taking load off the primary.",
 	Args: cobra.ExactArgs(1),
 	RunE: runDBConnect,
 }
@@ -54,6 +62,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	readOnly, _ := cmd.Flags().GetBool("read-only")
+	replica, _ := cmd.Flags().GetBool("replica")
 	get := c.GetDatabaseConnection
 	if readOnly {
 		get = c.GetReadOnlyDatabaseConnection
@@ -115,7 +124,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleTunnelConn(ctx, c, id, tunnelCert, localConn)
+				handleTunnelConn(ctx, c, id, replica, tunnelCert, localConn)
 			}()
 		}
 	}()
@@ -134,7 +143,7 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 
 // handleTunnelConn relays one local connection (one psql session, one
 // pg_dump worker) over its own db-connect tunnel (ADR-045).
-func handleTunnelConn(ctx context.Context, c *client.Client, databaseID string, tunnelCert *tunnelTLS, local net.Conn) {
+func handleTunnelConn(ctx context.Context, c *client.Client, databaseID string, replica bool, tunnelCert *tunnelTLS, local net.Conn) {
 	defer local.Close()
 	session, err := tunnelCert.terminate(local)
 	if err != nil {
@@ -142,7 +151,11 @@ func handleTunnelConn(ctx context.Context, c *client.Client, databaseID string, 
 		return
 	}
 	local = session
-	ws, err := c.DialTunnel(ctx, databaseID)
+	dial := c.DialTunnel
+	if replica {
+		dial = c.DialReplicaTunnel
+	}
+	ws, err := dial(ctx, databaseID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tunnel: %v\n", err)
 		return
@@ -202,6 +215,7 @@ func relayLocal(local net.Conn, ws *websocket.Conn) {
 func init() {
 	dbConnectCmd.Flags().Int("port", 0, "Local port to listen on (default: a random free port)")
 	dbConnectCmd.Flags().Bool("read-only", false, "Mint a credential that can read but not write")
+	dbConnectCmd.Flags().Bool("replica", false, "Connect to the replica instead of the primary; reads may be stale")
 	dbCmd.AddCommand(dbConnectCmd)
 }
 

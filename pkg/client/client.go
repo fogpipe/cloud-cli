@@ -1509,8 +1509,31 @@ func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*Databa
 // the same Authorization header as every other API call. Call once per local
 // TCP connection to relay (so e.g. `pg_dump -j N` gets N independent tunnels).
 func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.Conn, error) {
+	return c.dialTunnel(ctx, databaseID, false)
+}
+
+// DialReplicaTunnel is DialTunnel against the database's REPLICA (CNPG's `-ro`
+// Service) instead of the primary.
+//
+// Writes are refused there by Postgres itself, and READS CAN BE STALE:
+// replication is asynchronous, so a row committed on the primary a moment ago
+// may not have arrived, and a read-your-own-write can miss. It is for a session
+// that looks at production without adding load to the instance serving writes.
+//
+// Orthogonal to a read-only CREDENTIAL (GetReadOnlyDatabaseConnection), which
+// bounds what a session may DO and still answers from the primary, so it is
+// strongly consistent. The two compose: a read-only credential on the replica
+// is the cheapest safe way to look (fogpipe/cloud-workspace#300).
+func (c *Client) DialReplicaTunnel(ctx context.Context, databaseID string) (*websocket.Conn, error) {
+	return c.dialTunnel(ctx, databaseID, true)
+}
+
+func (c *Client) dialTunnel(ctx context.Context, databaseID string, replica bool) (*websocket.Conn, error) {
 	wsURL := strings.Replace(strings.Replace(c.BaseURL, "https://", "wss://", 1), "http://", "ws://", 1)
 	wsURL += "/api/v1/databases/" + databaseID + "/tunnel"
+	if replica {
+		wsURL += "?replica=true"
+	}
 
 	header := http.Header{}
 	if c.APIKey != "" {

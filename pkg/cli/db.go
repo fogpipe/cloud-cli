@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
@@ -183,12 +184,31 @@ var dbGetCmd = &cobra.Command{
 			{"Storage", orDash(db.Storage)},
 			{"Instances", orDash(instanceCount(db.Instances))},
 			{"Address", addr},
+			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 			{"Username", orDash(db.Username)},
 		}))
 		fmt.Println()
 		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))
+		fmt.Println(mutedStyle.Render("  Reads can go to the replica via DATABASE_READ_URL; they may be stale, so never read your own write there."))
 		return nil
 	},
+}
+
+// renderReplicationLag prints how far the replica trails the primary.
+//
+// "unknown" rather than "0s" when the platform could not ask: a replica that is
+// caught up and a cluster that could not be read are different answers, and
+// rendering both as zero is what makes a staleness figure worth nothing
+// (fogpipe/cloud-workspace#300).
+func renderReplicationLag(seconds *float64) string {
+	if seconds == nil {
+		return "unknown"
+	}
+	d := time.Duration(*seconds * float64(time.Second))
+	if d < time.Millisecond {
+		return "< 1ms"
+	}
+	return d.Round(time.Millisecond).String()
 }
 
 var dbDeleteCmd = &cobra.Command{

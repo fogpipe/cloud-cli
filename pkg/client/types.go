@@ -586,9 +586,18 @@ type Database struct {
 	// database. Untrusted extensions are installed by the platform, because
 	// CREATE EXTENSION on one is superuser-only and a managed database hands
 	// out no superuser.
-	Extensions []string  `json:"extensions"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Extensions []string `json:"extensions"`
+	// ReplicationLagSeconds is how far the replica trails the primary, read
+	// from the live cluster. It is what makes the staleness of a read against
+	// the replica endpoint a number a tenant can see rather than a warning they
+	// have to trust (fogpipe/cloud-workspace#300).
+	//
+	// Nil when the cluster cannot be asked, which is NOT the same as zero: zero
+	// is a replica that is caught up, and a platform that cannot measure must
+	// not render as one that measured nothing wrong.
+	ReplicationLagSeconds *float64  `json:"replication_lag_seconds,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // DatabaseConnection is a database's live connection info (GET
@@ -605,6 +614,24 @@ type DatabaseConnection struct {
 	Username  string `json:"username"`
 	Password  string `json:"password"`
 	URL       string `json:"url"`
+	// ReadHost/ReadURL are the same database's REPLICA endpoint (CNPG's `-ro`
+	// Service), which every managed database has because every one is two
+	// instances (ADR-136). Writes are refused there — Postgres answers `cannot
+	// execute INSERT in a read-only transaction` — and the credential is the
+	// same one; a replica is not a second identity.
+	//
+	// READS HERE CAN BE STALE. Replication is asynchronous, so a row committed
+	// on the primary a moment ago may not have arrived. In particular a
+	// read-your-own-write can miss: writing a row and immediately reading it
+	// back through this endpoint can return the old value or nothing. Send any
+	// query that must see everything committed so far to `URL`.
+	//
+	// Distinct from a read-only CREDENTIAL, which is about what a session is
+	// permitted to do and still answers from the primary, so it is strongly
+	// consistent. The two are orthogonal and compose
+	// (fogpipe/cloud-workspace#300).
+	ReadHost string `json:"read_host,omitempty"`
+	ReadURL  string `json:"read_url,omitempty"`
 }
 
 // CreateDatabaseRequest is the request body for creating a database.
