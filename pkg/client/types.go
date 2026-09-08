@@ -1075,13 +1075,19 @@ type Organization struct {
 	MaxPods    int    `json:"max_pods"`
 	MaxStorage string `json:"max_storage"`
 
-	// Every metered type is bounded by the org (ADR-128), and these three are
+	// Every metered type is bounded by the org (ADR-128), and these four are
 	// the ones Kubernetes cannot count: object storage is the sum of what the
-	// org's bucket quotas reserve, the registry is what its projects were last
-	// measured to hold.
+	// org's bucket quotas reserve, the registry and managed backups are what
+	// its projects were last measured to hold.
+	//
+	// Backups are the largest of them and were the last to get an axis: the
+	// archive bucket carries no quota on purpose, its row is not in `buckets`,
+	// and being unmetered kept it out of the check that every bounded type has
+	// a ceiling at all (ADR-177).
 	MaxObjectStorage   string `json:"max_object_storage"`
 	MaxObjects         int64  `json:"max_objects"`
 	MaxRegistryStorage string `json:"max_registry_storage"`
+	MaxBackupStorage   string `json:"max_backup_storage"`
 
 	// UsedRegistryBytes is what the org's projects were last measured to hold
 	// in the registry, beside the ceiling it is refused against (ADR-128,
@@ -2099,6 +2105,7 @@ type StatusProject struct {
 	MaxObjectStorage    string    `json:"max_object_storage,omitempty"`
 	MaxObjects          int64     `json:"max_objects,omitempty"`
 	MaxRegistryStorage  string    `json:"max_registry_storage,omitempty"`
+	MaxBackupStorage    string    `json:"max_backup_storage,omitempty"`
 	ReservedObjectBytes int64     `json:"reserved_object_bytes,omitempty"`
 	ReservedObjects     int64     `json:"reserved_objects,omitempty"`
 	UsedRegistryBytes   int64     `json:"used_registry_bytes,omitempty"`
