@@ -184,6 +184,7 @@ var dbGetCmd = &cobra.Command{
 			{"Storage", orDash(db.Storage)},
 			{"Instances", orDash(instanceCount(db.Instances))},
 			{"Address", addr},
+			{"Read address", orDash(dbReadAddress(db))},
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 			{"Username", orDash(db.Username)},
 		}))
@@ -965,6 +966,19 @@ func dbAddress(db *client.Database) string {
 		return db.Host
 	}
 	return fmt.Sprintf("%s:%d", db.Host, db.Port)
+}
+
+// dbReadAddress renders the replica endpoint's address, on the same port as the
+// primary. Empty when the cluster could not be read, which orDash renders as a
+// dash rather than as an address that does not exist.
+func dbReadAddress(db *client.Database) string {
+	if db.ReadHost == "" {
+		return ""
+	}
+	if db.Port == 0 {
+		return db.ReadHost
+	}
+	return fmt.Sprintf("%s:%d", db.ReadHost, db.Port)
 }
 
 // orDash renders an empty value as a muted dash.

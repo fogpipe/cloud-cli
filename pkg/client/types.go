@@ -564,7 +564,23 @@ type Database struct {
 	// it and keeps no copy (fogpipe/cloud-workspace#265), so a later read has
 	// none; the live credential is the injected DATABASE_URL or
 	// `fpcloud db connect`.
-	Host     string `json:"host"`
+	Host string `json:"host"`
+	// ReadHost is the same database's REPLICA endpoint (CNPG's `-ro` Service),
+	// on the same Port and with the same credential — a replica is not a second
+	// identity. Every managed database has one, because every one is two
+	// instances (ADR-136).
+	//
+	// READS HERE CAN BE STALE: replication is asynchronous, so a row committed
+	// on the primary a moment ago may not have arrived, and a
+	// read-your-own-write can miss. Send anything that must see everything
+	// committed so far to Host. DatabaseConnection.ReadHost carries the long
+	// form of this, including why it is orthogonal to a read-only credential.
+	//
+	// Beside Host rather than only on DatabaseConnection so that a Terraform
+	// config can wire it into an app; deriving it downstream would have the
+	// platform deriving one of its own addresses in three places
+	// (fogpipe/cloud-workspace#862).
+	ReadHost string `json:"read_host,omitempty"`
 	Port     int32  `json:"port"`
 	Username string `json:"username"`
 	Password string `json:"password,omitempty"`
