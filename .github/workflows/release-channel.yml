@@ -1,0 +1,48 @@
+name: release channel
+
+# Keep the `release` branch pointing at the release every surface can be
+# installed at.
+#
+# `main` is what a flake input or `nix run github:fogpipe/cloud-cli` resolves
+# to by default, and main is an unreleased commit — ahead of every published
+# binary and of the provider that carries the same version. A nix user was
+# therefore running a dev build next to a released provider, and the only way to
+# pin a release was to write its tag into flake.nix by hand
+# (fogpipe/cloud-workspace#858).
+#
+# `release` is a channel in the nixos-unstable sense: a ref that moves only once
+# what it points at is verified. The verification is the platform's — GET
+# /version names the newest version with these binaries downloadable AND a
+# provider the OpenTofu registry serves, capped at what the API runs (ADR-169).
+# So `github:fogpipe/cloud-cli/release` is correct by construction and
+# `nix flake update` alone moves a tenant to it.
+#
+# A withheld latest_release leaves the branch where it is: the platform cannot
+# currently say, which is not a reason to move.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  point:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Point release at latest_release
+        run: |
+          set -euo pipefail
+          tag="$(curl -fsS --max-time 10 https://api.cloud.fogpipe.com/version | jq -r '.latest_release // empty')"
+          if [[ -z "$tag" ]]; then
+            echo "the platform names no installable release right now — leaving the channel alone"
+            exit 0
+          fi
+          git fetch --depth=1 origin "refs/tags/$tag"
+          # --force on purpose: a control-plane rollback lowers latest_release,
+          # and the channel follows it down as readily as up.
+          git push --force origin "$(git rev-parse "FETCH_HEAD^{commit}"):refs/heads/release"
+          echo "release -> $tag"

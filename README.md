@@ -25,7 +25,7 @@ brew install fogpipe/cloud-cli/fpcloud
 Run it directly:
 
 ```sh
-nix run github:fogpipe/cloud-cli
+nix run github:fogpipe/cloud-cli/release
 ```
 
 Or add it to your flake:
