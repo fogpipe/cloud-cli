@@ -34,7 +34,7 @@ var orgListCmd = &cobra.Command{
 		// REGISTRY is spend against the ceiling: what the org's projects were
 		// last measured to hold beside what a push is refused above (ADR-128,
 		// fogpipe/cloud-workspace#284). Never measured is said, not shown as 0.
-		headers := []string{"", "ID", "NAME", "REGISTRY", "CREATED"}
+		headers := []string{"", "ID", "NAME", "REGISTRY", "BACKUPS", "CREATED"}
 		var rows [][]string
 		for _, o := range orgs {
 			marker := " "
@@ -46,6 +46,7 @@ var orgListCmd = &cobra.Command{
 				o.ShortID,
 				o.DisplayName,
 				orgRegistrySpend(o),
+				orgBackupSpend(o),
 				o.CreatedAt.Format("2006-01-02 15:04"),
 			})
 		}
@@ -336,6 +337,20 @@ func init() {
 	orgCmd.AddCommand(orgRemoveCmd)
 
 	rootCmd.AddCommand(orgCmd)
+}
+
+// orgBackupSpend is orgRegistrySpend for the managed-backup axis (ADR-177).
+// Separate rather than parameterised: the two read different fields off the
+// same struct, and a shared helper taking four accessors is longer than saying
+// it twice.
+func orgBackupSpend(o *client.Organization) string {
+	if o.MaxBackupStorage == "" {
+		return ""
+	}
+	if o.BackupMeasuredAt.IsZero() {
+		return mutedStyle.Render("never measured") + "/" + o.MaxBackupStorage
+	}
+	return humanizeSize(o.UsedBackupBytes) + "/" + o.MaxBackupStorage
 }
 
 func orgRegistrySpend(o *client.Organization) string {

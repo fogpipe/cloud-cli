@@ -1097,6 +1097,13 @@ type Organization struct {
 	UsedRegistryBytes  int64     `json:"used_registry_bytes"`
 	RegistryMeasuredAt time.Time `json:"registry_measured_at,omitempty"`
 
+	// UsedBackupBytes is the same reading for managed backups — the spend
+	// against MaxBackupStorage (ADR-177). BackupMeasuredAt is when; zero means
+	// no project has ever been measured, which is not the same as holding no
+	// archives.
+	UsedBackupBytes  int64     `json:"used_backup_bytes"`
+	BackupMeasuredAt time.Time `json:"backup_measured_at,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 
