@@ -9,29 +9,39 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var projectPruneCmd = &cobra.Command{
-	Use:   "prune [name]",
-	Short: "Remove the project's finished pods",
+var fkeNamespaceCmd = &cobra.Command{
+	Use:     "namespace",
+	Aliases: []string{"ns"},
+	Short:   "The Kubernetes namespace behind a project",
+}
+
+// Grouped under fke rather than project because a finished pod is only ever
+// visible through kubectl: app, project status and the console all render
+// workloads, never pods. Someone who has just seen forty Completed rows in
+// `kubectl get pods` looks for the cleanup beside the credentials that got them
+// there (fogpipe/cloud-workspace#920).
+var fkeNamespacePruneCmd = &cobra.Command{
+	Use:   "prune [project]",
+	Short: "Remove the namespace's finished pods",
 	Long: "Deletes pods that have stopped — Succeeded or Failed — and are older than\n" +
 		"--older-than. Nothing running, starting or draining is touched.\n\n" +
 		"A finished pod is not removed by its own ReplicaSet, so these accumulate\n" +
 		"after every rollout and node reboot until something clears them.\n\n" +
-		"With no name, the current project.",
+		"The platform sweeps every namespace it owns on its own, keeping a full day\n" +
+		"so a failure stays readable by whoever has not looked yet. This is the same\n" +
+		"operation on demand, with a shorter default, for when you are done with a\n" +
+		"namespace now.\n\n" +
+		"With no name, the current project's namespace.",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		project := ""
-		if len(args) > 0 {
-			project = args[0]
-		}
-		if project == "" {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			project = cfg.CurrentProject
-		}
-		if project == "" {
-			return fmt.Errorf("no current project; name one: fpcloud project prune <name>")
+		// projectSource, not the config directly: this deletes pods, and it read
+		// CurrentProject while ignoring --project, so `prune --project other`
+		// emptied whatever the config pointed at instead of what was named
+		// (fogpipe/cloud-workspace#921). A destructive path selects on the token
+		// that names its target (ADR-057).
+		project, err := projectSource(args)()
+		if err != nil {
+			return err
 		}
 
 		olderThan, _ := cmd.Flags().GetDuration("older-than")
@@ -73,7 +83,8 @@ var projectPruneCmd = &cobra.Command{
 }
 
 func init() {
-	projectPruneCmd.Flags().Duration("older-than", 0, "Keep pods that stopped more recently than this (default: the platform's own threshold)")
-	projectPruneCmd.Flags().Bool("dry-run", false, "Report what would be removed, and remove nothing")
-	projectCmd.AddCommand(projectPruneCmd)
+	fkeNamespacePruneCmd.Flags().Duration("older-than", 0, "Keep pods that stopped more recently than this (default: the platform's own threshold)")
+	fkeNamespacePruneCmd.Flags().Bool("dry-run", false, "Report what would be removed, and remove nothing")
+	fkeNamespaceCmd.AddCommand(fkeNamespacePruneCmd)
+	fkeCmd.AddCommand(fkeNamespaceCmd)
 }
