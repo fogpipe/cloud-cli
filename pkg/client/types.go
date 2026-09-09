@@ -2377,3 +2377,31 @@ type CreateDatabaseSubscriptionRequest struct {
 	// rather than passed through.
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
+
+// PrunePodsRequest asks a project to drop its finished pods.
+type PrunePodsRequest struct {
+	// OlderThanSeconds keeps pods that stopped more recently than this. Zero
+	// means the server's default, which is what makes the age a platform
+	// decision rather than one every caller restates.
+	OlderThanSeconds int64 `json:"older_than_seconds,omitempty"`
+	// DryRun reports what would be removed and removes nothing.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// PruneResult is what one prune did, or would have done.
+//
+// Matched and Pruned are separate numbers on purpose: the server bounds how much
+// work one request does (ADR-079), so a project holding more than that has the
+// rest reported in Remaining rather than silently left — an empty answer and a
+// bounded one render identically otherwise.
+type PruneResult struct {
+	Matched   int32 `json:"matched"`
+	Pruned    int32 `json:"pruned"`
+	Remaining int32 `json:"remaining"`
+	Succeeded int32 `json:"succeeded"`
+	Failed    int32 `json:"failed"`
+	DryRun    bool  `json:"dry_run"`
+	// OlderThanSeconds the server actually applied, so the answer says which
+	// threshold produced it rather than leaving the caller to assume its own.
+	OlderThanSeconds int64 `json:"older_than_seconds"`
+}

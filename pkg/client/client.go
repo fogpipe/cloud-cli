@@ -1023,6 +1023,33 @@ func (c *Client) MoveProject(ctx context.Context, id string, force bool) (*MoveP
 	return &res, nil
 }
 
+// PrunePods deletes the project's finished pods — Succeeded or Failed — that
+// stopped longer ago than olderThan. Nothing that is running, starting or
+// draining is touched.
+//
+// These accumulate because a ReplicaSet does not delete a pod that reached a
+// terminal phase and PodGC's threshold is never reached on a cluster this size,
+// so they persist for as long as the namespace does.
+//
+// olderThan of 0 means the server's default. dryRun reports what would be
+// removed and deletes nothing. The server bounds how many one call removes and
+// says how many it left.
+func (c *Client) PrunePods(ctx context.Context, projectID string, olderThan time.Duration, dryRun bool) (*PruneResult, error) {
+	req := PrunePodsRequest{DryRun: dryRun}
+	if olderThan > 0 {
+		req.OlderThanSeconds = int64(olderThan.Seconds())
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/prune", req)
+	if err != nil {
+		return nil, err
+	}
+	var res PruneResult
+	if err := c.do(httpReq, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // UpdateProjectDisplayName changes a project's mutable, cosmetic display name
 // (ADR-036). The frozen name — which anchors the k8s namespace and registry path —
 // is untouched, so this is a plain label change with no cluster impact.
