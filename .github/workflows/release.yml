@@ -125,6 +125,13 @@ jobs:
                      pathlib.Path("package.nix").read_text(), count=1))
           PY
           git add Formula/fpcloud.rb package.nix
+          # A second run of the same tag — a rerun, or the two runs one push
+          # started on 2026-09-09 (fogpipe/cloud-workspace#928) — finds main
+          # already at this version. That is the step's outcome, not a failure.
+          if git diff --cached --quiet; then
+            echo "main already carries the ${TAG} formula"
+            exit 0
+          fi
           git commit -m "fpcloud ${TAG} formula"
           # No `|| echo` here on purpose: a rejected push is how the formula went
           # a release stale in silence (#859), so it fails the job instead.
