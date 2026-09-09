@@ -10,10 +10,10 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
-// runnerServicesFromFlags builds the pool's service set from --service and its
+// runnerServicesFromFlags builds the runner's service set from --service and its
 // three per-service modifiers (fogpipe/cloud-workspace#306).
 //
-// The modifiers name the service they belong to, because a pool may carry more
+// The modifiers name the service they belong to, because a runner may carry more
 // than one and a bare --service-env would have to guess which:
 //
 //	--service postgres=postgres:18-alpine
@@ -25,7 +25,7 @@ import (
 // pair keyed by a string.
 //
 // Returns nil when nothing was named, so create sends no services and update
-// leaves the pool's alone.
+// leaves the runner's alone.
 func runnerServicesFromFlags(cmd *cobra.Command) ([]client.RunnerService, error) {
 	decls, err := cmd.Flags().GetStringArray("service")
 	if err != nil {
@@ -126,7 +126,7 @@ func runnerServiceFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArray("service-memory", nil, "Memory limit for a service, as <service>=<value> (repeatable)")
 }
 
-// serviceCell renders a pool's services for a table or an info box.
+// serviceCell renders a runner's services for a table or an info box.
 func serviceCell(services []client.RunnerService) string {
 	if len(services) == 0 {
 		return "—"

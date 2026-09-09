@@ -18,22 +18,22 @@ const workflowDir = ".github/workflows"
 
 var runnerCheckCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Say which jobs in a workflow can run on this project's pools",
+	Short: "Say which jobs in a workflow can run on this project's runner",
 	Long: `Read workflow files and say, before you push, which jobs this project's
-runner pools can actually take.
+runner can actually take.
 
 With no --workflow it reads every file in .github/workflows relative to the
-working directory. The files are sent as text and compared against the pools
-this project has; nothing reads your repository, which is what lets this
+working directory. The files are sent as text and compared against this
+project's runner label; nothing reads your repository, which is what lets this
 answer for a workflow you have not pushed yet.
 
 Each job gets one verdict:
 
-  runs           the label names a pool here and the job asks for nothing
-                 the pool cannot serve
-  queues         no pool here serves that label, so the job waits forever
-  refused        the label matches a pool, but the job declares something
-                 the pool cannot serve
+  runs           the label is this project's and the job asks for nothing
+                 the runner cannot serve
+  queues         the label is nobody's here, so the job waits forever
+  refused        the label is this project's, but the job declares something
+                 the runner cannot serve
   github         a GitHub-hosted label: it runs, on GitHub's minutes
   undetermined   runs-on is an expression, so which runner it picks is not
                  knowable from the text
@@ -82,7 +82,7 @@ Each job gets one verdict:
 		}
 		render([]string{"WORKFLOW", "JOB", "RUNS-ON", "VERDICT", "WHY"}, rows, out.Jobs)
 		fmt.Println()
-		fmt.Println(mutedStyle.Render(checkPoolNote(out.Pools)))
+		fmt.Println(mutedStyle.Render(checkLabelNote(out.Label)))
 		fmt.Println()
 		return nil
 	},
@@ -123,17 +123,14 @@ func runsOnCell(labels []string) string {
 	}
 }
 
-// checkPoolNote names what the workflows were compared against. A project with
-// no pools would otherwise read as a workflow full of errors rather than as a
-// project that has not declared a pool yet.
-func checkPoolNote(pools []string) string {
-	if len(pools) == 0 {
-		return "This project has no runner pools, so every self-hosted label queues.\nDeclare one with `fpcloud runner create <name>`."
+// checkLabelNote names what the workflows were compared against. A project
+// with no runner would otherwise read as a workflow full of errors rather than
+// as a project that has not declared its runner yet.
+func checkLabelNote(label string) string {
+	if label == "" {
+		return "This project has no runner, so every self-hosted label queues.\nDeclare it with `fpcloud runner create`."
 	}
-	if len(pools) == 1 {
-		return "Compared against this project's one pool label: " + pools[0]
-	}
-	return fmt.Sprintf("Compared against this project's %d pool labels: %v", len(pools), pools)
+	return "Compared against this project's runner label: " + label
 }
 
 func init() {

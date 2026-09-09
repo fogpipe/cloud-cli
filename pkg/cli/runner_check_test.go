@@ -29,10 +29,9 @@ func TestDiscoverWorkflowsIsEmptyWithoutTheDirectory(t *testing.T) {
 	require.Empty(t, got)
 }
 
-func TestCheckPoolNoteSaysWhenThereAreNoPools(t *testing.T) {
-	require.Contains(t, checkPoolNote(nil), "no runner pools")
-	require.Contains(t, checkPoolNote([]string{"proj-ci"}), "proj-ci")
-	require.Contains(t, checkPoolNote([]string{"proj-ci", "proj-arm"}), "2 pool labels")
+func TestCheckLabelNoteSaysWhenThereIsNoRunner(t *testing.T) {
+	require.Contains(t, checkLabelNote(""), "no runner")
+	require.Contains(t, checkLabelNote("proj-ci"), "proj-ci")
 }
 
 func TestRunsOnCellNamesTheFirstLabelAndCountsTheRest(t *testing.T) {

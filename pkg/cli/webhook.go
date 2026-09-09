@@ -64,7 +64,7 @@ var webhookSetupCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(wh)
 		}
-		warnRepoOutsidePools(c, repo)
+		warnRepoOutsideRunnerAccount(c, repo)
 
 		// Show the webhook URL and secret prominently.
 		secretStyle := lipgloss.NewStyle().Bold(true).Foreground(colorWarning)
@@ -209,14 +209,14 @@ func init() {
 	rootCmd.AddCommand(webhookCmd)
 }
 
-// warnRepoOutsidePools says so when the repository a webhook was just set up
-// for lives outside the GitHub account this project's runner pools serve: a
-// workflow in it that names one of the pools' labels queues forever, with no
-// error anywhere (fogpipe/cloud-workspace#305). This is the one place the CLI
-// is told which repository a project deploys from, so it is where the check
-// can be made. Advisory and best effort: a connection or pool list that cannot
-// be read leaves the webhook as set up and says nothing.
-func warnRepoOutsidePools(c *client.Client, repo string) {
+// warnRepoOutsideRunnerAccount says so when the repository a webhook was just
+// set up for lives outside the GitHub account this project's runner serves: a
+// workflow in it that names the runner's label queues forever, with no error
+// anywhere (fogpipe/cloud-workspace#305). This is the one place the CLI is
+// told which repository a project deploys from, so it is where the check can
+// be made. Advisory and best effort: a connection or runner that cannot be
+// read leaves the webhook as set up and says nothing.
+func warnRepoOutsideRunnerAccount(c *client.Client, repo string) {
 	project, err := requireProject()
 	if err != nil {
 		return
@@ -225,14 +225,10 @@ func warnRepoOutsidePools(c *client.Client, repo string) {
 	if err != nil || status.Connection == nil || !repoOutsideAccount(repo, status.Connection.AccountLogin) {
 		return
 	}
-	runners, err := c.ListRunners(context.Background(), project)
-	if err != nil || len(runners) == 0 {
+	runner, err := c.GetRunner(context.Background(), project)
+	if err != nil {
 		return
 	}
-	labels := make([]string, 0, len(runners))
-	for _, r := range runners {
-		labels = append(labels, r.Labels...)
-	}
-	fmt.Fprintf(os.Stderr, "warning: %s is outside github.com/%s, which this project's runner pool(s) serve — a workflow in it cannot use runs-on: %s\n",
-		repo, status.Connection.AccountLogin, strings.Join(labels, ", "))
+	fmt.Fprintf(os.Stderr, "warning: %s is outside github.com/%s, which this project's runner serves — a workflow in it cannot use runs-on: %s\n",
+		repo, status.Connection.AccountLogin, strings.Join(runner.Labels, ", "))
 }

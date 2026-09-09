@@ -19,7 +19,7 @@ func servicesCmd(t *testing.T, args ...string) *cobra.Command {
 	return cmd
 }
 
-func TestNoServiceFlagsLeavesThePoolAlone(t *testing.T) {
+func TestNoServiceFlagsLeavesTheRunnerAlone(t *testing.T) {
 	got, err := runnerServicesFromFlags(servicesCmd(t))
 	require.NoError(t, err)
 	require.Nil(t, got, "nil is what makes create send nothing and update leave the set alone")

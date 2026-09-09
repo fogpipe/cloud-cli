@@ -29,7 +29,7 @@ var projectStatusCmd = &cobra.Command{
 	Long: `Show every resource in the project with its live status and problems.
 
 One call, one view: apps, databases, scheduled jobs, custom domains, buckets and
-CI runner pools, each with what the platform can actually see about it right now
+the CI runner, each with what the platform can actually see about it right now
 — replicas ready, crash loops, routes that cannot reach their backend, hostnames
 whose certificate never issued, backups that stopped producing restore points.
 
@@ -352,13 +352,13 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 	}
 	b.WriteString(renderStatusSection("BUCKETS", []string{"USED", "STATUS", "WEBSITE"}, bucketRows))
 
-	runnerRows := make([]statusRow, 0, len(s.Runners))
-	for _, r := range s.Runners {
+	runnerRows := []statusRow{}
+	if r := s.Runner; r != nil {
 		notes := []string{}
 		if r.Message != "" {
 			notes = append(notes, r.Message)
 		}
-		// The queue is what separates an idle pool from a starved one, so a
+		// The queue is what separates an idle runner from a starved one, so a
 		// queue that could not be read is a "?" and never a 0
 		// (fogpipe/cloud-workspace#146).
 		waiting := mutedStyle.Render("?")
@@ -366,12 +366,12 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 			waiting = fmt.Sprintf("%d", *r.WaitingJobs)
 		}
 		runnerRows = append(runnerRows, statusRow{
-			cells: []string{r.Name, renderStatus(r.Status),
-				fmt.Sprintf("%s (%d–%d)", runnerCounts(r.CurrentRunners, r.RunningRunners, r.PendingRunners), r.MinRunners, r.MaxRunners), waiting},
+			cells: []string{r.Size, renderStatus(r.Status),
+				fmt.Sprintf("%s (max %d)", runnerCounts(r.CurrentRunners, r.RunningRunners, r.PendingRunners), r.MaxRunners), waiting},
 			notes: notes,
 		})
 	}
-	b.WriteString(renderStatusSection("RUNNERS", []string{"STATUS", "ACTIVE", "WAITING"}, runnerRows))
+	b.WriteString(renderStatusSection("RUNNER", []string{"STATUS", "ACTIVE", "WAITING"}, runnerRows))
 
 	if len(s.Unchecked) > 0 {
 		lines := []string{lipgloss.NewStyle().Bold(true).Render("Not checked — this report is incomplete:")}

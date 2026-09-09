@@ -10,7 +10,7 @@ import (
 )
 
 // "3 of 4" is unambiguous where a bare 4 under any heading is not; the most
-// the pool may run is what the ceiling admits when that is lower
+// the runner may run is what the ceiling admits when that is lower
 // (fogpipe/cloud-workspace#146).
 func TestRunnerBusy_IsBusyBesideTheMost(t *testing.T) {
 	require.Equal(t, "3 of 4", runnerBusy(&client.Runner{RunningRunners: 3, MaxRunners: 4}))
@@ -27,6 +27,4 @@ func TestRunnerWaiting_ReadOrUnreadableNeverEmptyByDefault(t *testing.T) {
 	require.Contains(t, unread, "unreadable")
 	require.Contains(t, unread, "publishes no gha_assigned_jobs")
 	require.Contains(t, runnerWaiting(&client.Runner{}), "not reported")
-	require.Contains(t, runnerWaitingCell(&client.Runner{}), "?")
-	require.Equal(t, "0", runnerWaitingCell(&client.Runner{Queue: &client.RunnerQueue{}}))
 }

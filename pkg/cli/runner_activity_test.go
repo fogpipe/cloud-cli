@@ -8,7 +8,7 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
-// The runners a pool has are said by state, because a runner executing a job
+// A runner's pods are said by state, because a pod executing a job
 // and one waiting for a pod the ceiling refuses call for opposite responses
 // (fogpipe/cloud-workspace#120). A control plane that sends only the sum still
 // renders.

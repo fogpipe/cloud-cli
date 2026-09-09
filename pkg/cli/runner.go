@@ -14,55 +14,30 @@ import (
 )
 
 var runnerCmd = &cobra.Command{
-	Use:     "runner",
-	Aliases: []string{"runners"},
-	Short:   "Manage GitHub Actions runners",
-	Long: `Manage managed GitHub Actions runners.
+	Use:   "runner",
+	Short: "Manage this project's GitHub Actions runner",
+	Long: `Manage this project's managed GitHub Actions runner.
 
-A runner is a pool, not a machine: pods are created for one job and destroyed
-when it ends, so a pool that scales to zero (--min 0, the default) costs
-nothing while idle. A runner kept warm by --min is a pod that exists while
-idle, and it is billed for its cpu and memory the whole time, at the rates
-your org's price list shows (fpcloud billing prices). A pool serves every
-repository in the GitHub account this project is connected to.
+A project has one runner. It is not a machine: a pod is created for one job
+and destroyed when the job ends, so it costs nothing while idle and is billed
+per minute a job runs, at the rate for its size (fpcloud billing prices). It
+serves every repository in the GitHub account this project is connected to.
 
-Workflows opt in by naming the pool in ` + "`runs-on`" + `.
+Two things to choose: --size, what one job gets (small, medium or large), and
+--max, how many jobs run at once.
+
+Workflows opt in by naming the project's label in ` + "`runs-on`" + `.
 
   # connect the project to your GitHub account once
   fpcloud github connect
 
-  # then a pool needs nothing but a name
-  fpcloud runner create ci
+  # then the runner needs nothing
+  fpcloud runner create
 
-  # then, in .github/workflows/ci.yml — the label is <project>-<name>
+  # then, in .github/workflows/ci.yml — the label is <project>-ci
   #   jobs:
   #     test:
   #       runs-on: myproject-ci`,
-}
-
-// resolveRunnerID turns a runner name (or id) into an id, using the current
-// project.
-func resolveRunnerID(c *client.Client, ref string) (string, error) {
-	if ref == "" {
-		return "", fmt.Errorf("runner name or id is required")
-	}
-	if looksLikeUUID(ref) {
-		return ref, nil
-	}
-	project, err := requireProject()
-	if err != nil {
-		return "", fmt.Errorf("resolve runner %q: %w", ref, err)
-	}
-	runners, err := c.ListRunners(context.Background(), project)
-	if err != nil {
-		return "", err
-	}
-	for _, r := range runners {
-		if r.Name == ref {
-			return r.ID, nil
-		}
-	}
-	return "", notFoundf("runner %q not found in project %q", ref, project)
 }
 
 // runnerCredential reads the credential flags, loading the App private key from
@@ -97,9 +72,9 @@ func runnerCredential(cmd *cobra.Command) (credential, appID, installationID, pr
 }
 
 var runnerCreateCmd = &cobra.Command{
-	Use:   "create <name>",
-	Short: "Create a runner pool",
-	Args:  cobra.ExactArgs(1),
+	Use:   "create",
+	Short: "Create this project's runner",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		project, err := requireProject()
 		if err != nil {
@@ -116,13 +91,9 @@ var runnerCreateCmd = &cobra.Command{
 		}
 
 		req := client.CreateRunnerRequest{
-			Name:                    args[0],
-			DisplayName:             mustString(cmd, "display-name"),
 			GitHubAccount:           mustString(cmd, "github-account"),
 			RunnerGroup:             mustString(cmd, "runner-group"),
-			Image:                   mustString(cmd, "image"),
-			CPU:                     mustString(cmd, "cpu"),
-			Memory:                  mustString(cmd, "memory"),
+			Size:                    mustString(cmd, "size"),
 			Builder:                 runnerBuilderFromFlags(cmd),
 			Services:                services,
 			Credential:              credential,
@@ -130,10 +101,6 @@ var runnerCreateCmd = &cobra.Command{
 			GitHubAppInstallationID: installationID,
 			GitHubAppPrivateKey:     privateKey,
 			GitHubToken:             token,
-		}
-		if cmd.Flags().Changed("min") {
-			v := mustInt(cmd, "min")
-			req.MinRunners = &v
 		}
 		if cmd.Flags().Changed("max") {
 			v := mustInt(cmd, "max")
@@ -156,49 +123,18 @@ var runnerCreateCmd = &cobra.Command{
 	},
 }
 
-var runnerListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List runner pools",
+var runnerShowCmd = &cobra.Command{
+	Use:     "show",
+	Aliases: []string{"get", "describe"},
+	Short:   "Show this project's runner",
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		project, err := requireProject()
 		if err != nil {
 			return err
 		}
 		c := getClient()
-		runners, err := c.ListRunners(context.Background(), project)
-		if err != nil {
-			return err
-		}
-
-		rows := make([][]string, len(runners))
-		for i, r := range runners {
-			rows[i] = []string{
-				r.Name,
-				runnerScope(r),
-				fmt.Sprintf("%d-%d", r.MinRunners, r.MaxRunners),
-				runnerActivity(r),
-				runnerWaitingCell(r),
-				renderStatus(r.Status),
-			}
-		}
-		render([]string{"NAME", "SERVES", "SCALE", "RUNNERS", "WAITING", "STATUS"}, rows, runners)
-		return nil
-	},
-}
-
-var runnerShowCmd = &cobra.Command{
-	Use:     "show <name>",
-	Aliases: []string{"get", "describe"},
-	Short:   "Show a runner pool",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		id, err := resolveRunnerID(c, args[0])
-		if err != nil {
-			return err
-		}
-		runner, err := c.GetRunner(context.Background(), id)
+		runner, err := c.GetRunner(context.Background(), project)
 		if err != nil {
 			return err
 		}
@@ -214,26 +150,19 @@ var runnerShowCmd = &cobra.Command{
 }
 
 var runnerUpdateCmd = &cobra.Command{
-	Use:   "update <name>",
-	Short: "Update a runner pool",
-	Args:  cobra.ExactArgs(1),
+	Use:   "update",
+	Short: "Update this project's runner",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		id, err := resolveRunnerID(c, args[0])
+		project, err := requireProject()
 		if err != nil {
 			return err
 		}
+		c := getClient()
 		var req client.UpdateRunnerRequest
-		setString(cmd, "display-name", &req.DisplayName)
 		setString(cmd, "github-account", &req.GitHubAccount)
 		setString(cmd, "runner-group", &req.RunnerGroup)
-		setString(cmd, "image", &req.Image)
-		setString(cmd, "cpu", &req.CPU)
-		setString(cmd, "memory", &req.Memory)
-		if cmd.Flags().Changed("min") {
-			v := mustInt(cmd, "min")
-			req.MinRunners = &v
-		}
+		setString(cmd, "size", &req.Size)
 		if cmd.Flags().Changed("max") {
 			v := mustInt(cmd, "max")
 			req.MaxRunners = &v
@@ -259,9 +188,9 @@ var runnerUpdateCmd = &cobra.Command{
 		}
 
 		// The builder rides along in the same patch as the runner's own size:
-		// the project's caps weigh the two together, so a pool over its cap can
-		// only come back under if one request carries both.
-		if err := setRunnerBuilder(c, id, cmd, &req); err != nil {
+		// the org's ceiling weighs the two together, so a runner over its cap
+		// can only come back under if one request carries both.
+		if err := setRunnerBuilder(c, project, cmd, &req); err != nil {
 			return err
 		}
 		// Replace-in-full, so naming any --service restates the whole set — the
@@ -276,7 +205,7 @@ var runnerUpdateCmd = &cobra.Command{
 		} else if services != nil {
 			req.Services = &services
 		}
-		runner, err := c.UpdateRunner(context.Background(), id, req)
+		runner, err := c.UpdateRunner(context.Background(), project, req)
 		if err != nil {
 			return err
 		}
@@ -290,64 +219,63 @@ var runnerUpdateCmd = &cobra.Command{
 }
 
 var runnerDeleteCmd = &cobra.Command{
-	Use:     "delete <name>",
+	Use:     "delete",
 	Aliases: []string{"rm"},
-	Short:   "Delete a runner pool",
-	Args:    cobra.ExactArgs(1),
+	Short:   "Delete this project's runner",
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		id, err := resolveRunnerID(c, args[0])
+		project, err := requireProject()
 		if err != nil {
 			return err
 		}
-		if err := c.DeleteRunner(context.Background(), id); err != nil {
+		c := getClient()
+		if err := c.DeleteRunner(context.Background(), project); err != nil {
 			return err
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Runner %q deleted.", args[0]),
+				" Runner deleted.",
 		))
 		return nil
 	},
 }
 
 var runnerRestartCmd = &cobra.Command{
-	Use:   "restart <name>",
-	Short: "Recycle a runner pool, letting running jobs finish first",
-	Long: `Replace every runner in the pool and its listener, so a pool that has
-stopped taking work is recovered without deleting anything by hand.
+	Use:   "restart",
+	Short: "Recycle this project's runner, letting running jobs finish first",
+	Long: `Replace every runner pod and the listener, so a runner that has stopped
+taking work is recovered without deleting anything by hand.
 
-Draining by default: a runner serving a job finishes it before it goes, and
-this command says which jobs it is waiting on while it waits. An ephemeral
-runner takes exactly one job, so the drain is bounded by the longest running
-job, never open-ended. --force recycles at once and kills whatever is
-running — for a pool wedged on a runner that will never finish. The safe
-action is the default and the destructive one has to be typed
-(fogpipe/cloud-workspace#145).
+Draining by default: a pod serving a job finishes it before it goes, and this
+command says which jobs it is waiting on while it waits. An ephemeral runner
+takes exactly one job, so the drain is bounded by the longest running job,
+never open-ended. --force recycles at once and kills whatever is running — for
+a runner wedged on a pod that will never finish. The safe action is the
+default and the destructive one has to be typed (fogpipe/cloud-workspace#145).
 
 The restart is accepted and carried out by the platform (ADR-079); --no-wait
 returns as soon as it is accepted, and ` + "`fpcloud runner show`" + ` reports
 the restart in progress.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		force, _ := cmd.Flags().GetBool("force")
 		yes, _ := cmd.Flags().GetBool("yes")
 		noWait, _ := cmd.Flags().GetBool("no-wait")
-		c := getClient()
-		id, err := resolveRunnerID(c, args[0])
+		project, err := requireProject()
 		if err != nil {
 			return err
 		}
+		c := getClient()
 		if force && !yes {
 			ok, err := confirm(
-				fmt.Sprintf("Force-restart runner pool %q?", args[0]),
-				"Every runner is replaced now, and any job one of them is running is killed — GitHub does not re-offer a job whose runner died.",
+				"Force-restart this project's runner?",
+				"Every runner pod is replaced now, and any job one of them is running is killed — GitHub does not re-offer a job whose runner died.",
 				"Yes, kill running jobs")
 			if err != nil || !ok {
 				return err
 			}
 		}
-		runner, err := c.RestartRunner(context.Background(), id, client.RestartRunnerRequest{Force: force})
+		runner, err := c.RestartRunner(context.Background(), project, client.RestartRunnerRequest{Force: force})
 		if err != nil {
 			return err
 		}
@@ -358,9 +286,8 @@ the restart in progress.`,
 			}
 		} else if noWait {
 			fmt.Println(renderInfoBox("Restart Accepted", [][]string{
-				{"Runner", runner.Name},
 				{"Mode", restartMode(force)},
-				{"", mutedStyle.Render("Carried out by the platform; `fpcloud runner show " + args[0] + "` reports it.")},
+				{"", mutedStyle.Render("Carried out by the platform; `fpcloud runner show` reports it.")},
 			}))
 			return nil
 		}
@@ -375,7 +302,7 @@ the restart in progress.`,
 				last = note
 			}
 		}
-		done, err := c.WaitRunnerRestarted(context.Background(), id, 3*time.Second, progress)
+		done, err := c.WaitRunnerRestarted(context.Background(), project, 3*time.Second, progress)
 		if err != nil {
 			return err
 		}
@@ -384,7 +311,7 @@ the restart in progress.`,
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Runner %q restarted: every runner and the listener are new.", args[0]),
+				" Runner restarted: every runner pod and the listener are new.",
 		))
 		return nil
 	},
@@ -408,7 +335,7 @@ func runnerRestartNote(r *client.Runner) string {
 		return r.Restart.Note
 	}
 	if len(r.Restart.Waiting) == 0 {
-		return "waiting for the platform to replace the pool's runners and listener"
+		return "waiting for the platform to replace the runner's pods and listener"
 	}
 	jobs := make([]string, 0, len(r.Restart.Waiting))
 	for _, in := range r.Restart.Waiting {
@@ -417,12 +344,10 @@ func runnerRestartNote(r *client.Runner) string {
 	return fmt.Sprintf("draining: waiting for %d running job(s) to finish — %s", len(jobs), strings.Join(jobs, ", "))
 }
 
-// runnerScope renders the GitHub account the pool serves — every repository in
-// it. Derived from the project's connection, never typed.
-// runnerBusy is "N of M" — runners executing a job beside the most the pool
-// may run at once — because a bare count under any heading is ambiguous in a
-// way the pair is not (fogpipe/cloud-workspace#146). M is what the org's
-// ceiling admits when that is below the pool's own max.
+// runnerBusy is "N of M" — pods executing a job beside the most that may run
+// at once — because a bare count under any heading is ambiguous in a way the
+// pair is not (fogpipe/cloud-workspace#146). M is what the org's ceiling
+// admits when that is below the runner's own max.
 func runnerBusy(r *client.Runner) string {
 	most := r.MaxRunners
 	if r.AdmittedRunners > 0 && r.AdmittedRunners < most {
@@ -431,8 +356,8 @@ func runnerBusy(r *client.Runner) string {
 	return fmt.Sprintf("%d of %d", r.RunningRunners, most)
 }
 
-// runnerWaiting is the queue as GitHub sees it: jobs assigned to the pool that
-// no runner has started. It is the whole diagnosis — an idle pool and one
+// runnerWaiting is the queue as GitHub sees it: jobs assigned to the runner
+// that no pod has started. It is the whole diagnosis — an idle runner and one
 // that cannot schedule look alike until this number is known — so a queue
 // that could not be read is said to be unreadable, never rendered as empty
 // (docs/reading-a-zero.md, fogpipe/cloud-workspace#146).
@@ -451,39 +376,34 @@ func runnerWaiting(r *client.Runner) string {
 	return mutedStyle.Render("not reported by this control plane")
 }
 
-// runnerWaitingCell is runnerWaiting for a table column.
-func runnerWaitingCell(r *client.Runner) string {
-	if r.Queue != nil {
-		return fmt.Sprintf("%d", r.Queue.Waiting)
-	}
-	return mutedStyle.Render("?")
-}
-
-// runnerUseNote says where the pool's label works, not only what it is. GitHub
-// registers self-hosted runners per account, so a workflow in a repository
-// outside the one the pool serves names a label nobody offers it and queues
-// forever with no error on either side (fogpipe/cloud-workspace#305) — the
-// label alone reads as if any repository could use it.
+// runnerUseNote says where the runner's label works, not only what it is.
+// GitHub registers self-hosted runners per account, so a workflow in a
+// repository outside the one the runner serves names a label nobody offers it
+// and queues forever with no error on either side
+// (fogpipe/cloud-workspace#305) — the label alone reads as if any repository
+// could use it.
 func runnerUseNote(r *client.Runner) string {
 	return fmt.Sprintf("  Use it from a workflow in a github.com/%s repository with: runs-on: %s\n"+
-		"  A workflow in any other account's repository never sees this pool: its job queues forever.",
+		"  A workflow in any other account's repository never sees this runner: its job queues forever.",
 		runnerScope(r), strings.Join(r.Labels, ", "))
 }
 
 // repoOutsideAccount reports whether an owner/name repository lives outside
-// the GitHub account a project's pools serve. GitHub logins are
+// the GitHub account a project's runner serves. GitHub logins are
 // case-insensitive.
 func repoOutsideAccount(repo, account string) bool {
 	owner, _, ok := strings.Cut(repo, "/")
 	return ok && account != "" && owner != "" && !strings.EqualFold(owner, account)
 }
 
+// runnerScope renders the GitHub account the runner serves — every repository
+// in it. Derived from the project's connection, never typed.
 func runnerScope(r *client.Runner) string {
 	return strings.TrimPrefix(strings.TrimPrefix(r.GitHubConfigURL, "https://github.com/"), "https://")
 }
 
-// runnerActivity says what the pool's runners are doing, not how many objects
-// exist: a runner executing a job and one waiting for a pod the ceiling refuses
+// runnerActivity says what the runner's pods are doing, not how many objects
+// exist: a pod executing a job and one waiting for a slot the ceiling refuses
 // were one "active" count, and the two call for opposite responses
 // (fogpipe/cloud-workspace#120). A control plane that sends only the sum is
 // rendered as the sum.
@@ -491,17 +411,17 @@ func runnerActivity(r *client.Runner) string {
 	return runnerCounts(r.CurrentRunners, r.RunningRunners, r.PendingRunners)
 }
 
-// runnerCounts renders how many of a pool's runners are executing a job and how
-// many exist without running one. Shared by `runner list`/`runner show` and by
+// runnerCounts renders how many of a runner's pods are executing a job and how
+// many exist without running one. Shared by `runner show` and by
 // `project status`, so the two cannot come to different words for the same
 // three numbers.
 //
-// A pool with 2 running and 2 pending reads identically to one with 4 running
-// under a single count, and the two call for opposite responses: runners
+// A runner with 2 running and 2 pending reads identically to one with 4
+// running under a single count, and the two call for opposite responses: pods
 // executing jobs means the ceiling is working and a queue is expected, while
-// runners pending means declared capacity is absent and the queue is the
-// symptom (fogpipe/cloud-workspace#120). Both zero falls back to the sum, which
-// is what a control plane that sends only the sum can support.
+// pods pending means declared capacity is absent and the queue is the symptom
+// (fogpipe/cloud-workspace#120). Both zero falls back to the sum, which is
+// what a control plane that sends only the sum can support.
 func runnerCounts(current, running, pending int) string {
 	if running == 0 && pending == 0 {
 		return fmt.Sprintf("%d active", current)
@@ -510,16 +430,16 @@ func runnerCounts(current, running, pending int) string {
 }
 
 func runnerInfoRows(r *client.Runner) [][]string {
-	scale := fmt.Sprintf("%d-%d (%s)", r.MinRunners, r.MaxRunners, runnerActivity(r))
+	scale := fmt.Sprintf("%d at once (%s)", r.MaxRunners, runnerActivity(r))
 	if r.AdmittedRunners > 0 {
-		scale = fmt.Sprintf("%d-%d (%s, ceiling admits %d)", r.MinRunners, r.MaxRunners, runnerActivity(r), r.AdmittedRunners)
+		scale = fmt.Sprintf("%d at once (%s, ceiling admits %d)", r.MaxRunners, runnerActivity(r), r.AdmittedRunners)
 	}
 	rows := [][]string{
-		{"Name", r.Name},
 		{"Serves", runnerScope(r)},
 		{"runs-on", strings.Join(r.Labels, ", ")},
 		{"Group", r.RunnerGroup},
-		{"Scale", scale},
+		{"Size", r.Size},
+		{"Max", scale},
 		{"Busy", runnerBusy(r)},
 		{"Waiting", runnerWaiting(r)},
 		{"Status", renderStatus(r.Status)},
@@ -543,18 +463,12 @@ func runnerInfoRows(r *client.Runner) [][]string {
 	default:
 		rows = append(rows, []string{"Credential", "token"})
 	}
-	if r.Image != "" {
-		rows = append(rows, []string{"Image", r.Image})
-	}
-	if r.CPU != "" || r.Memory != "" {
-		rows = append(rows, []string{"Runner limits", strings.TrimSpace(r.CPU + " " + r.Memory)})
-	}
 	if r.Message != "" {
 		rows = append(rows, []string{"Note", r.Message})
 	}
-	// Listed after the note rather than folded into it: a pool can have several,
-	// and the count is the difference between one unlucky job and a pool that is
-	// too small for the work being put through it.
+	// Listed after the note rather than folded into it: a runner can have
+	// several, and the count is the difference between one unlucky job and a
+	// runner that is too small for the work being put through it.
 	for _, p := range r.Problems {
 		detail := p.Detail
 		if p.Count > 1 {
@@ -562,7 +476,7 @@ func runnerInfoRows(r *client.Runner) [][]string {
 		}
 		rows = append(rows, []string{"Problem", strings.TrimSpace(p.Reason + " — " + detail)})
 	}
-	// One row per live runner: what each is doing, from the platform itself —
+	// One row per live pod: what each is doing, from the platform itself —
 	// never reconstructed from GitHub's API (fogpipe/cloud-workspace#129).
 	for _, in := range r.Instances {
 		rows = append(rows, []string{"Runner", runnerInstanceLine(in)})
@@ -570,7 +484,7 @@ func runnerInfoRows(r *client.Runner) [][]string {
 	return rows
 }
 
-// runnerInstanceLine renders one live runner: its state, how long it has run,
+// runnerInstanceLine renders one live pod: its state, how long it has run,
 // and — for a busy one — the job it is serving and the run it belongs to.
 func runnerInstanceLine(in client.RunnerInstance) string {
 	age := time.Since(in.StartedAt).Round(time.Second)
@@ -582,10 +496,11 @@ func runnerInstanceLine(in client.RunnerInstance) string {
 	}
 }
 
-// runnerBuilderFromFlags reads the builder a create asked for, or nil for a pool
-// that builds nothing. Naming a size implies the builder, so `--builder-memory
-// 8Gi` alone does what it looks like; an unset size takes the platform's
-// default for a builder, which is not the runner's own size (ADR-071).
+// runnerBuilderFromFlags reads the builder a create asked for, or nil for a
+// runner that builds nothing. Naming a size implies the builder, so
+// `--builder-memory 8Gi` alone does what it looks like; an unset size takes the
+// platform's default for a builder, which is not the runner's own size
+// (ADR-071).
 func runnerBuilderFromFlags(cmd *cobra.Command) *client.RunnerBuilder {
 	cpu, memory := mustString(cmd, "builder-cpu"), mustString(cmd, "builder-memory")
 	if !mustBool(cmd, "builder") && cpu == "" && memory == "" {
@@ -595,15 +510,15 @@ func runnerBuilderFromFlags(cmd *cobra.Command) *client.RunnerBuilder {
 }
 
 // setRunnerBuilder fills in what an update said about the builder, and leaves
-// the patch alone when it said nothing. Silence is not "remove it": a pool
-// updated for its display name keeps the builder it has.
+// the patch alone when it said nothing. Silence is not "remove it": a runner
+// updated for its size keeps the builder it has.
 //
 // The field replaces the builder rather than patching it, so a size the command
-// did not name is read back off the pool rather than dropped — `--builder-memory
-// 8Gi` changes the memory and leaves the CPU where the tenant put it. That read
-// is the only reason this needs the pool at all, so it happens only when a size
-// was named and left half-stated.
-func setRunnerBuilder(c *client.Client, id string, cmd *cobra.Command, req *client.UpdateRunnerRequest) error {
+// did not name is read back off the runner rather than dropped —
+// `--builder-memory 8Gi` changes the memory and leaves the CPU where the tenant
+// put it. That read is the only reason this needs the runner at all, so it
+// happens only when a size was named and left half-stated.
+func setRunnerBuilder(c *client.Client, project string, cmd *cobra.Command, req *client.UpdateRunnerRequest) error {
 	if mustBool(cmd, "no-builder") {
 		req.NoBuilder = true
 		return nil
@@ -613,7 +528,7 @@ func setRunnerBuilder(c *client.Client, id string, cmd *cobra.Command, req *clie
 		return nil
 	}
 	if builder.CPU == "" || builder.Memory == "" {
-		current, err := c.GetRunner(context.Background(), id)
+		current, err := c.GetRunner(context.Background(), project)
 		if err != nil {
 			return err
 		}
@@ -634,15 +549,11 @@ func setRunnerBuilder(c *client.Client, id string, cmd *cobra.Command, req *clie
 func runnerSpecFlags(cmd *cobra.Command) {
 	cmd.Flags().String("github-account", "", "GitHub account the runner serves (only with --credential app or token; the Fogpipe App uses this project's connection)")
 	cmd.Flags().String("runner-group", "", "GitHub runner group to join (default Default)")
-	cmd.Flags().Int("min", 0, "Runners kept idle and ready (default 0, scale to zero); each one is billed for its cpu and memory while idle")
-	cmd.Flags().Int("max", 2, "Jobs the pool runs at once")
-	cmd.Flags().String("image", "", "Runner image (defaults to the platform's)")
-	cmd.Flags().String("cpu", "", "CPU limit for the runner itself, e.g. 2")
-	cmd.Flags().String("memory", "", "Memory limit for the runner itself, e.g. 4Gi")
+	cmd.Flags().String("size", "", "What one job gets: small (1 CPU, 2Gi), medium (2 CPU, 4Gi, the default) or large (4 CPU, 8Gi)")
+	cmd.Flags().Int("max", 2, "Jobs run at once; a ceiling, not a cost")
 	cmd.Flags().Bool("builder", false, "Run a rootless image builder alongside each job (sets BUILDKIT_HOST)")
 	cmd.Flags().String("builder-cpu", "", "CPU limit for the builder, e.g. 1 (implies --builder)")
 	cmd.Flags().String("builder-memory", "", "Memory limit for the builder, e.g. 2Gi (implies --builder)")
-	cmd.Flags().String("display-name", "", "Human-readable label")
 	cmd.Flags().String("credential", "", "How the runner authenticates: platform (default, the Fogpipe GitHub App), app (your own), token")
 	cmd.Flags().String("github-app-id", "", "GitHub App id (--credential app)")
 	cmd.Flags().String("github-app-installation-id", "", "GitHub App installation id (--credential app)")
@@ -655,16 +566,16 @@ func init() {
 	runnerSpecFlags(runnerUpdateCmd)
 	runnerServiceFlags(runnerCreateCmd)
 	runnerServiceFlags(runnerUpdateCmd)
-	runnerUpdateCmd.Flags().Bool("no-services", false, "Remove every service container from the pool")
+	runnerUpdateCmd.Flags().Bool("no-services", false, "Remove every service container from the runner")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-services", "service")
-	runnerUpdateCmd.Flags().Bool("no-builder", false, "Remove the pool's image builder")
+	runnerUpdateCmd.Flags().Bool("no-builder", false, "Remove the runner's image builder")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-cpu")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-memory")
 
-	runnerRestartCmd.Flags().Bool("force", false, "Recycle at once, killing any job a runner is running (default: let running jobs finish)")
+	runnerRestartCmd.Flags().Bool("force", false, "Recycle at once, killing any job a runner pod is running (default: let running jobs finish)")
 	runnerRestartCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt on --force")
 	runnerRestartCmd.Flags().Bool("no-wait", false, "Return once the restart is accepted instead of waiting for it to finish")
-	runnerCmd.AddCommand(runnerCreateCmd, runnerListCmd, runnerShowCmd, runnerUpdateCmd, runnerDeleteCmd, runnerRestartCmd)
+	runnerCmd.AddCommand(runnerCreateCmd, runnerShowCmd, runnerUpdateCmd, runnerDeleteCmd, runnerRestartCmd)
 	rootCmd.AddCommand(runnerCmd)
 }

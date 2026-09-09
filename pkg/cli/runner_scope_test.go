@@ -8,7 +8,7 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
-// A pool's label is only offered to repositories in the account the pool
+// A runner's label is only offered to repositories in the account the runner
 // serves; the note says both, so the label never reads as usable from
 // anywhere (fogpipe/cloud-workspace#305).
 func TestRunnerUseNote_TiesTheLabelToTheAccount(t *testing.T) {

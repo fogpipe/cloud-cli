@@ -1720,24 +1720,24 @@ type UpdateJobRequest struct {
 
 // --- Managed GitHub Actions runners (#418, ADR-064) ---
 
-// Runner is a managed GitHub Actions runner pool: a declaration the platform
-// turns into ephemeral pods, one per job, in the project's namespace.
+// Runner is a project's managed GitHub Actions runner: a declaration the
+// platform turns into ephemeral pods, one per job, in the project's CI
+// namespace. A project has one (fogpipe/cloud-workspace#929); it is addressed
+// by the project, not by a name.
 type Runner struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"project_id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
 
 	GitHubConfigURL string `json:"github_config_url"`
 	RunnerGroup     string `json:"runner_group"`
-	MinRunners      int    `json:"min_runners"`
-	MaxRunners      int    `json:"max_runners"`
-	Image           string `json:"image,omitempty"`
-	CPU             string `json:"cpu,omitempty"`
-	Memory          string `json:"memory,omitempty"`
+	// Size is what one job gets, from a fixed menu: small, medium or large.
+	Size string `json:"size"`
+	// MaxRunners is how many jobs run at once. A ceiling, never a cost: a pod
+	// exists only while a job runs on it.
+	MaxRunners int `json:"max_runners"`
 
 	// Builder is the image builder that runs alongside each job, or nil for a
-	// pool that builds nothing (ADR-071). CPU and Memory bound the builder, not
+	// runner that builds nothing (ADR-071). CPU and Memory bound the builder, not
 	// the runner — a read always fills them in, so the pod's cost is the sum of
 	// two numbers you can see.
 	Builder *RunnerBuilder `json:"builder,omitempty"`
@@ -1745,12 +1745,12 @@ type Runner struct {
 	// Services are the containers that run beside the runner for the life of
 	// each job pod, reachable on 127.0.0.1 (fogpipe/cloud-workspace#306). They
 	// are the platform's answer to a workflow's `services:` block, declared on
-	// the pool rather than in the workflow — a job's own `services:` still
+	// the runner rather than in the workflow — a job's own `services:` still
 	// cannot work, because serving one needs a runner container mode the
 	// platform does not run (ADR-064).
 	Services []RunnerService `json:"services,omitempty"`
 
-	// Credential is which source the pool authenticates with: platform (the
+	// Credential is which source the runner authenticates with: platform (the
 	// Fogpipe GitHub App), app (your own), or token.
 	Credential string `json:"credential"`
 
@@ -1888,44 +1888,37 @@ type RunnerWorkflowJob struct {
 	Job      string   `json:"job"`
 	RunsOn   []string `json:"runs_on,omitempty"`
 	Verdict  string   `json:"verdict"`
-	// Pool is the pool the label resolved to, when it resolved to one.
-	Pool string `json:"pool,omitempty"`
 	// Reason says what is wrong, in the terms of the thing the platform read:
-	// which label matched nothing, or which field the pool cannot serve.
+	// which label matched nothing, or which field the runner cannot serve.
 	Reason string `json:"reason,omitempty"`
 }
 
-// RunnerWorkflowCheck is the answer. Pools names the labels the workflows were
-// compared against, so a project with no pools reads as "you have no pools"
-// rather than as a workflow full of errors.
+// RunnerWorkflowCheck is the answer. Label is the `runs-on` label the workflows
+// were compared against — empty when the project has no runner, so that reads
+// as "you have no runner" rather than as a workflow full of errors.
 type RunnerWorkflowCheck struct {
-	Pools []string            `json:"pools"`
+	Label string              `json:"label,omitempty"`
 	Jobs  []RunnerWorkflowJob `json:"jobs"`
 }
 
-// CreateRunnerRequest is the request body for declaring a runner pool.
+// CreateRunnerRequest is the request body for declaring a project's runner.
 //
 // It names no GitHub account with the default "platform" credential: the
 // account is the one the project connected and proved it controls (#790).
 // GitHubAccount applies only to a tenant-supplied credential, which carries no
 // account of its own.
 type CreateRunnerRequest struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name,omitempty"`
-
 	GitHubAccount string `json:"github_account,omitempty"`
 	RunnerGroup   string `json:"runner_group,omitempty"`
-	MinRunners    *int   `json:"min_runners,omitempty"`
-	MaxRunners    *int   `json:"max_runners,omitempty"`
-	Image         string `json:"image,omitempty"`
-	CPU           string `json:"cpu,omitempty"`
-	Memory        string `json:"memory,omitempty"`
+	// Size is small, medium or large; empty takes the platform's default.
+	Size       string `json:"size,omitempty"`
+	MaxRunners *int   `json:"max_runners,omitempty"`
 
-	// Builder asks for an image builder alongside each job. Omit it for a pool
-	// that builds nothing; an empty value takes the platform's defaults.
+	// Builder asks for an image builder alongside each job. Omit it for a
+	// runner that builds nothing; an empty value takes the platform's defaults.
 	Builder *RunnerBuilder `json:"builder,omitempty"`
 
-	// Services are the containers every job in this pool gets beside it.
+	// Services are the containers every job gets beside it.
 	Services []RunnerService `json:"services,omitempty"`
 
 	// Credential defaults to "platform" — the Fogpipe GitHub App, installed in
@@ -1937,17 +1930,13 @@ type CreateRunnerRequest struct {
 	GitHubToken             string `json:"github_token,omitempty"`
 }
 
-// UpdateRunnerRequest patches a runner pool; a nil field is left unchanged.
-// Identity (project, name) is immutable.
+// UpdateRunnerRequest patches a project's runner; a nil field is left
+// unchanged.
 type UpdateRunnerRequest struct {
-	DisplayName   *string `json:"display_name,omitempty"`
 	GitHubAccount *string `json:"github_account,omitempty"`
 	RunnerGroup   *string `json:"runner_group,omitempty"`
-	MinRunners    *int    `json:"min_runners,omitempty"`
+	Size          *string `json:"size,omitempty"`
 	MaxRunners    *int    `json:"max_runners,omitempty"`
-	Image         *string `json:"image,omitempty"`
-	CPU           *string `json:"cpu,omitempty"`
-	Memory        *string `json:"memory,omitempty"`
 
 	Credential              *string `json:"credential,omitempty"`
 	GitHubAppID             *string `json:"github_app_id,omitempty"`
@@ -1955,7 +1944,7 @@ type UpdateRunnerRequest struct {
 	GitHubAppPrivateKey     *string `json:"github_app_private_key,omitempty"`
 	GitHubToken             *string `json:"github_token,omitempty"`
 
-	// Builder replaces the pool's builder whole; NoBuilder removes it. Both are
+	// Builder replaces the runner's builder whole; NoBuilder removes it. Both are
 	// part of this patch rather than an operation of their own because the
 	// project's resource caps are checked against the runner and the builder
 	// together — split across two requests, neither one can express a change
@@ -1968,7 +1957,7 @@ type UpdateRunnerRequest struct {
 	Builder   *RunnerBuilder `json:"builder,omitempty"`
 	NoBuilder bool           `json:"no_builder,omitempty"`
 
-	// Services replaces the pool's whole service set; an empty non-nil slice
+	// Services replaces the runner's whole service set; an empty non-nil slice
 	// removes them all. Replace-in-full rather than per-service operations,
 	// because the caps are checked against the pod as a whole and a patch that
 	// can only add cannot express a change that has to shrink two containers at
@@ -2077,7 +2066,8 @@ type ProjectStatus struct {
 	Jobs      []JobStatus      `json:"jobs"`
 	Domains   []DomainStatus   `json:"domains"`
 	Buckets   []BucketStatus   `json:"buckets"`
-	Runners   []RunnerStatus   `json:"runners"`
+	// Runner is the project's CI runner, nil when it has none.
+	Runner *RunnerStatus `json:"runner,omitempty"`
 	// Registry is what THIS project holds in the registry, as last measured —
 	// the project's own share of the org-wide used_registry_bytes above
 	// (fogpipe/cloud-workspace#284). Nil when the project has never been
@@ -2267,13 +2257,12 @@ type BucketStatus struct {
 	QuotaMaxSize   int64  `json:"quota_max_size,omitempty"`
 }
 
-// RunnerStatus is one CI runner pool and how many runners are alive in it.
+// RunnerStatus is the project's CI runner and how many runners are alive in it.
 type RunnerStatus struct {
 	ID             string `json:"id"`
-	Name           string `json:"name"`
 	Status         string `json:"status"`
+	Size           string `json:"size"`
 	CurrentRunners int    `json:"current_runners"`
-	MinRunners     int    `json:"min_runners"`
 	MaxRunners     int    `json:"max_runners"`
 	Message        string `json:"message,omitempty"`
 	// RunningRunners are the runners executing a job and PendingRunners the

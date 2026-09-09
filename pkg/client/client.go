@@ -2905,9 +2905,10 @@ func (c *Client) GetJobLogs(ctx context.Context, id, runName string) (string, er
 
 // --- Managed GitHub Actions runners (#418, ADR-064) ---
 
-// CreateRunner declares a runner pool in a project.
+// CreateRunner declares a project's runner. A project has one
+// (fogpipe/cloud-workspace#929); a second is refused.
 func (c *Client) CreateRunner(ctx context.Context, projectID string, req CreateRunnerRequest) (*Runner, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runners", req)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runner", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2918,24 +2919,11 @@ func (c *Client) CreateRunner(ctx context.Context, projectID string, req CreateR
 	return &runner, nil
 }
 
-// ListRunners lists a project's runner pools.
-func (c *Client) ListRunners(ctx context.Context, projectID string) ([]*Runner, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/runners", nil)
-	if err != nil {
-		return nil, err
-	}
-	var runners []*Runner
-	if err := c.do(httpReq, &runners); err != nil {
-		return nil, err
-	}
-	return runners, nil
-}
-
 // CheckRunnerWorkflows asks which jobs in the given workflows can run on the
-// project's pools. The workflow text travels in the request: nothing here
+// project's runner. The workflow text travels in the request: nothing here
 // reads a repository (fogpipe/cloud-workspace#774).
 func (c *Client) CheckRunnerWorkflows(ctx context.Context, projectID string, req CheckRunnerWorkflowsRequest) (*RunnerWorkflowCheck, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runners/check", req)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runner/check", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2946,9 +2934,9 @@ func (c *Client) CheckRunnerWorkflows(ctx context.Context, projectID string, req
 	return &out, nil
 }
 
-// GetRunner retrieves a runner pool by ID.
-func (c *Client) GetRunner(ctx context.Context, id string) (*Runner, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/runners/"+id, nil)
+// GetRunner retrieves a project's runner; not found when it has none.
+func (c *Client) GetRunner(ctx context.Context, projectID string) (*Runner, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/runner", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2959,9 +2947,9 @@ func (c *Client) GetRunner(ctx context.Context, id string) (*Runner, error) {
 	return &runner, nil
 }
 
-// UpdateRunner patches a runner pool.
-func (c *Client) UpdateRunner(ctx context.Context, id string, req UpdateRunnerRequest) (*Runner, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/runners/"+id, req)
+// UpdateRunner patches a project's runner.
+func (c *Client) UpdateRunner(ctx context.Context, projectID string, req UpdateRunnerRequest) (*Runner, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/projects/"+projectID+"/runner", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2972,12 +2960,11 @@ func (c *Client) UpdateRunner(ctx context.Context, id string, req UpdateRunnerRe
 	return &runner, nil
 }
 
-// DeleteRunner removes a runner pool and deregisters it from GitHub.
-// RestartRunner asks for a pool recycle and returns the pool with the accepted
+// RestartRunner asks for a recycle and returns the runner with the accepted
 // request on it; the platform carries it out (ADR-079), and WaitRunnerRestarted
 // reads it until it is done (fogpipe/cloud-workspace#145).
-func (c *Client) RestartRunner(ctx context.Context, id string, req RestartRunnerRequest) (*Runner, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/runners/"+id+"/restart", req)
+func (c *Client) RestartRunner(ctx context.Context, projectID string, req RestartRunnerRequest) (*Runner, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/runner/restart", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2988,14 +2975,14 @@ func (c *Client) RestartRunner(ctx context.Context, id string, req RestartRunner
 	return &runner, nil
 }
 
-// WaitRunnerRestarted reads the pool until no restart is in progress on it,
+// WaitRunnerRestarted reads the runner until no restart is in progress on it,
 // calling progress with each reading so a caller can say what the drain is
 // waiting for — a drain waiting on a twelve-minute job is otherwise
 // indistinguishable from a hang. Bounded by ctx only: the drain is bounded by
 // the longest running job, which the caller cannot know.
-func (c *Client) WaitRunnerRestarted(ctx context.Context, id string, poll time.Duration, progress func(*Runner)) (*Runner, error) {
+func (c *Client) WaitRunnerRestarted(ctx context.Context, projectID string, poll time.Duration, progress func(*Runner)) (*Runner, error) {
 	for {
-		runner, err := c.GetRunner(ctx, id)
+		runner, err := c.GetRunner(ctx, projectID)
 		if err != nil {
 			return nil, err
 		}
@@ -3013,8 +3000,9 @@ func (c *Client) WaitRunnerRestarted(ctx context.Context, id string, poll time.D
 	}
 }
 
-func (c *Client) DeleteRunner(ctx context.Context, id string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/runners/"+id, nil)
+// DeleteRunner removes a project's runner and deregisters it from GitHub.
+func (c *Client) DeleteRunner(ctx context.Context, projectID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/projects/"+projectID+"/runner", nil)
 	if err != nil {
 		return err
 	}

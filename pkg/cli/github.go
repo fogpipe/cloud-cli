@@ -25,9 +25,9 @@ If the Fogpipe app is not installed on the account yet, connecting tells you and
 gives you the link.
 
   fpcloud github connect
-  fpcloud runner create ci
+  fpcloud runner create
 
-Runner pools then serve every repository in the connected account.`,
+The runner then serves every repository in the connected account.`,
 }
 
 var githubConnectCmd = &cobra.Command{
