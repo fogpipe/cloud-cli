@@ -132,7 +132,7 @@ func selectProject(ctx context.Context, org *client.Organization, ref string) (p
 			return p, true, nil
 		}
 	}
-	return nil, false, nil
+	return nil, false, fmt.Errorf("the picker returned project %q, which is not in this organization", picked)
 }
 
 // projectName is the name of a project that may be absent.
@@ -250,35 +250,17 @@ func pickOrgFzf(fzf string, orgs []*client.Organization) (*client.Organization, 
 			width = len(o.ShortID)
 		}
 	}
-	var input strings.Builder
-	for _, o := range orgs {
-		// "<short-id>\t<display-name>" — the id is the first tab-delimited field,
-		// padded to the longest so the tab lands in one column.
-		fmt.Fprintf(&input, "%-*s\t%s\n", width, o.ShortID, o.DisplayName)
+	rows := make([]string, len(orgs))
+	for i, o := range orgs {
+		// Padded to the longest short id so the second column lines up. The row
+		// is display only — fzfPick resolves the choice by index.
+		rows[i] = fmt.Sprintf("%-*s\t%s", width, o.ShortID, o.DisplayName)
 	}
-
-	cmd := exec.Command(fzf,
-		"--prompt=org> ",
-		"--with-nth=1,2",
-		"--delimiter=\t",
-		"--height=40%",
-		"--reverse",
-		"--header=Select an organization")
-	cmd.Stdin = strings.NewReader(input.String())
-	cmd.Stderr = nil // fzf draws its UI on the terminal directly
-	out, err := cmd.Output()
-	if err != nil {
-		// Exit code 130 = user cancelled (Esc/Ctrl-C); treat as no selection.
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
-			return nil, nil
-		}
+	i, ok, err := fzfPick(fzf, "org> ", "Select an organization", rows)
+	if err != nil || !ok {
 		return nil, err
 	}
-	line := strings.TrimSpace(string(out))
-	if line == "" {
-		return nil, nil
-	}
-	return matchOrg(orgs, strings.SplitN(line, "\t", 2)[0]), nil
+	return orgs[i], nil
 }
 
 func init() {

@@ -538,40 +538,21 @@ func pickProjectFzf(fzf string, projects []*client.Project) (string, error) {
 			width = len(p.Name)
 		}
 	}
-	var input strings.Builder
-	for _, p := range projects {
-		// "<name>\t<egress>" — the name is the first tab-delimited field, padded
-		// to the longest so the tab lands in one column: fzf renders a tab as a
-		// tab, and a short name would otherwise stop at the previous tab stop.
+	rows := make([]string, len(projects))
+	for i, p := range projects {
+		// Padded to the longest name so the second column lines up. The row is
+		// display only — fzfPick resolves the choice by index.
 		eg := egressLabel(p.Egress)
 		if p.IsPlatform {
 			eg += " 🔒"
 		}
-		fmt.Fprintf(&input, "%-*s\t%s\n", width, p.Name, eg)
+		rows[i] = fmt.Sprintf("%-*s\t%s", width, p.Name, eg)
 	}
-
-	cmd := exec.Command(fzf,
-		"--prompt=project> ",
-		"--with-nth=1,2",
-		"--delimiter=\t",
-		"--height=40%",
-		"--reverse",
-		"--header=Select a project")
-	cmd.Stdin = strings.NewReader(input.String())
-	cmd.Stderr = nil // fzf draws its UI on the terminal directly
-	out, err := cmd.Output()
-	if err != nil {
-		// Exit code 130 = user cancelled (Esc/Ctrl-C); treat as no selection.
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
-			return "", nil
-		}
+	i, ok, err := fzfPick(fzf, "project> ", "Select a project", rows)
+	if err != nil || !ok {
 		return "", err
 	}
-	line := strings.TrimSpace(string(out))
-	if line == "" {
-		return "", nil
-	}
-	return strings.SplitN(line, "\t", 2)[0], nil
+	return projects[i].Name, nil
 }
 
 func init() {
