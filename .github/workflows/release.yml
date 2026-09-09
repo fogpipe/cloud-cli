@@ -62,17 +62,34 @@ jobs:
             fpcloud-* \
           || gh release upload "$TAG" fpcloud-* --clobber
 
-      # Only the formula: it needs the built assets' hashes, so it cannot exist
-      # before the release does. The Nix package's version is stamped into the
-      # tagged commit itself by the workspace's release recipe — a nix build
-      # from a tag used to state the previous release's number, which is what
-      # the API's client floor reads (fogpipe/cloud-workspace#859).
+      # The formula needs the built assets' hashes, so it cannot exist before the
+      # release does. The Nix package's version is stamped into the tagged commit
+      # itself by the workspace's release recipe — a nix build from a tag used to
+      # state the previous release's number, which is what the API's client floor
+      # reads (fogpipe/cloud-workspace#859). This step re-states it on `main` as
+      # well, because `main` is what a nix user tracking the branch resolves.
+      #
+      # Authored on `main` rather than on the tag (fogpipe/cloud-workspace#898).
+      # The tag is a SIBLING of main's last formula commit, not a descendant: the
+      # release recipe stamps package.nix on top of the green cli commit it chose
+      # and tags THAT, while the previous release's formula commit landed on main
+      # separately. So the tag's copy of the formula is a release or more stale —
+      # v0.177.0's tag read 0.175.0 against a main reading 0.176.0 — and rebasing
+      # a rewrite of the stale copy onto main conflicted on the version and hash
+      # lines. Checking main out first means there is nothing to rebase, so the
+      # conflict cannot exist rather than being handled.
       - name: Update Homebrew formula
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           ver="${TAG#v}"
+          git config user.name "fogpipe-release"
+          git config user.email "release@fogpipe.com"
+          # The built assets are untracked, so they survive the checkout and are
+          # still here to be hashed.
+          git fetch origin main
+          git checkout -B release-formula FETCH_HEAD
           python3 - "$ver" <<'PY'
           import hashlib, pathlib, re, sys
           ver = sys.argv[1]
@@ -101,16 +118,16 @@ jobs:
                   r'/(fpcloud-[a-z0-9-]+)"', r'sha256 "[^"]*"',
                   {a: f'sha256 "{h}"' for a, h in hexd.items()},
                   r'version "[^"]*"', f'version "{ver}"')
+          # Nix builds from source, so only the version moves — no asset hashes.
+          # On main only; the tagged commit already carries it (#859).
+          pathlib.Path("package.nix").write_text(
+              re.sub(r'version = "[^"]*"', f'version = "{ver}"',
+                     pathlib.Path("package.nix").read_text(), count=1))
           PY
-          git config user.name "fogpipe-release"
-          git config user.email "release@fogpipe.com"
-          git add Formula/fpcloud.rb
+          git add Formula/fpcloud.rb package.nix
           git commit -m "fpcloud ${TAG} formula"
-          # Onto whatever main is by now, never a push that a moved main rejects
-          # and this step swallows — that is how the formula went a release
-          # stale in silence.
-          git fetch origin main
-          git rebase origin/main
+          # No `|| echo` here on purpose: a rejected push is how the formula went
+          # a release stale in silence (#859), so it fails the job instead.
           git push origin HEAD:main
 
   # Post the release notes to Slack on every successful release.
