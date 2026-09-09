@@ -242,7 +242,7 @@ first, then by package.
 		// header into a pipe, with the explanation on a stream the pipe does not
 		// carry, reports "no vulnerabilities" for an image nobody examined.
 		if !isStructured(rootCmd.Flag("output").Value.String()) {
-			fmt.Println(scanStateLine(list))
+			fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, len(list.CVEs)))
 		}
 		var rows [][]string
 		for _, cve := range list.CVEs {
@@ -594,32 +594,43 @@ func repoSize(r client.RegistryRepository) string {
 }
 
 // scanStateLine says what the platform knows about this image, in one line
-// above the findings. Four states, and only one of them makes an empty table
-// mean the image is clean (fogpipe/cloud-workspace#902).
-func scanStateLine(list *client.RegistryCVEList) string {
+// above the findings. Only ScanStateScanned makes an empty table below it mean
+// the image is clean (fogpipe/cloud-workspace#902); every other state, an
+// unrecognised one included, says so explicitly.
+// Shared with `app cves`, which asks the same question about the image an app
+// is running and must not answer it in different words (#934). It takes the
+// fields rather than a list so both responses can reach it.
+func scanStateLine(state, reason string, scannedAt *time.Time, findings int) string {
 	when := ""
-	if list.ScannedAt != nil {
-		when = " on " + list.ScannedAt.Local().Format("2006-01-02 15:04")
+	if scannedAt != nil {
+		when = " on " + scannedAt.Local().Format("2006-01-02 15:04")
 	}
-	switch list.State {
+	switch state {
 	case client.ScanStateScanned:
-		if len(list.CVEs) == 0 {
+		if findings == 0 {
 			return "Scanned" + when + " — no vulnerabilities found."
 		}
-		return fmt.Sprintf("Scanned%s — %d vulnerabilities.", when, len(list.CVEs))
+		return fmt.Sprintf("Scanned%s — %d vulnerabilities.", when, findings)
 	case client.ScanStateRefused:
-		return "NOT SCANNED — the platform declined to scan this image" + reasonSuffix(list.Reason) +
+		return "NOT SCANNED — the platform declined to scan this image" + reasonSuffix(reason) +
 			"\nNothing below is a statement about what it contains."
 	case client.ScanStateFailed:
-		return "NOT SCANNED — the scan of this image failed" + reasonSuffix(list.Reason) +
+		return "NOT SCANNED — the scan of this image failed" + reasonSuffix(reason) +
 			"\nNothing below is a statement about what it contains."
 	case client.ScanStatePending:
 		return "NOT SCANNED YET — no scan has run for this image.\n" +
 			"Nothing below is a statement about what it contains."
+	// The two an app can be in that an image in our registry never is (#934).
+	case client.ScanStateExternal:
+		return "NOT SCANNED — this image is outside the Fogpipe registry" + reasonSuffix(reason) + "\n" +
+			"Nothing here has ever scanned it, and nothing below is a statement about what it contains."
+	case client.ScanStateUnresolved:
+		return "CANNOT ANSWER — no image digest was recorded for what is running" + reasonSuffix(reason) + "\n" +
+			"There is nothing to look a scan up by; nothing below is a statement about what it contains."
 	default:
 		// An unrecognised state is reported as unknown rather than assumed
 		// benign: a newer server may name a state this binary predates.
-		return "SCAN STATE UNKNOWN (" + list.State + ") — this client does not recognise it.\n" +
+		return "SCAN STATE UNKNOWN (" + state + ") — this client does not recognise it.\n" +
 			"Nothing below is a statement about what this image contains."
 	}
 }

@@ -548,6 +548,34 @@ type AppVersion struct {
 	DeployedBy     string   `json:"deployed_by,omitempty"`
 }
 
+// AppCVEList is what the scanner found in the image an app is running right
+// now, resolved from the app's live digest rather than a tag (#934). The CVE
+// rows are RegistryCVE so that this answer and `registry cves` stay one shape.
+type AppCVEList struct {
+	AppID   string `json:"app_id"`
+	AppName string `json:"app_name"`
+	// Image is the reference the app deploys, as written.
+	Image string `json:"image"`
+	// Digest is the pinned reference the running revision resolved to. Empty
+	// exactly when State is ScanStateUnresolved.
+	Digest string `json:"digest,omitempty"`
+	// Repository is the project-relative repo name when the image is ours,
+	// empty when State is ScanStateExternal.
+	Repository string `json:"repository,omitempty"`
+	// State is one of the ScanState* constants and is ALWAYS sent. The four
+	// a scan record can produce, plus ScanStateExternal and
+	// ScanStateUnresolved, which the app surface derives from the app's own
+	// image reference and no scan record can ever carry.
+	State string `json:"state"`
+	// Reason carries the detail behind a refused, failed, external or
+	// unresolved state. Empty for a scanned one.
+	Reason string `json:"reason,omitempty"`
+	// ScannedAt is when the scan that produced CVEs ran. Nil unless scanned.
+	ScannedAt *time.Time `json:"scanned_at,omitempty"`
+	// CVEs is meaningful only when State is ScanStateScanned.
+	CVEs []RegistryCVE `json:"cves"`
+}
+
 // Database represents a managed database instance.
 type Database struct {
 	ID          string `json:"id"`

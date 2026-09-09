@@ -404,6 +404,14 @@ const (
 	ScanStateFailed = "failed"
 	// ScanStatePending: nothing has scanned this image yet.
 	ScanStatePending = "pending"
+	// ScanStateExternal: the image lives outside the Fogpipe registry, so no
+	// scan of ours can ever exist for it. Distinct from ScanStatePending, which
+	// resolves once the sweep reaches the image; this one never does (#934).
+	ScanStateExternal = "external"
+	// ScanStateUnresolved: the running revision recorded no image digest, so
+	// there is nothing to look a scan up by. The question is unanswerable
+	// rather than pending, and must read as neither pending nor clean (#934).
+	ScanStateUnresolved = "unresolved"
 )
 
 // RegistryVulnerabilities is a CVE severity roll-up for one image, from the
@@ -1361,6 +1369,23 @@ func (c *Client) GetAppVersion(ctx context.Context, id string) (*AppVersion, err
 		return nil, err
 	}
 	return &v, nil
+}
+
+// ListAppCVEs reports the vulnerabilities in the image an app is running right
+// now. The API resolves the app's live digest and answers against that, so the
+// reply carries a State saying whether the list is an authoritative answer:
+// an image outside our registry, or one whose digest was never recorded, is
+// reported as such rather than as an empty list (#934).
+func (c *Client) ListAppCVEs(ctx context.Context, id string) (*AppCVEList, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+id+"/cves", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out AppCVEList
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // DeleteApp deletes an app by ID.
