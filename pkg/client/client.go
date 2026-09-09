@@ -387,8 +387,28 @@ type RegistryTagList struct {
 	Tags       []string `json:"tags"`
 }
 
-// RegistryVulnerabilities is a CVE severity roll-up for one image, from zot's
-// search-extension Trivy scanner. Nil/absent when CVE scanning is not enabled.
+// Scan states for one image (fogpipe/cloud-workspace#902).
+//
+// Four values, and the fourth is why they exist. "Nothing has scanned this
+// image", "the platform declined to scan it", "its scan failed" and "it was
+// scanned and nothing was found" are four different answers, and only the last
+// means an image is clean. Collapsing any of the first three into it reports an
+// unexamined image as safe, in the surface whose entire job is reporting risk.
+const (
+	// ScanStateScanned: the scanner ran. Zero findings HERE, and only here, is
+	// what clean means.
+	ScanStateScanned = "scanned"
+	// ScanStateRefused: the platform declined to scan it. Reason says why.
+	ScanStateRefused = "refused"
+	// ScanStateFailed: the scan ran and did not produce a usable result.
+	ScanStateFailed = "failed"
+	// ScanStatePending: nothing has scanned this image yet.
+	ScanStatePending = "pending"
+)
+
+// RegistryVulnerabilities is a CVE severity roll-up for one image, from the
+// platform's scanner. Nil/absent when the image has not been scanned — read
+// ScanState beside it rather than treating nil as "no vulnerabilities".
 type RegistryVulnerabilities struct {
 	MaxSeverity string `json:"max_severity"`
 	Total       int    `json:"total"`
@@ -412,6 +432,17 @@ type RegistryImage struct {
 	Size            int64                    `json:"size,omitempty"`
 	FirstSeenAt     *time.Time               `json:"first_seen_at,omitempty"`
 	Vulnerabilities *RegistryVulnerabilities `json:"vulnerabilities,omitempty"`
+
+	// ScanState is one of the ScanState* constants and is ALWAYS sent. No
+	// omitempty: a client deriving "clean" from an absent key cannot tell an old
+	// server, a dropped field and an unscanned image apart — the reasoning the
+	// platform already applies to database health, where healthy/archiving/
+	// problems are all required for the same reason.
+	ScanState string `json:"scan_state"`
+	// ScannedAt is when the scan that produced Vulnerabilities ran. Nil unless
+	// ScanState is scanned. A severity count with no date is a claim about an
+	// image as of an unstated moment, and the vulnerability database moves.
+	ScannedAt *time.Time `json:"scanned_at,omitempty"`
 }
 
 // RegistryImageList is the enriched set of images for one repository.
@@ -447,6 +478,15 @@ type RegistryCVEList struct {
 	Repository string        `json:"repository"`
 	Tag        string        `json:"tag"`
 	CVEs       []RegistryCVE `json:"cves"`
+
+	// State is one of the ScanState* constants and is ALWAYS sent. An empty CVE
+	// list means "nothing found" only when State is scanned; under any other
+	// state it means nothing was looked for.
+	State string `json:"state"`
+	// ScannedAt is when the scan ran. Nil unless State is scanned.
+	ScannedAt *time.Time `json:"scanned_at,omitempty"`
+	// Reason says why, when State is refused or failed. Empty otherwise.
+	Reason string `json:"reason,omitempty"`
 }
 
 // RegistryRetentionPolicy is an auto-delete rule for a project's registry repos.

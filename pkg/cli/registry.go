@@ -237,6 +237,13 @@ first, then by package.
 		if err != nil {
 			return err
 		}
+		// The scan state goes to STDOUT, above the table, not to stderr
+		// (fogpipe/cloud-workspace#902). An unscanned image printing a bare
+		// header into a pipe, with the explanation on a stream the pipe does not
+		// carry, reports "no vulnerabilities" for an image nobody examined.
+		if !isStructured(rootCmd.Flag("output").Value.String()) {
+			fmt.Println(scanStateLine(list))
+		}
 		var rows [][]string
 		for _, cve := range list.CVEs {
 			if len(cve.Packages) == 0 {
@@ -584,4 +591,42 @@ func repoSize(r client.RegistryRepository) string {
 		return mutedStyle.Render("? (" + firstNonEmpty(r.Error, "not sized") + ")")
 	}
 	return humanizeSize(*r.Bytes)
+}
+
+// scanStateLine says what the platform knows about this image, in one line
+// above the findings. Four states, and only one of them makes an empty table
+// mean the image is clean (fogpipe/cloud-workspace#902).
+func scanStateLine(list *client.RegistryCVEList) string {
+	when := ""
+	if list.ScannedAt != nil {
+		when = " on " + list.ScannedAt.Local().Format("2006-01-02 15:04")
+	}
+	switch list.State {
+	case client.ScanStateScanned:
+		if len(list.CVEs) == 0 {
+			return "Scanned" + when + " — no vulnerabilities found."
+		}
+		return fmt.Sprintf("Scanned%s — %d vulnerabilities.", when, len(list.CVEs))
+	case client.ScanStateRefused:
+		return "NOT SCANNED — the platform declined to scan this image" + reasonSuffix(list.Reason) +
+			"\nNothing below is a statement about what it contains."
+	case client.ScanStateFailed:
+		return "NOT SCANNED — the scan of this image failed" + reasonSuffix(list.Reason) +
+			"\nNothing below is a statement about what it contains."
+	case client.ScanStatePending:
+		return "NOT SCANNED YET — no scan has run for this image.\n" +
+			"Nothing below is a statement about what it contains."
+	default:
+		// An unrecognised state is reported as unknown rather than assumed
+		// benign: a newer server may name a state this binary predates.
+		return "SCAN STATE UNKNOWN (" + list.State + ") — this client does not recognise it.\n" +
+			"Nothing below is a statement about what this image contains."
+	}
+}
+
+func reasonSuffix(reason string) string {
+	if reason == "" {
+		return "."
+	}
+	return ": " + reason + "."
 }
