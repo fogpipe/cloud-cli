@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: fpcloud
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -140,7 +140,7 @@ jobs:
   # Post the release notes to Slack on every successful release.
   notify-slack:
     name: Notify Slack
-    runs-on: ubuntu-latest
+    runs-on: fpcloud
     timeout-minutes: 5
     needs: [release]
     if: success()
@@ -190,7 +190,7 @@ jobs:
 
   notify-failure:
     name: Notify Release Failure
-    runs-on: ubuntu-latest
+    runs-on: fpcloud
     timeout-minutes: 5
     needs: [release]
     if: failure()
