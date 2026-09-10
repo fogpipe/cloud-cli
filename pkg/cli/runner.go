@@ -552,7 +552,7 @@ func runnerSpecFlags(cmd *cobra.Command) {
 	cmd.Flags().String("size", "", "What one job gets: small (1 CPU, 2Gi), medium (2 CPU, 4Gi, the default) or large (4 CPU, 8Gi)")
 	cmd.Flags().Int("max", 2, "Jobs run at once; a ceiling, not a cost")
 	cmd.Flags().Bool("builder", false, "Run a rootless image builder alongside each job (sets BUILDKIT_HOST)")
-	cmd.Flags().String("builder-cpu", "", "CPU limit for the builder, e.g. 1 (implies --builder)")
+	cmd.Flags().String("builder-cpu", "", "CPU size for the builder, e.g. 1 (implies --builder)")
 	cmd.Flags().String("builder-memory", "", "Memory limit for the builder, e.g. 2Gi (implies --builder)")
 	cmd.Flags().String("credential", "", "How the runner authenticates: platform (default, the Fogpipe GitHub App), app (your own), token")
 	cmd.Flags().String("github-app-id", "", "GitHub App id (--credential app)")
