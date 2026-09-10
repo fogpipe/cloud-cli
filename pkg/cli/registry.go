@@ -225,7 +225,18 @@ carries, and the version that fixes it — empty when no upstream fix exists,
 which is the row to assess for reachability rather than bump. Most severe
 first, then by package.
 
+--min-severity narrows to what is worth acting on. A real image reports
+hundreds of findings, most of them low, and the list is ordered most severe
+first — so this is a floor, not a set: --min-severity high is CRITICAL and HIGH.
+UNKNOWN ranks LOWEST and is excluded by any floor, because an unrecognised
+severity is not evidence of danger.
+
+The scan state above the table always counts the WHOLE image. A filter that
+could empty the table would otherwise print "no vulnerabilities found" for an
+image with thirteen criticals in it.
+
   fpcloud registry cves web v42
+  fpcloud registry cves web v42 --min-severity high
   fpcloud registry cves web v42 -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -237,12 +248,27 @@ first, then by package.
 		if err != nil {
 			return err
 		}
+		level, _ := cmd.Flags().GetString("min-severity")
+		total := len(list.CVEs)
+		kept, hidden, err := filterBySeverity(list.CVEs, level)
+		if err != nil {
+			return err
+		}
+		list.CVEs = kept
 		// The scan state goes to STDOUT, above the table, not to stderr
 		// (fogpipe/cloud-workspace#902). An unscanned image printing a bare
 		// header into a pipe, with the explanation on a stream the pipe does not
 		// carry, reports "no vulnerabilities" for an image nobody examined.
+		//
+		// It is handed the TOTAL, never the filtered count: this line is the one
+		// thing separating an unscanned image from a clean-looking one, and a
+		// --min-severity that emptied the table must not be able to forge it
+		// (fogpipe/cloud-workspace#951).
 		if !isStructured(rootCmd.Flag("output").Value.String()) {
-			fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, len(list.CVEs)))
+			fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, total))
+			if line := severityFilterLine(level, len(kept), hidden); line != "" {
+				fmt.Println(line)
+			}
 		}
 		var rows [][]string
 		for _, cve := range list.CVEs {
@@ -576,6 +602,8 @@ func init() {
 		registryRetentionListCmd, registryRetentionSetCmd, registryRetentionDeleteCmd,
 		registryRetentionPreviewCmd, registryRetentionApplyCmd,
 	)
+
+	registryCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
 
 	registryVisibilityCmd.AddCommand(registryVisibilityGetCmd, registryVisibilitySetCmd)
 

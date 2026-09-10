@@ -24,7 +24,13 @@ An empty list is only a clean result when the state says "scanned". An image
 outside the Fogpipe registry, or one nothing has scanned yet, reports that
 state instead — it is not reported as clean.
 
+--min-severity narrows to what is worth acting on: a floor, not a set, so
+--min-severity high is CRITICAL and HIGH. UNKNOWN ranks LOWEST and is excluded
+by any floor. The state line above the table always counts the WHOLE image, so
+a filter cannot turn an image with criticals in it into one reporting none.
+
   fpcloud app cves web
+  fpcloud app cves web --min-severity high
   fpcloud app cves web -o json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,6 +44,14 @@ state instead — it is not reported as clean.
 			return err
 		}
 
+		level, _ := cmd.Flags().GetString("min-severity")
+		total := len(list.CVEs)
+		kept, hidden, err := filterBySeverity(list.CVEs, level)
+		if err != nil {
+			return err
+		}
+		list.CVEs = kept
+
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(list)
 		}
@@ -50,7 +64,12 @@ state instead — it is not reported as clean.
 		if list.Digest != "" && list.Digest != list.Image {
 			fmt.Println(mutedStyle.Render(list.Digest))
 		}
-		fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, len(list.CVEs)))
+		// The TOTAL, never the filtered count -- see registry cves, which shares
+		// this line and the reason (fogpipe/cloud-workspace#951).
+		fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, total))
+		if line := severityFilterLine(level, len(kept), hidden); line != "" {
+			fmt.Println(line)
+		}
 		if len(list.CVEs) == 0 {
 			return nil
 		}
