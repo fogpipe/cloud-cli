@@ -21,7 +21,8 @@ var runnerCmd = &cobra.Command{
 A project has one runner. It is not a machine: a pod is created for one job
 and destroyed when the job ends, so it costs nothing while idle and is billed
 per minute a job runs, at the rate for its size (fpcloud billing prices). It
-serves every repository in the GitHub account this project is connected to.
+serves every repository in the GitHub account this project is connected to. With
+your own credential it can instead serve a single repository.
 
 Two things to choose: --size, what one job gets (small, medium or large), and
 --max, how many jobs run at once.
@@ -91,7 +92,7 @@ var runnerCreateCmd = &cobra.Command{
 		}
 
 		req := client.CreateRunnerRequest{
-			GitHubAccount:           mustString(cmd, "github-account"),
+			GitHubScope:             mustString(cmd, "github-scope"),
 			RunnerGroup:             mustString(cmd, "runner-group"),
 			Size:                    mustString(cmd, "size"),
 			Builder:                 runnerBuilderFromFlags(cmd),
@@ -160,7 +161,7 @@ var runnerUpdateCmd = &cobra.Command{
 		}
 		c := getClient()
 		var req client.UpdateRunnerRequest
-		setString(cmd, "github-account", &req.GitHubAccount)
+		setString(cmd, "github-scope", &req.GitHubScope)
 		setString(cmd, "runner-group", &req.RunnerGroup)
 		setString(cmd, "size", &req.Size)
 		if cmd.Flags().Changed("max") {
@@ -383,21 +384,46 @@ func runnerWaiting(r *client.Runner) string {
 // (fogpipe/cloud-workspace#305) — the label alone reads as if any repository
 // could use it.
 func runnerUseNote(r *client.Runner) string {
-	return fmt.Sprintf("  Use it from a workflow in a github.com/%s repository with: runs-on: %s\n"+
-		"  A workflow in any other account's repository never sees this runner: its job queues forever.",
-		runnerScope(r), strings.Join(r.Labels, ", "))
+	scope := runnerScope(r)
+	where := fmt.Sprintf("a github.com/%s repository", scope)
+	outside := "A workflow in any other account's repository never sees this runner: its job queues forever."
+	if scopeIsRepo(scope) {
+		// A repository-scoped runner serves exactly one repository, so "any
+		// repository in the account" is not merely imprecise here, it is wrong
+		// (fogpipe/cloud-workspace#972).
+		where = fmt.Sprintf("github.com/%s", scope)
+		outside = "A workflow in any other repository never sees this runner: its job queues forever."
+	}
+	return fmt.Sprintf("  Use it from a workflow in %s with: runs-on: %s\n  %s",
+		where, strings.Join(r.Labels, ", "), outside)
 }
 
-// repoOutsideAccount reports whether an owner/name repository lives outside
-// the GitHub account a project's runner serves. GitHub logins are
-// case-insensitive.
-func repoOutsideAccount(repo, account string) bool {
+// scopeIsRepo reports whether a scope names one repository rather than a whole
+// account. The slash is GitHub's own spelling for the difference.
+func scopeIsRepo(scope string) bool {
+	return strings.Contains(scope, "/")
+}
+
+// repoOutsideRunnerScope reports whether an owner/name repository is one the
+// runner will never be offered. An account scope admits every repository in it;
+// a repository scope admits exactly itself. GitHub logins are case-insensitive.
+//
+// Answered against the runner's own scope rather than the project's connection,
+// because the connection exists only for the platform credential and says
+// nothing about the other two (fogpipe/cloud-workspace#972).
+func repoOutsideRunnerScope(repo, scope string) bool {
+	if repo == "" || scope == "" {
+		return false
+	}
+	if scopeIsRepo(scope) {
+		return !strings.EqualFold(repo, scope)
+	}
 	owner, _, ok := strings.Cut(repo, "/")
-	return ok && account != "" && owner != "" && !strings.EqualFold(owner, account)
+	return ok && owner != "" && !strings.EqualFold(owner, scope)
 }
 
-// runnerScope renders the GitHub account the runner serves — every repository
-// in it. Derived from the project's connection, never typed.
+// runnerScope renders where the runner registers: an account, whose every
+// repository it serves, or one repository.
 func runnerScope(r *client.Runner) string {
 	return strings.TrimPrefix(strings.TrimPrefix(r.GitHubConfigURL, "https://github.com/"), "https://")
 }
@@ -547,7 +573,7 @@ func setRunnerBuilder(c *client.Client, project string, cmd *cobra.Command, req 
 
 // runnerSpecFlags are the knobs shared by create and update.
 func runnerSpecFlags(cmd *cobra.Command) {
-	cmd.Flags().String("github-account", "", "GitHub account the runner serves (only with --credential app or token; the Fogpipe App uses this project's connection)")
+	cmd.Flags().String("github-scope", "", "Where the runner registers: an organization (acme) or one repository (acme/backend). Only with --credential app or token; the Fogpipe App uses this project's connection")
 	cmd.Flags().String("runner-group", "", "GitHub runner group to join (default Default)")
 	cmd.Flags().String("size", "", "What one job gets: small (1 CPU, 2Gi), medium (2 CPU, 4Gi, the default) or large (4 CPU, 8Gi)")
 	cmd.Flags().Int("max", 2, "Jobs run at once; a ceiling, not a cost")

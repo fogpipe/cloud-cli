@@ -64,7 +64,7 @@ var webhookSetupCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(wh)
 		}
-		warnRepoOutsideRunnerAccount(c, repo)
+		warnRepoOutsideRunnerScope(c, repo)
 
 		// Show the webhook URL and secret prominently.
 		secretStyle := lipgloss.NewStyle().Bold(true).Foreground(colorWarning)
@@ -209,26 +209,35 @@ func init() {
 	rootCmd.AddCommand(webhookCmd)
 }
 
-// warnRepoOutsideRunnerAccount says so when the repository a webhook was just
-// set up for lives outside the GitHub account this project's runner serves: a
-// workflow in it that names the runner's label queues forever, with no error
-// anywhere (fogpipe/cloud-workspace#305). This is the one place the CLI is
-// told which repository a project deploys from, so it is where the check can
-// be made. Advisory and best effort: a connection or runner that cannot be
-// read leaves the webhook as set up and says nothing.
-func warnRepoOutsideRunnerAccount(c *client.Client, repo string) {
+// warnRepoOutsideRunnerScope says so when the repository a webhook was just set
+// up for is one this project's runner will never be offered: a workflow in it
+// that names the runner's label queues forever, with no error anywhere
+// (fogpipe/cloud-workspace#305). This is the one place the CLI is told which
+// repository a project deploys from, so it is where the check can be made.
+// Advisory and best effort: a runner that cannot be read leaves the webhook as
+// set up and says nothing.
+//
+// Read from the runner's own scope rather than the project's GitHub connection,
+// which exists only for the platform credential — so this now covers a runner
+// on a tenant's own key, and a runner scoped to one repository
+// (fogpipe/cloud-workspace#972).
+func warnRepoOutsideRunnerScope(c *client.Client, repo string) {
 	project, err := requireProject()
 	if err != nil {
-		return
-	}
-	status, err := c.GetGitHubConnection(context.Background(), project)
-	if err != nil || status.Connection == nil || !repoOutsideAccount(repo, status.Connection.AccountLogin) {
 		return
 	}
 	runner, err := c.GetRunner(context.Background(), project)
 	if err != nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "warning: %s is outside github.com/%s, which this project's runner serves — a workflow in it cannot use runs-on: %s\n",
-		repo, status.Connection.AccountLogin, strings.Join(runner.Labels, ", "))
+	scope := runnerScope(runner)
+	if !repoOutsideRunnerScope(repo, scope) {
+		return
+	}
+	served := fmt.Sprintf("outside github.com/%s, which this project's runner serves", scope)
+	if scopeIsRepo(scope) {
+		served = fmt.Sprintf("not github.com/%s, the one repository this project's runner serves", scope)
+	}
+	fmt.Fprintf(os.Stderr, "warning: %s is %s — a workflow in it cannot use runs-on: %s\n",
+		repo, served, strings.Join(runner.Labels, ", "))
 }

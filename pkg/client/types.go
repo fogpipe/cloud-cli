@@ -1931,13 +1931,14 @@ type RunnerWorkflowCheck struct {
 
 // CreateRunnerRequest is the request body for declaring a project's runner.
 //
-// It names no GitHub account with the default "platform" credential: the
-// account is the one the project connected and proved it controls (#790).
-// GitHubAccount applies only to a tenant-supplied credential, which carries no
-// account of its own.
+// It names no GitHub scope with the default "platform" credential: the account
+// is the one the project connected and proved it controls (#790). GitHubScope
+// applies only to a tenant-supplied credential, which carries none of its own,
+// and is an organization ("acme") or one repository ("acme/backend") —
+// a personal account has only the second (fogpipe/cloud-workspace#972).
 type CreateRunnerRequest struct {
-	GitHubAccount string `json:"github_account,omitempty"`
-	RunnerGroup   string `json:"runner_group,omitempty"`
+	GitHubScope string `json:"github_scope,omitempty"`
+	RunnerGroup string `json:"runner_group,omitempty"`
 	// Size is small, medium or large; empty takes the platform's default.
 	Size       string `json:"size,omitempty"`
 	MaxRunners *int   `json:"max_runners,omitempty"`
@@ -1961,10 +1962,10 @@ type CreateRunnerRequest struct {
 // UpdateRunnerRequest patches a project's runner; a nil field is left
 // unchanged.
 type UpdateRunnerRequest struct {
-	GitHubAccount *string `json:"github_account,omitempty"`
-	RunnerGroup   *string `json:"runner_group,omitempty"`
-	Size          *string `json:"size,omitempty"`
-	MaxRunners    *int    `json:"max_runners,omitempty"`
+	GitHubScope *string `json:"github_scope,omitempty"`
+	RunnerGroup *string `json:"runner_group,omitempty"`
+	Size        *string `json:"size,omitempty"`
+	MaxRunners  *int    `json:"max_runners,omitempty"`
 
 	Credential              *string `json:"credential,omitempty"`
 	GitHubAppID             *string `json:"github_app_id,omitempty"`
