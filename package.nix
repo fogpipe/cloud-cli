@@ -18,7 +18,7 @@
 }:
 buildGoModule (finalAttrs: {
   pname = "fpcloud";
-  version = "0.180.2"; # stamped into the tagged commit by the workspace release recipe
+  version = "0.181.0"; # stamped into the tagged commit by the workspace release recipe
 
   src = ./.;
 
