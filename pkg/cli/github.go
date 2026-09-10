@@ -13,26 +13,31 @@ import (
 
 var githubCmd = &cobra.Command{
 	Use:   "github",
-	Short: "Connect this project to a GitHub account",
-	Long: `Connect this project to the GitHub account its runners serve.
+	Short: "Connect this project to a GitHub organization",
+	Long: `Connect this project to the GitHub organization its runners serve.
 
-Connecting records which GitHub account this project may register runners on.
-You authorize as yourself, and only accounts you administer can be connected —
+Connecting records which GitHub organization this project may register runners
+on. You authorize as yourself, and only organizations you own can be connected —
 Fogpipe never takes an organization name on trust, so there is nothing to type
 and nothing to spoof.
 
-If the Fogpipe app is not installed on the account yet, connecting tells you and
-gives you the link.
+A personal GitHub account cannot be connected: GitHub manages a personal
+account's self-hosted runners per repository, and the Fogpipe app can only
+register them on an organization. Move the repository into an organization to
+run Fogpipe CI on it.
+
+If the Fogpipe app is not installed on the organization yet, connecting tells
+you and gives you the link.
 
   fpcloud github connect
   fpcloud runner create
 
-The runner then serves every repository in the connected account.`,
+The runner then serves every repository in the connected organization.`,
 }
 
 var githubConnectCmd = &cobra.Command{
 	Use:   "connect",
-	Short: "Install the Fogpipe GitHub App and connect an account",
+	Short: "Install the Fogpipe GitHub App and connect an organization",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		project, err := requireProject()
@@ -112,7 +117,7 @@ func printGitHubConnectOutcome(a *client.GitHubConnectAttempt) error {
 
 var githubStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show which GitHub account this project is connected to",
+	Short: "Show which GitHub organization this project is connected to",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		project, err := requireProject()
@@ -175,7 +180,7 @@ var githubDisconnectCmd = &cobra.Command{
 }
 
 func init() {
-	githubConnectCmd.Flags().String("account", "", "Which GitHub account to connect, if you administer more than one; checked before the browser opens")
+	githubConnectCmd.Flags().String("account", "", "Which GitHub organization to connect, if you own more than one; checked before the browser opens")
 	githubConnectCmd.Flags().Bool("no-wait", false, "Print the link and exit instead of waiting for the outcome")
 	githubCmd.AddCommand(githubConnectCmd, githubStatusCmd, githubDisconnectCmd)
 	rootCmd.AddCommand(githubCmd)
