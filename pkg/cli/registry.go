@@ -284,6 +284,147 @@ image with thirteen criticals in it.
 	},
 }
 
+// scanFollowTimeout bounds how long `registry scan` waits for a result before
+// it stops watching. It is k8s.ScanJobDeadline plus the grace the platform
+// itself allows a report to land in: waiting less would report "still running"
+// about a scan the platform has already given up on, and waiting more would
+// wait on a Job that cannot exist any more.
+const scanFollowTimeout = time.Hour + 5*time.Minute
+
+// scanFollowInterval is how often the scan record is re-read while following.
+const scanFollowInterval = 3 * time.Second
+
+var registryScanCmd = &cobra.Command{
+	Use:   "scan <repo> <ref>",
+	Short: "Scan one image now, instead of waiting for the sweep to reach it",
+	Long: `Scan one image now, instead of waiting for the sweep to reach it.
+
+<ref> is a tag or a digest. The scan is dispatched in the request, and this
+then follows it until the scanner reports — printing the verdict the same way
+` + "`fpcloud registry cves`" + ` does.
+
+The platform scans everything eventually: a sweep walks the whole registry,
+puts running images first, and re-reads each one as its scan ages out. This is
+for when eventually is not soon enough — an image you want a verdict on before
+deploying it, a rollback target being assessed under time pressure, or an image
+worth re-reading now because the vulnerability database moved.
+
+Asking for an image that is already being scanned starts nothing and follows
+the scan that is already running.
+
+  fpcloud registry scan web v42
+  fpcloud registry scan web sha256:aad23a3...
+  fpcloud registry scan web v42 --no-wait      dispatch and return
+  fpcloud registry scan web v42 -o json`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := requireProject()
+		if err != nil {
+			return err
+		}
+		repo, ref := args[0], args[1]
+		ctx := context.Background()
+
+		dispatch, err := getClient().ScanImage(ctx, projectID, repo, ref)
+		if err != nil {
+			return err
+		}
+		noWait, _ := cmd.Flags().GetBool("no-wait")
+		structured := isStructured(rootCmd.Flag("output").Value.String())
+
+		// A refusal is the end of it. The platform decided, and there is no
+		// result coming to wait for -- following one would spin until the
+		// timeout and then report a scan that never started as one that did not
+		// finish.
+		if dispatch.Outcome == client.ScanDispatchRefused {
+			if structured {
+				render(nil, nil, dispatch)
+				return nil
+			}
+			fmt.Println(scanStateLine(client.ScanStateRefused, dispatch.Reason, nil, 0))
+			return nil
+		}
+		if noWait || structured {
+			if structured {
+				render(nil, nil, dispatch)
+				return nil
+			}
+			fmt.Println(dispatchLine(dispatch))
+			return nil
+		}
+
+		fmt.Println(dispatchLine(dispatch))
+		list, err := followScan(ctx, projectID, repo, ref, dispatch.DispatchedAt)
+		if err != nil {
+			return err
+		}
+		fmt.Println(scanStateLine(list.State, list.Reason, list.ScannedAt, len(list.CVEs)))
+		return nil
+	},
+}
+
+// dispatchLine says what the ask did, which is not the same as what the scan
+// found. "started" and "in_flight" are kept apart deliberately: a second ask
+// created nothing, and telling the caller it did would credit them with a Job
+// somebody else's request is waiting on.
+func dispatchLine(d *client.ScanDispatch) string {
+	short := d.Digest
+	if len(short) > 19 {
+		short = short[:19] + "…"
+	}
+	switch d.Outcome {
+	case client.ScanDispatchInFlight:
+		return fmt.Sprintf("Already scanning %s (%s) — following that scan.", d.Repository+":"+d.Ref, short)
+	default:
+		return fmt.Sprintf("Scanning %s (%s)…", d.Repository+":"+d.Ref, short)
+	}
+}
+
+// followScan re-reads the image's scan record until a scan that ran AFTER the
+// dispatch has reported.
+//
+// The comparison against dispatchedAt is the whole of it. An image scanned last
+// week is already in ScanStateScanned when this starts, so "wait until it is
+// not pending" returns the OLD verdict instantly and reports it as the answer
+// to the scan just asked for -- which is the rescan case, one of the reasons
+// this command exists at all (ADR-214, fogpipe/cloud-workspace#940).
+func followScan(ctx context.Context, projectID, repo, ref string, dispatchedAt *time.Time) (*client.RegistryCVEList, error) {
+	deadline := time.Now().Add(scanFollowTimeout)
+	for {
+		list, err := getClient().ListRegistryCVEs(ctx, projectID, repo, ref)
+		if err != nil {
+			return nil, err
+		}
+		if scanReportedSince(list, dispatchedAt) {
+			return list, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("no result after %s: the scan of %s was dispatched and has not reported; read it later with `fpcloud registry cves %s %s`",
+				scanFollowTimeout, repo+":"+ref, repo, ref)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(scanFollowInterval):
+		}
+	}
+}
+
+// scanReportedSince reports whether the record carries a scan from after the
+// dispatch. A nil dispatchedAt means the platform recorded no dispatch time, so
+// there is nothing to compare against and any settled state is taken -- the
+// alternative is waiting out the full timeout on an answer that is already
+// there.
+func scanReportedSince(list *client.RegistryCVEList, dispatchedAt *time.Time) bool {
+	if list.State == client.ScanStatePending {
+		return false
+	}
+	if dispatchedAt == nil || list.ScannedAt == nil {
+		return list.State != client.ScanStatePending
+	}
+	return !list.ScannedAt.Before(*dispatchedAt)
+}
+
 var registryTagsDeleteCmd = &cobra.Command{
 	Use:     "delete <repo> <tag>",
 	Aliases: []string{"rm"},
@@ -604,12 +745,13 @@ func init() {
 	)
 
 	registryCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
+	registryScanCmd.Flags().Bool("no-wait", false, "Dispatch the scan and return, without following it")
 
 	registryVisibilityCmd.AddCommand(registryVisibilityGetCmd, registryVisibilitySetCmd)
 
 	registryCmd.AddCommand(
 		registryGetLoginPasswordCmd, registryLoginCmd,
-		registryReposCmd, registryRepoPathCmd, registryTagsCmd, registryCVEsCmd, registryRetentionCmd, registryVisibilityCmd,
+		registryReposCmd, registryRepoPathCmd, registryTagsCmd, registryCVEsCmd, registryScanCmd, registryRetentionCmd, registryVisibilityCmd,
 	)
 	rootCmd.AddCommand(registryCmd)
 }

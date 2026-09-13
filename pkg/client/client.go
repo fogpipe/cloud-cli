@@ -414,6 +414,43 @@ const (
 	ScanStateUnresolved = "unresolved"
 )
 
+// Outcomes of asking for one image's scan (ADR-214).
+//
+// Three, and the difference between the first two is the one that matters: a
+// caller who asked twice wants to know that the second ask started nothing, not
+// to be told "started" about a Job somebody else's request created.
+const (
+	// ScanDispatchStarted: this call created the Job.
+	ScanDispatchStarted = "started"
+	// ScanDispatchInFlight: a scan of this digest was already dispatched and has
+	// not reported yet, so nothing new was started. One digest has one Job and
+	// one ServiceAccount admitted to submit for it (ADR-076); a second would be
+	// two writers for one row.
+	ScanDispatchInFlight = "in_flight"
+	// ScanDispatchRefused: the platform declined to scan it — the same refusals
+	// the sweep records, reached synchronously. Reason says which.
+	ScanDispatchRefused = "refused"
+)
+
+// ScanDispatch is what asking for one image's scan produced (ADR-214). It says
+// what happened to the ASK, not what the scan found: the findings arrive when
+// the Job reports, and are read with `registry cves` afterwards.
+type ScanDispatch struct {
+	Repository string `json:"repository"`
+	// Ref is the tag or digest the caller named, as written.
+	Ref string `json:"ref"`
+	// Digest is what Ref resolved to, and what the scan is recorded against.
+	Digest string `json:"digest"`
+	// Outcome is one of the ScanDispatch* constants and is ALWAYS sent.
+	Outcome string `json:"outcome"`
+	// Reason carries the detail behind a refusal. Empty otherwise.
+	Reason string `json:"reason,omitempty"`
+	// DispatchedAt is when the scan now owed was dispatched — by this call for
+	// ScanDispatchStarted, by whatever asked first for ScanDispatchInFlight.
+	// Nil for a refusal, which dispatched nothing.
+	DispatchedAt *time.Time `json:"dispatched_at,omitempty"`
+}
+
 // RegistryVulnerabilities is a CVE severity roll-up for one image, from the
 // platform's scanner. Nil/absent when the image has not been scanned — read
 // ScanState beside it rather than treating nil as "no vulnerabilities".
@@ -595,6 +632,25 @@ func (c *Client) ListRegistryCVEs(ctx context.Context, projectID, repo, tag stri
 		return nil, err
 	}
 	var out RegistryCVEList
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ScanImage asks the platform to scan one image now rather than waiting for the
+// sweep to reach it (ADR-214). Ref is a tag or a digest.
+//
+// It returns when the scan has been DISPATCHED, not when it has finished: the
+// findings land on the image's scan record when the Job reports, and are read
+// with ListRegistryCVEs afterwards.
+func (c *Client) ScanImage(ctx context.Context, projectID, repo, ref string) (*ScanDispatch, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/repositories/scan?repo="+url.QueryEscape(repo)+"&ref="+url.QueryEscape(ref), nil)
+	if err != nil {
+		return nil, err
+	}
+	var out ScanDispatch
 	if err := c.do(httpReq, &out); err != nil {
 		return nil, err
 	}
