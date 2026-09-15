@@ -8,10 +8,9 @@ import (
 )
 
 // Operating the platform is its own binary (ADR-089): the tenant SDK carries no
-// operator method. Four survived under /admin with no caller left — the
-// provider's org ceiling and FKE attributes they were kept for had already
-// gone (fogpipe/cloud-workspace#121) — and nothing said so, because a method
-// nobody calls compiles. Held here, over the package's own source.
+// operator method. A method nobody calls still compiles, so one reaching an
+// operator route outlives its caller unnoticed (fogpipe/cloud-workspace#121).
+// Held here, over the package's own source.
 func TestClientReachesNoOperatorRoute(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

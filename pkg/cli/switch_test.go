@@ -9,7 +9,7 @@ import (
 func testOrgs() []*client.Organization {
 	return []*client.Organization{
 		{ID: "11111111-1111-1111-1111-111111111111", ShortID: "rkv-a1b2", DisplayName: "Rymdkraftverk"},
-		{ID: "22222222-2222-2222-2222-222222222222", ShortID: "acme-c3d4", DisplayName: "Acme", FKEEnabled: true},
+		{ID: "22222222-2222-2222-2222-222222222222", ShortID: "acme-c3d4", DisplayName: "Acme"},
 	}
 }
 
@@ -42,11 +42,8 @@ func TestApplyOrg_StoresFrozenShortID(t *testing.T) {
 	if cfg.CurrentOrg != "rkv-a1b2" {
 		t.Errorf("CurrentOrg = %q, want the short id rkv-a1b2", cfg.CurrentOrg)
 	}
-	if cfg.CurrentOrgFKE {
-		t.Error("CurrentOrgFKE should follow the org's entitlement")
-	}
 	applyOrg(cfg, matchOrg(orgs, "acme-c3d4"))
-	if cfg.CurrentOrg != "acme-c3d4" || !cfg.CurrentOrgFKE {
+	if cfg.CurrentOrg != "acme-c3d4" {
 		t.Errorf("switching org left %+v", cfg)
 	}
 }

@@ -24,8 +24,8 @@ var dbConnectCmd = &cobra.Command{
 	Long: "Opens a tunnel to the database's Postgres primary (databases are\n" +
 		"cluster-internal, never internet-exposed) and prints a postgres:// URL on\n" +
 		"127.0.0.1 with the live credentials, ready for psql, pg_dump, or any client.\n" +
-		"The tunnel rides the API server itself (ADR-045) — no kubectl/FKE access is\n" +
-		"needed, only the same database permission `db connection` already requires.\n" +
+		"The tunnel rides the API server itself (ADR-045) and needs only the same\n" +
+		"database permission `db connection` already requires.\n" +
 		"Stays open until Ctrl-C; each local connection (e.g. `pg_dump -j N`'s N\n" +
 		"parallel workers) gets its own independent tunnel.\n\n" +
 		"The URL says sslmode=verify-full and means it: the tunnel serves a\n" +

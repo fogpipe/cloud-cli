@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 var switchCmd = &cobra.Command{
@@ -159,10 +158,6 @@ func matchOrg(orgs []*client.Organization, ref string) *client.Organization {
 // holding one stops resolving the moment the org is renamed.
 func applyOrg(cfg *Config, org *client.Organization) {
 	cfg.CurrentOrg = org.ShortID
-	// Cache the org's FKE entitlement so the `fke` command tree can be hidden
-	// without a network call per invocation (best-effort; the server still
-	// enforces).
-	cfg.CurrentOrgFKE = org.FKEEnabled
 }
 
 // printContext reports the pair a switch settled on.
@@ -175,36 +170,7 @@ func printContext(org *client.Organization, project *client.Project) {
 		fmt.Println(mutedStyle.Render(
 			fmt.Sprintf("Organization %q has no projects; run 'fpcloud project create <name>'.", org.ShortID),
 		))
-		return
 	}
-	followKubeNamespace(org, project)
-}
-
-// followKubeNamespace points the org-wide kubectl context, if the kubeconfig
-// holds one, at the project just switched to. The org context reaches every
-// namespace the org owns and is current in none, so kubectl against it lands
-// in "default" and is refused; the project the person just chose is the
-// namespace they mean. Nothing else in the kubeconfig is touched, the current
-// context included, and a kubeconfig without the org context is left alone.
-func followKubeNamespace(org *client.Organization, project *client.Project) {
-	if project.Namespace == "" {
-		return
-	}
-	po := clientcmd.NewDefaultPathOptions()
-	kube, err := po.GetStartingConfig()
-	if err != nil {
-		return
-	}
-	name := "fpcloud-" + org.ShortID
-	kctx, ok := kube.Contexts[name]
-	if !ok || kctx.Namespace == project.Namespace {
-		return
-	}
-	kctx.Namespace = project.Namespace
-	if err := clientcmd.ModifyConfig(po, *kube, true); err != nil {
-		return
-	}
-	fmt.Println(mutedStyle.Render(fmt.Sprintf("  kubectl context %q now defaults to namespace %s", name, project.Namespace)))
 }
 
 // pickOrg prompts the user to choose an organization, returning nil if
@@ -291,7 +257,7 @@ func seedContext(ctx context.Context) {
 		}
 		if matchOrg(orgs, cfg.CurrentOrg) == nil {
 			fmt.Println(mutedStyle.Render(fmt.Sprintf("  You are not a member of the saved context's org (%s); choosing again.", cfg.CurrentOrg)))
-			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
+			cfg.CurrentOrg, cfg.CurrentProject = "", ""
 			// Written now, not after a choice: a picker the person leaves must
 			// leave no context behind, never the stale one.
 			if err := saveConfig(cfg); err != nil {

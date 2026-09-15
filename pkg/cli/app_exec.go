@@ -18,8 +18,8 @@ import (
 // anything the app does not already print was unanswerable: whether the pod
 // runs as the uid the image declares, whether the mounted config is what they
 // think, whether this pod can reach that database. It streams over the API the
-// way `db connect` does (ADR-045) — no kubeconfig, because FKE is an operator
-// entitlement and inspecting your own app must not require one.
+// way `db connect` does (ADR-045) — no kubeconfig, because a tenant has no
+// access to the cluster and inspecting your own app goes through the API.
 //
 // Deliberately not a deploy mechanism: it changes nothing the platform tracks,
 // and a change made inside a container is gone at the next rollout. Every

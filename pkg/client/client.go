@@ -245,84 +245,6 @@ func responseError(resp *http.Response) error {
 	return apiErr
 }
 
-// FKECredentials fetches the cluster connection facts for a kubeconfig context
-// scoped to the project (GET /projects/{id}/fke/credentials). Returns an error
-// matching client.ErrNotFound when the API predates the endpoint (404), letting
-// the CLI fall back to embedded constants.
-func (c *Client) FKECredentials(ctx context.Context, projectID string) (*ClusterCredentials, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/fke/credentials", nil)
-	if err != nil {
-		return nil, err
-	}
-	var creds ClusterCredentials
-	if err := c.do(httpReq, &creds); err != nil {
-		return nil, err
-	}
-	return &creds, nil
-}
-
-// OrgFKECredentials fetches the cluster connection facts for a kubeconfig
-// context spanning every project namespace the organization owns (GET
-// /orgs/{id}/fke/credentials). The context carries no default namespace: the
-// identity reaches all of the org's namespaces and none is the one.
-func (c *Client) OrgFKECredentials(ctx context.Context, orgID string) (*ClusterCredentials, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/fke/credentials", nil)
-	if err != nil {
-		return nil, err
-	}
-	var creds ClusterCredentials
-	if err := c.do(httpReq, &creds); err != nil {
-		return nil, err
-	}
-	return &creds, nil
-}
-
-// ClusterInfo fetches the project-independent cluster connection facts (apiserver
-// URL + CA) for assembling a cluster-admin kubeconfig — the staff FKE path, which
-// is not project-scoped.
-func (c *Client) ClusterInfo(ctx context.Context) (*ClusterInfo, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/cluster-info", nil)
-	if err != nil {
-		return nil, err
-	}
-	var info ClusterInfo
-	if err := c.do(httpReq, &info); err != nil {
-		return nil, err
-	}
-	return &info, nil
-}
-
-// FKEToken mints a short-lived, namespace-scoped Kubernetes token bound to the
-// project's ServiceAccount (POST /projects/{id}/fke/token). kubectl's exec plugin
-// calls this transparently.
-func (c *Client) FKEToken(ctx context.Context, projectID string) (*ClusterToken, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/fke/token", nil)
-	if err != nil {
-		return nil, err
-	}
-	var tok ClusterToken
-	if err := c.do(httpReq, &tok); err != nil {
-		return nil, err
-	}
-	return &tok, nil
-}
-
-// OrgFKEToken mints a short-lived Kubernetes token bound to the organization's
-// ServiceAccount (POST /orgs/{id}/fke/token), which every project namespace the
-// org owns binds to its tenant Role. kubectl's exec plugin calls this
-// transparently.
-func (c *Client) OrgFKEToken(ctx context.Context, orgID string) (*ClusterToken, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/fke/token", nil)
-	if err != nil {
-		return nil, err
-	}
-	var tok ClusterToken
-	if err := c.do(httpReq, &tok); err != nil {
-		return nil, err
-	}
-	return &tok, nil
-}
-
 // AuthConfig reports where humans sign in (ADR-132): the identity provider, its
 // endpoints, the client ids the platform registered for the CLI and the
 // console, and whether the CLI's token exchange goes through the platform.
@@ -1127,33 +1049,6 @@ func (c *Client) MoveProject(ctx context.Context, id string, force bool) (*MoveP
 	return &res, nil
 }
 
-// PrunePods deletes the project's finished pods — Succeeded or Failed — that
-// stopped longer ago than olderThan. Nothing that is running, starting or
-// draining is touched.
-//
-// These accumulate because a ReplicaSet does not delete a pod that reached a
-// terminal phase and PodGC's threshold is never reached on a cluster this size,
-// so they persist for as long as the namespace does.
-//
-// olderThan of 0 means the server's default. dryRun reports what would be
-// removed and deletes nothing. The server bounds how many one call removes and
-// says how many it left.
-func (c *Client) PrunePods(ctx context.Context, projectID string, olderThan time.Duration, dryRun bool) (*PruneResult, error) {
-	req := PrunePodsRequest{DryRun: dryRun}
-	if olderThan > 0 {
-		req.OlderThanSeconds = int64(olderThan.Seconds())
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/prune", req)
-	if err != nil {
-		return nil, err
-	}
-	var res PruneResult
-	if err := c.do(httpReq, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
 // UpdateProjectDisplayName changes a project's mutable, cosmetic display name
 // (ADR-036). The frozen name — which anchors the k8s namespace and registry path —
 // is untouched, so this is a plain label change with no cluster impact.
@@ -1195,15 +1090,15 @@ func (c *Client) GetApp(ctx context.Context, id string) (*App, error) {
 	return &app, nil
 }
 
-// ListWorkloadEvents lists the warnings recorded against a project workload —
-// admission refusals (quota), image pull failures, container crashes — the
-// explanation when a deploy produced no pods and no logs.
-func (c *Client) ListWorkloadEvents(ctx context.Context, projectID, workload string) ([]WorkloadEvent, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/workloads/"+workload+"/events", nil)
+// ListAppEvents lists the warnings recorded against an app — admission
+// refusals (quota), image pull failures, container crashes — the explanation
+// when a deploy produced no pods and no logs.
+func (c *Client) ListAppEvents(ctx context.Context, appID string) ([]AppEvent, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+appID+"/events", nil)
 	if err != nil {
 		return nil, err
 	}
-	var events []WorkloadEvent
+	var events []AppEvent
 	if err := c.do(httpReq, &events); err != nil {
 		return nil, err
 	}
@@ -1653,7 +1548,7 @@ func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*Databa
 
 // DialTunnel opens the server-side db-connect tunnel (ADR-045): a WebSocket
 // carrying raw Postgres wire-protocol bytes, relayed by the API to the
-// database's CNPG -rw Service. No k8s/FKE credentials involved — this rides
+// database's CNPG -rw Service. No Kubernetes credential is involved — this rides
 // the same Authorization header as every other API call. Call once per local
 // TCP connection to relay (so e.g. `pg_dump -j N` gets N independent tunnels).
 func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.Conn, error) {
@@ -1708,8 +1603,8 @@ func (c *Client) dialTunnel(ctx context.Context, databaseID string, replica bool
 // DialAppExec opens a session that runs command in one of an app's running
 // containers, streamed over the API (fogpipe/cloud-workspace#317). A WebSocket
 // for the reason the db tunnel is one: it rides the same Authorization header
-// as every other call, with no kubeconfig anywhere — FKE is an operator
-// entitlement, so inspecting your own app must not require one.
+// as every other call, with no kubeconfig anywhere — a tenant has no access to
+// the cluster, so inspecting your own app goes through the API.
 //
 // Each argv element travels as its own `cmd` parameter, so nothing is split or
 // quoted on the way and an argument containing a space or a `$(…)` reaches the

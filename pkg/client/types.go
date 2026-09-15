@@ -265,10 +265,9 @@ type CreateTrustBindingRequest struct {
 	TokenTTLSeconds int    `json:"token_ttl_seconds,omitempty"`
 }
 
-// App represents a deployed application.
-// WorkloadEvent is one warning recorded against a project workload — a
-// Kubernetes Warning event or a container-level failure.
-type WorkloadEvent struct {
+// AppEvent is one warning recorded against an app — a refused admission, an
+// unpullable image, a crashing container.
+type AppEvent struct {
 	Reason    string `json:"reason"`
 	Message   string `json:"message"`
 	Source    string `json:"source"`
@@ -278,6 +277,7 @@ type WorkloadEvent struct {
 	LastSeen  string `json:"last_seen,omitempty"`
 }
 
+// App represents a deployed application.
 type App struct {
 	ID                  string           `json:"id"`
 	ProjectID           string           `json:"project_id"`
@@ -1108,7 +1108,6 @@ type Organization struct {
 	ID          string `json:"id"`
 	ShortID     string `json:"short_id"`
 	DisplayName string `json:"display_name"`
-	FKEEnabled  bool   `json:"fke_enabled"` // operator-granted entitlement gating FKE/kubectl access
 
 	// The org's resource ceiling, shared by every project it owns. A project
 	// carries no ceiling of its own: a tenant decides how many projects it has,
@@ -1151,8 +1150,7 @@ type Organization struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// UpdateOrgRequest is the request body for updating an organization. FKEEnabled is
-// a pointer so an omitted field is distinguishable from an explicit false;
+// UpdateOrgRequest is the request body for updating an organization.
 // DisplayName changes the mutable cosmetic label.
 type UpdateOrgRequest struct {
 	DisplayName string `json:"display_name,omitempty"`
@@ -1579,9 +1577,7 @@ func (e *APIError) Error() string {
 }
 
 // ErrNotFound is a sentinel matched via errors.Is against an *APIError with a 404
-// status. It lets callers branch on "the API doesn't know this route/resource"
-// — e.g. the CLI falling back to embedded cluster constants against an older API
-// that lacks the FKE credentials endpoint.
+// status. It lets callers branch on "the API doesn't know this route/resource".
 var ErrNotFound = errors.New("not found")
 
 // ErrClientTooOld is a sentinel matched via errors.Is against an *APIError with
@@ -1602,42 +1598,6 @@ func (e *APIError) Is(target error) bool {
 		return e.StatusCode == http.StatusUpgradeRequired
 	}
 	return false
-}
-
-// ClusterCredentials is the cluster connection facts for assembling a kubeconfig
-// context (GET /projects/{id}/fke/credentials, GET /orgs/{id}/fke/credentials).
-// Server + CertificateAuthorityData are cluster-global; Context names the
-// project or the org. Namespace is the project's, and empty for an org-wide
-// context, which reaches every namespace the org owns and defaults to none. The
-// bearer token is minted separately by the exec plugin (FKEToken, OrgFKEToken).
-type ClusterCredentials struct {
-	Server                   string `json:"server"`
-	CertificateAuthorityData string `json:"certificate_authority_data"`
-	Context                  string `json:"context"`
-	Namespace                string `json:"namespace"`
-	// Namespaces is every namespace the context reaches — one for a project
-	// context, every project namespace the org owns for an org context. Told
-	// here because a tenant cannot list namespaces on the cluster: a list
-	// cannot be filtered by RBAC, and one that could would name every other
-	// tenant.
-	Namespaces []string `json:"namespaces,omitempty"`
-}
-
-// ClusterToken is a short-lived Kubernetes token bound to the project's or the
-// organization's ServiceAccount (POST /projects/{id}/fke/token, POST
-// /orgs/{id}/fke/token).
-type ClusterToken struct {
-	Token               string `json:"token"`
-	ExpirationTimestamp string `json:"expiration_timestamp"`
-}
-
-// ClusterInfo is the project-independent cluster connection facts (GET
-// /cluster-info): the apiserver URL and CA bundle, both public information (they
-// appear in every kubeconfig). Used by the staff cluster-admin path, which is not
-// project-scoped, so the CLI binary carries no baked-in cluster endpoint/CA.
-type ClusterInfo struct {
-	Server                   string `json:"server"`
-	CertificateAuthorityData string `json:"certificate_authority_data"`
 }
 
 // Job is a scheduled task within a project (#166): the recipe plus when to run
@@ -2394,32 +2354,4 @@ type CreateDatabaseSubscriptionRequest struct {
 	// allowlists them; anything outside the migration-relevant set is refused
 	// rather than passed through.
 	Parameters map[string]string `json:"parameters,omitempty"`
-}
-
-// PrunePodsRequest asks a project to drop its finished pods.
-type PrunePodsRequest struct {
-	// OlderThanSeconds keeps pods that stopped more recently than this. Zero
-	// means the server's default, which is what makes the age a platform
-	// decision rather than one every caller restates.
-	OlderThanSeconds int64 `json:"older_than_seconds,omitempty"`
-	// DryRun reports what would be removed and removes nothing.
-	DryRun bool `json:"dry_run,omitempty"`
-}
-
-// PruneResult is what one prune did, or would have done.
-//
-// Matched and Pruned are separate numbers on purpose: the server bounds how much
-// work one request does (ADR-079), so a project holding more than that has the
-// rest reported in Remaining rather than silently left — an empty answer and a
-// bounded one render identically otherwise.
-type PruneResult struct {
-	Matched   int32 `json:"matched"`
-	Pruned    int32 `json:"pruned"`
-	Remaining int32 `json:"remaining"`
-	Succeeded int32 `json:"succeeded"`
-	Failed    int32 `json:"failed"`
-	DryRun    bool  `json:"dry_run"`
-	// OlderThanSeconds the server actually applied, so the answer says which
-	// threshold produced it rather than leaving the caller to assume its own.
-	OlderThanSeconds int64 `json:"older_than_seconds"`
 }

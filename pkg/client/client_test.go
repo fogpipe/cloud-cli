@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,12 +42,12 @@ func TestClientCreateProject(t *testing.T) {
 	assert.Equal(t, "my-project", project.Name)
 }
 
-func TestClientListWorkloadEvents(t *testing.T) {
+func TestClientListAppEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v1/projects/proj-1/workloads/web/events", r.URL.Path)
+		assert.Equal(t, "/api/v1/apps/app-1/events", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]WorkloadEvent{{
+		json.NewEncoder(w).Encode([]AppEvent{{
 			Reason:  "FailedCreate",
 			Message: "pods \"web-1\" is forbidden: exceeded quota",
 			Source:  "event",
@@ -57,12 +58,19 @@ func TestClientListWorkloadEvents(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "test-key")
-	events, err := c.ListWorkloadEvents(context.Background(), "proj-1", "web")
+	events, err := c.ListAppEvents(context.Background(), "app-1")
 
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, "FailedCreate", events[0].Reason)
 	assert.Equal(t, int32(3), events[0].Count)
+}
+
+// TestAPIErrorIsOnlyMatches404 guards the sentinel: a non-404 error must not be
+// mistaken for ErrNotFound.
+func TestAPIErrorIsOnlyMatches404(t *testing.T) {
+	assert.True(t, errors.Is(&APIError{StatusCode: http.StatusNotFound}, ErrNotFound))
+	assert.False(t, errors.Is(&APIError{StatusCode: http.StatusForbidden}, ErrNotFound))
 }
 
 func TestClientErrorHandling_NestedFormat(t *testing.T) {

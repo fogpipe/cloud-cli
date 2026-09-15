@@ -22,8 +22,6 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // listenLoopback binds the OAuth callback listener and returns it with the
@@ -203,8 +201,8 @@ var loginCmd = &cobra.Command{
 	Short: "Log in in the browser, or --api-key for a static key",
 	Long: "Log in to fpcloud.\n\n" +
 		"With no flags this signs you in through the browser; that identity authenticates\n" +
-		"the API, the registry and kubectl (`fpcloud fke get-credentials`), so no separate\n" +
-		"key is needed. Pass --api-key to store a static key instead (CI, service accounts).",
+		"the API and the registry, so no separate key is needed. Pass --api-key to store\n" +
+		"a static key instead (CI, service accounts).",
 	Example: "  fpcloud login\n  fpcloud login --api-key fp-...",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// --api-key is the global flag, whose default is the key already stored
@@ -373,7 +371,7 @@ func runLogin(ctx context.Context, port int, account string) error {
 	// theirs on every command (fogpipe/cloud-workspace#103).
 	if previous, err := loadToken(); err == nil && emailFromIDToken(previous.IDToken) != emailFromIDToken(idToken) {
 		if cfg, err := loadConfig(); err == nil && (cfg.CurrentOrg != "" || cfg.CurrentProject != "") {
-			cfg.CurrentOrg, cfg.CurrentProject, cfg.CurrentOrgFKE = "", "", false
+			cfg.CurrentOrg, cfg.CurrentProject = "", ""
 			if err := saveConfig(cfg); err != nil {
 				return fmt.Errorf("clear the previous identity's context: %w", err)
 			}
@@ -391,7 +389,6 @@ func runLogin(ctx context.Context, port int, account string) error {
 	}
 	fmt.Println()
 	fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
-	fmt.Println(mutedStyle.Render("  For kubectl access, run:  fpcloud fke get-credentials [--project <name>]"))
 	seedContext(ctx)
 	return nil
 }
@@ -454,7 +451,7 @@ func idTokenValidFor(horizon time.Duration) (string, error) {
 
 var getTokenCmd = &cobra.Command{
 	Use:    "get-token",
-	Short:  "Print a kubectl ExecCredential (used by the kubeconfig; not for direct use)",
+	Short:  "Print the login's OIDC ID token as ExecCredential JSON (read by the OpenTofu provider; not for direct use)",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		idToken, err := currentIDToken()
@@ -471,54 +468,6 @@ var getTokenCmd = &cobra.Command{
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
 	},
-}
-
-// kubeconfigEntry is the cluster/user/context triple written into a kubeconfig by
-// writeKubeconfig. server + caData come from the API (fke get-credentials) rather
-// than embedded constants, so the binary is cluster-agnostic; execArgs is the
-// exec-plugin argv that mints the bearer token (e.g. {"fke","get-token",
-// "--project","myproj"} for a scoped tenant token, or {"get-token"} for the operator
-// ID-token cluster-admin path).
-type kubeconfigEntry struct {
-	context   string
-	server    string
-	caData    []byte
-	namespace string
-	execArgs  []string
-}
-
-// writeKubeconfig merges the given cluster/user/context into the kubeconfig at
-// path (or the default $KUBECONFIG / ~/.kube/config), sets it current, and
-// returns the file written. Merge semantics match gcloud/aws (clientcmd.ModifyConfig).
-func writeKubeconfig(path string, e kubeconfigEntry) (string, error) {
-	po := clientcmd.NewDefaultPathOptions() // honors $KUBECONFIG, else ~/.kube/config
-	if path != "" {
-		po.LoadingRules.ExplicitPath = path
-		po.LoadingRules.Precedence = nil
-		po.EnvVar = ""
-	}
-	cfg, err := po.GetStartingConfig()
-	if err != nil {
-		return "", err
-	}
-	cfg.Clusters[e.context] = &clientcmdapi.Cluster{
-		Server:                   e.server,
-		CertificateAuthorityData: e.caData,
-	}
-	cfg.AuthInfos[e.context] = &clientcmdapi.AuthInfo{
-		Exec: &clientcmdapi.ExecConfig{
-			APIVersion:      "client.authentication.k8s.io/v1",
-			Command:         "fpcloud",
-			Args:            e.execArgs,
-			InteractiveMode: clientcmdapi.IfAvailableExecInteractiveMode,
-		},
-	}
-	cfg.Contexts[e.context] = &clientcmdapi.Context{Cluster: e.context, AuthInfo: e.context, Namespace: e.namespace}
-	cfg.CurrentContext = e.context
-	if err := clientcmd.ModifyConfig(po, *cfg, true); err != nil {
-		return "", err
-	}
-	return po.GetDefaultFilename(), nil
 }
 
 func openBrowser(url string) error {

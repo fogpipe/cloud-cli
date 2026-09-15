@@ -1799,31 +1799,27 @@ misbehaving. The names to pass --pod are what --prefix prints.`,
 
 		n, err := io.Copy(os.Stdout, body)
 		if err == nil && n == 0 && !follow {
-			printEmptyLogsHint(c, appID)
+			printEmptyLogsHint(c, appID, appRefFrom(cmd, args))
 		}
 		return err
 	},
 }
 
-// printEmptyLogsHint explains an empty log window when the workload has
-// warning events but produced no output — the quota-refused deploy, the
-// unpullable image: nothing ever ran, so nothing ever logged (#516).
-func printEmptyLogsHint(c *client.Client, appID string) {
-	app, err := c.GetApp(context.Background(), appID)
-	if err != nil {
-		return
-	}
-	events, err := c.ListWorkloadEvents(context.Background(), app.ProjectID, app.Name)
+// printEmptyLogsHint explains an empty log window when the app has warning
+// events but produced no output — the quota-refused deploy, the unpullable
+// image: nothing ever ran, so nothing ever logged (#516).
+func printEmptyLogsHint(c *client.Client, appID, appRef string) {
+	events, err := c.ListAppEvents(context.Background(), appID)
 	if err != nil || len(events) == 0 {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "No log lines in this window, and the workload reports %d warning(s) — run `fpcloud app events %s`\n", len(events), app.Name)
+	fmt.Fprintf(os.Stderr, "No log lines in this window, and the app reports %d warning(s) — run `fpcloud app events %s`\n", len(events), appRef)
 }
 
 var appEventsCmd = &cobra.Command{
 	Use:   "events <name>",
-	Short: "Read workload warnings for an app",
-	Long: `Read the warnings recorded against an app's workload.
+	Short: "Read the warnings recorded against an app",
+	Long: `Read the warnings recorded against an app.
 
 This is where a deploy that produced no pods explains itself: a pod refused at
 admission (project quota exceeded), an image that cannot be pulled, a missing
@@ -1839,11 +1835,7 @@ event is the only record.
 		if err != nil {
 			return err
 		}
-		app, err := c.GetApp(context.Background(), appID)
-		if err != nil {
-			return err
-		}
-		events, err := c.ListWorkloadEvents(context.Background(), app.ProjectID, app.Name)
+		events, err := c.ListAppEvents(context.Background(), appID)
 		if err != nil {
 			return err
 		}

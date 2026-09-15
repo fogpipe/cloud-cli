@@ -26,10 +26,14 @@ a tenant is refused with 403 is no better: the boundary holds, and the surface,
 its flags and its client methods still ship to every machine that installs this
 binary.
 
-Two `pkg/client` methods still reach an operator route — `UpdateOrgFKE` and
-`UpdateProjectQuota`, which the Terraform provider's `fke_enabled` and quota
-attributes call. They are the open end of this rule, not a precedent
-(`fogpipe/cloud-workspace#121`); nothing new joins them.
+No `pkg/client` method reaches an operator route, and a test over the package's
+own source refuses any `/api/v1/admin/` or `/api/v1/operator/` path in it
+(`fogpipe/cloud-workspace#121`).
+
+Kubernetes is operator-only too. A tenant is handed no kubeconfig, no cluster
+token and no command that speaks to the cluster; inspecting a running app or
+reaching a database goes through the API (`app exec`, `db connect`), under the
+same credential as every other call (`fogpipe/cloud-workspace#996`).
 
 No credential belongs in this binary, and none is in it — not even an issuer
 or a client id. `fpcloud login` asks the control plane where humans sign in
@@ -49,9 +53,9 @@ status` said what `fpcloud context` says, and `auth configure-docker` is
 than running a `docker login` that expires with the token an hour later.
 `registry get-login-password` stays as the plumbing for a job with no binary
 on PATH for Docker to exec. Top-level rather than gcloud's `auth login` because
-every issued kubeconfig already calls top-level `fpcloud get-token`, the docs
-already say `fpcloud login`, and fly, gh, vercel, heroku and render all do the
-same. No aliases: a deleted spelling is deleted.
+the OpenTofu provider execs top-level `fpcloud get-token` for its fallback
+credential, the docs say `fpcloud login`, and fly, gh, vercel, heroku and render
+all do the same. No aliases: a deleted spelling is deleted.
 
 Read rather than contributed to: there is no contribution process, and issues
 here are not a support channel.

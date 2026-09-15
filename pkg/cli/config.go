@@ -14,7 +14,6 @@ type Config struct {
 	APIUrl                 string `yaml:"api_url,omitempty"`
 	APIKey                 string `yaml:"api_key,omitempty"`
 	CurrentOrg             string `yaml:"current_org,omitempty"`
-	CurrentOrgFKE          bool   `yaml:"current_org_fke,omitempty"` // cached FKE entitlement of CurrentOrg; hides the `fke` command tree when false (server still enforces)
 	CurrentProject         string `yaml:"current_project,omitempty"`
 	SuppressVersionWarning bool   `yaml:"suppress_version_warning,omitempty"`
 }
@@ -150,9 +149,8 @@ func resolveAPIURL() string {
 // the Terraform provider uses so one variable means one thing whichever binary
 // reads it: an explicit --api-key, then FPCLOUD_API_KEY (what OIDC federation
 // mints in CI, and what the registry path has always honoured), then the key
-// stored in config.yaml, then the OIDC token from `fpcloud login`
-// — the same identity kubectl uses, so interactive use needs no separate key
-// (gcloud-style). Returns "" when nothing authenticates the caller.
+// stored in config.yaml, then the OIDC token from `fpcloud login`, so
+// interactive use needs no separate key (gcloud-style). Returns "" when nothing authenticates the caller.
 func resolveAPIKey() string {
 	flag := rootCmd.Flag("api-key")
 	if flag.Changed {
