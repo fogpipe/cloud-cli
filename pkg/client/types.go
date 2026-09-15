@@ -1749,9 +1749,8 @@ type Runner struct {
 	// Labels is what a workflow puts in `runs-on`.
 	Labels []string `json:"labels,omitempty"`
 
-	Status          string `json:"status,omitempty"`
-	CurrentRunners  int    `json:"current_runners,omitempty"`
-	AdmittedRunners int    `json:"admitted_runners,omitempty"`
+	Status         string `json:"status,omitempty"`
+	CurrentRunners int    `json:"current_runners,omitempty"`
 	// RunningRunners are the runners executing a job and PendingRunners the ones
 	// that exist without one — waiting for a pod the ceiling refuses, above all.
 	// CurrentRunners is their sum; a control plane that predates the split

@@ -9,12 +9,10 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
-// "3 of 4" is unambiguous where a bare 4 under any heading is not; the most
-// the runner may run is what the ceiling admits when that is lower
+// "3 of 4" is unambiguous where a bare 4 under any heading is not
 // (fogpipe/cloud-workspace#146).
 func TestRunnerBusy_IsBusyBesideTheMost(t *testing.T) {
 	require.Equal(t, "3 of 4", runnerBusy(&client.Runner{RunningRunners: 3, MaxRunners: 4}))
-	require.Equal(t, "2 of 2", runnerBusy(&client.Runner{RunningRunners: 2, MaxRunners: 4, AdmittedRunners: 2}))
 }
 
 // The queue is read or it is unreadable; it is never rendered as empty

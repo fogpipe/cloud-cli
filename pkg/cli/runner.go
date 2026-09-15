@@ -347,14 +347,9 @@ func runnerRestartNote(r *client.Runner) string {
 
 // runnerBusy is "N of M" — pods executing a job beside the most that may run
 // at once — because a bare count under any heading is ambiguous in a way the
-// pair is not (fogpipe/cloud-workspace#146). M is what the org's ceiling
-// admits when that is below the runner's own max.
+// pair is not (fogpipe/cloud-workspace#146).
 func runnerBusy(r *client.Runner) string {
-	most := r.MaxRunners
-	if r.AdmittedRunners > 0 && r.AdmittedRunners < most {
-		most = r.AdmittedRunners
-	}
-	return fmt.Sprintf("%d of %d", r.RunningRunners, most)
+	return fmt.Sprintf("%d of %d", r.RunningRunners, r.MaxRunners)
 }
 
 // runnerWaiting is the queue as GitHub sees it: jobs assigned to the runner
@@ -429,7 +424,7 @@ func runnerScope(r *client.Runner) string {
 }
 
 // runnerActivity says what the runner's pods are doing, not how many objects
-// exist: a pod executing a job and one waiting for a slot the ceiling refuses
+// exist: a pod executing a job and one waiting for room to schedule
 // were one "active" count, and the two call for opposite responses
 // (fogpipe/cloud-workspace#120). A control plane that sends only the sum is
 // rendered as the sum.
@@ -444,7 +439,7 @@ func runnerActivity(r *client.Runner) string {
 //
 // A runner with 2 running and 2 pending reads identically to one with 4
 // running under a single count, and the two call for opposite responses: pods
-// executing jobs means the ceiling is working and a queue is expected, while
+// executing jobs means the runner is at its max and a queue is expected, while
 // pods pending means declared capacity is absent and the queue is the symptom
 // (fogpipe/cloud-workspace#120). Both zero falls back to the sum, which is
 // what a control plane that sends only the sum can support.
@@ -457,9 +452,6 @@ func runnerCounts(current, running, pending int) string {
 
 func runnerInfoRows(r *client.Runner) [][]string {
 	scale := fmt.Sprintf("%d at once (%s)", r.MaxRunners, runnerActivity(r))
-	if r.AdmittedRunners > 0 {
-		scale = fmt.Sprintf("%d at once (%s, ceiling admits %d)", r.MaxRunners, runnerActivity(r), r.AdmittedRunners)
-	}
 	rows := [][]string{
 		{"Serves", runnerScope(r)},
 		{"runs-on", strings.Join(r.Labels, ", ")},
@@ -576,7 +568,7 @@ func runnerSpecFlags(cmd *cobra.Command) {
 	cmd.Flags().String("github-scope", "", "Where the runner registers: an organization (acme) or one repository (acme/backend). Only with --credential app or token; the Fogpipe App uses this project's connection")
 	cmd.Flags().String("runner-group", "", "GitHub runner group to join (default Default)")
 	cmd.Flags().String("size", "", "What one job gets: small (1 CPU, 2Gi), medium (2 CPU, 4Gi, the default) or large (4 CPU, 8Gi)")
-	cmd.Flags().Int("max", 2, "Jobs run at once; a ceiling, not a cost")
+	cmd.Flags().Int("max", 2, "Jobs run at once, all reserved against your organization's ceiling whether or not they run")
 	cmd.Flags().Bool("builder", false, "Run a rootless image builder alongside each job (sets BUILDKIT_HOST)")
 	cmd.Flags().String("builder-cpu", "", "CPU size for the builder, e.g. 1 (implies --builder)")
 	cmd.Flags().String("builder-memory", "", "Memory limit for the builder, e.g. 2Gi (implies --builder)")
