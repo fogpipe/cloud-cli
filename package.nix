@@ -22,7 +22,7 @@ buildGoModule (finalAttrs: {
 
   src = ./.;
 
-  vendorHash = "sha256-h5RXgFWqRfDNd42l6Wzmy2pcKbMWoZEk+iFpwFODQs4=";
+  vendorHash = "sha256-RLkH27MULTDgBhoJjwPg3wCLRA0XP8s/kmamIGukHw4=";
 
   subPackages = [ "cmd/fpcloud" ];
 

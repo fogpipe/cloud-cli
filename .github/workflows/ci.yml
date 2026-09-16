@@ -39,3 +39,18 @@ jobs:
           deno-version: "v2.x"
       - name: third-party licenses are attributed
         run: deno run --allow-read --allow-run --allow-env scripts/third-party-licenses.ts --check
+
+  # package.nix states a vendorHash over the module set in go.sum, and nothing
+  # above reads it: the Go steps resolve go.sum themselves, and the release
+  # recipe stamps only the version. Building the vendor derivation is what makes
+  # a go.sum change without a hash change fail here, at the commit that made
+  # it, instead of in every nix consumer's dev shell for a week
+  # (fogpipe/cloud-workspace#1004). Only the vendor derivation: it is the one
+  # thing the hash guards, and the binary itself is built by the job above.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: package.nix vendorHash matches go.sum
+        run: nix build --no-link --print-build-logs '.#fpcloud.goModules'
