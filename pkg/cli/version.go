@@ -180,20 +180,38 @@ func latestVersion() (string, error) {
 // semver orders that below the tag it is built past — so the release it is ahead of
 // would read as an upgrade, and `fpcloud upgrade` would install older code.
 func warnIfOutdated() {
-	if version == "dev" || !semver.IsValid(version) ||
-		semver.Prerelease(version) != "" || semver.Build(version) != "" {
+	if !isReleaseBuild() {
 		return
 	}
-	if cfg, err := loadConfig(); err == nil && cfg.SuppressVersionWarning {
-		return
-	}
-	latest, err := latestVersion()
-	if err != nil || !semver.IsValid(latest) {
-		return
-	}
-	if semver.Compare(version, latest) < 0 {
+	latest, ok := noticeLatest()
+	if ok && semver.Compare(version, latest) < 0 {
 		fmt.Fprintf(os.Stderr,
 			"⚠ fpcloud %s is available (you have %s). Run `fpcloud upgrade`.\n",
 			latest, version)
 	}
+}
+
+func noteLatestRelease() {
+	if isReleaseBuild() {
+		warnIfOutdated()
+		return
+	}
+	if latest, ok := noticeLatest(); ok && latest != version {
+		fmt.Fprintf(os.Stderr, "latest release: %s\n", latest)
+	}
+}
+
+func isReleaseBuild() bool {
+	return semver.IsValid(version) && semver.Prerelease(version) == "" && semver.Build(version) == ""
+}
+
+func noticeLatest() (string, bool) {
+	if cfg, err := loadConfig(); err == nil && cfg.SuppressVersionWarning {
+		return "", false
+	}
+	latest, err := latestVersion()
+	if err != nil || !semver.IsValid(latest) {
+		return "", false
+	}
+	return latest, true
 }

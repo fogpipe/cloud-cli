@@ -187,10 +187,6 @@ func Execute() {
 		return
 	}
 
-	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd == rootCmd && hasVersionFlag(os.Args[1:]) {
-		warnIfOutdated()
-	}
-
 	registerCompletions()
 	if group, word, ok := unknownSubcommand(os.Args[1:]); ok {
 		fmt.Fprintf(os.Stderr, "unknown command %q for %q\n%s\n", word, group.CommandPath(), errorHelpHint)
@@ -217,5 +213,8 @@ func Execute() {
 			fmt.Fprintln(os.Stderr, errorHelpHint)
 		}
 		os.Exit(exitCode(err))
+	}
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd == rootCmd && hasVersionFlag(os.Args[1:]) {
+		noteLatestRelease()
 	}
 }
