@@ -387,9 +387,7 @@ type CreateAppRequest struct {
 	// Type is the process type: "web" (default) serves HTTP behind a Service;
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.
-	Type        string `json:"type,omitempty"`
-	Storage     string `json:"storage,omitempty"`      // persistent volume size (e.g. "50Gi")
-	StoragePath string `json:"storage_path,omitempty"` // mount path (defaults to /data)
+	Type string `json:"type,omitempty"`
 	// EnvVars seeds the app's config store with plain (non-secret) values —
 	// shorthand for a SetConfig per key. Use SetConfig to change them afterwards;
 	// there is no second env layer on the app itself.

@@ -145,8 +145,6 @@ var appCreateCmd = &cobra.Command{
 		ingress, _ := cmd.Flags().GetString("ingress")
 		mode, _ := cmd.Flags().GetString("mode")
 		appType, _ := cmd.Flags().GetString("type")
-		storage, _ := cmd.Flags().GetString("storage")
-		storagePath, _ := cmd.Flags().GetString("storage-path")
 
 		// Prompt for missing required fields.
 		if name == "" || image == "" {
@@ -247,8 +245,6 @@ var appCreateCmd = &cobra.Command{
 				Routes:              routes,
 				Mode:                mode,
 				Type:                appType,
-				Storage:             storage,
-				StoragePath:         storagePath,
 				ServiceAccount:      serviceAccount,
 				HealthCheckPath:     healthCheckPath,
 				HealthCheckTimeout:  healthCheckTimeout,
@@ -1856,8 +1852,6 @@ func init() {
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
 	appCreateCmd.Flags().String("mode", "always-on", "Hosting mode: 'always-on' (default) or 'serverless' (scale-to-zero)")
 	appCreateCmd.Flags().String("type", "web", "Process type: 'web' (default, serves HTTP) or 'worker' (long-running process with no port, URL or health checks). Frozen at create")
-	appCreateCmd.Flags().String("storage", "", "Attach a persistent volume of this size (e.g. 50Gi). Always-on mode only; opt-in")
-	appCreateCmd.Flags().String("storage-path", "/data", "Mount path for the persistent volume (default: /data)")
 	appCreateCmd.Flags().String("service-account", "", "Service account email for workload identity")
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
