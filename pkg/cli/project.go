@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -147,11 +146,6 @@ var projectListCmd = &cobra.Command{
 			fmt.Println(mutedStyle.Render("Organization: " + orgName))
 		}
 
-		// Group platform projects last, preserving the API's order within each group.
-		sort.SliceStable(projects, func(i, j int) bool {
-			return !projects[i].IsPlatform && projects[j].IsPlatform
-		})
-
 		// The APPS column is a table-only concern; fetch per-project apps
 		// concurrently so we don't serialize N round-trips. With --apps we show
 		// the app names, otherwise just the count. Structured output returns the
@@ -187,24 +181,15 @@ var projectListCmd = &cobra.Command{
 		}
 
 		current := rootCmd.Flag("project").Value.String()
-		hasPlatform := false
 		rows := make([][]string, len(projects))
 		for i, p := range projects {
 			marker := " "
 			if current != "" && (current == p.ID || current == p.Name) {
 				marker = "*"
 			}
-			name := p.Name
-			if p.IsPlatform {
-				name += " " + mutedStyle.Render("🔒")
-				hasPlatform = true
-			}
-			rows[i] = []string{marker, name, appCells[i], egressLabel(p.Egress), p.CreatedAt.Format("2006-01-02 15:04:05")}
+			rows[i] = []string{marker, p.Name, appCells[i], egressLabel(p.Egress), p.CreatedAt.Format("2006-01-02 15:04:05")}
 		}
 		render([]string{"", "NAME", "APPS", "EGRESS", "CREATED"}, rows, projects)
-		if hasPlatform && !isStructured(rootCmd.Flag("output").Value.String()) {
-			fmt.Println(mutedStyle.Render("🔒 platform project — cannot be deleted"))
-		}
 		return nil
 	},
 }
@@ -510,9 +495,6 @@ func pickProject(projects []*client.Project) (string, error) {
 	for i, p := range projects {
 		// Padded to the longest name so the second column lines up.
 		label := fmt.Sprintf("%-*s", width, p.Name)
-		if p.IsPlatform {
-			label += " 🔒"
-		}
 		label += "  " + mutedStyle.Render(egressLabel(p.Egress))
 		options[i] = huh.NewOption(label, p.Name)
 	}
@@ -542,11 +524,7 @@ func pickProjectFzf(fzf string, projects []*client.Project) (string, error) {
 	for i, p := range projects {
 		// Padded to the longest name so the second column lines up. The row is
 		// display only — fzfPick resolves the choice by index.
-		eg := egressLabel(p.Egress)
-		if p.IsPlatform {
-			eg += " 🔒"
-		}
-		rows[i] = fmt.Sprintf("%-*s\t%s", width, p.Name, eg)
+		rows[i] = fmt.Sprintf("%-*s\t%s", width, p.Name, egressLabel(p.Egress))
 	}
 	i, ok, err := fzfPick(fzf, "project> ", "Select a project", rows)
 	if err != nil || !ok {

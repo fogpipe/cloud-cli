@@ -17,7 +17,6 @@ type Project struct {
 	Status         string    `json:"status"` // active, suspended, deleting
 	Namespace      string    `json:"namespace"`
 	Egress         string    `json:"egress"`
-	IsPlatform     bool      `json:"is_platform,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

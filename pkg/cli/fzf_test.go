@@ -59,7 +59,7 @@ func TestPickProjectFzfResolvesEveryEntry(t *testing.T) {
 	projects := []*client.Project{
 		{Name: "api", Egress: "restricted"},
 		{Name: "boilerplate", Egress: "all"},
-		{Name: "web", Egress: "https", IsPlatform: true},
+		{Name: "web", Egress: "https"},
 	}
 	for i, want := range projects {
 		got, err := pickProjectFzf(fakeFzf(t, i, 0), projects)
