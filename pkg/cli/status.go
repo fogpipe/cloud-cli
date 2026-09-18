@@ -512,7 +512,10 @@ func tlsLabel(status string) string {
 	}
 }
 
-// problemNotes renders a resource's problems as the lines shown under it.
+// problemNotes renders a resource's problems as the lines shown under it. The
+// time is on the line because a crash three days old and one three seconds old
+// are different reports (fogpipe/cloud-workspace#1015); a problem carrying no
+// time carries no age, rather than a fabricated one.
 func problemNotes(problems []client.StatusProblem) []string {
 	notes := make([]string, 0, len(problems))
 	for _, p := range problems {
@@ -522,6 +525,9 @@ func problemNotes(problems []client.StatusProblem) []string {
 		}
 		if p.Count > 1 {
 			line += fmt.Sprintf(" (×%d)", p.Count)
+		}
+		if at, err := time.Parse(time.RFC3339, p.Since); err == nil {
+			line += ", " + humanAge(at) + " ago"
 		}
 		notes = append(notes, line)
 	}
