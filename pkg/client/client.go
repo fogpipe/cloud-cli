@@ -1146,6 +1146,21 @@ func (c *Client) ReconcileApp(ctx context.Context, id string) (*App, error) {
 	return &app, nil
 }
 
+// RestartApp rolls an always-on app's pods under the spec they already run.
+// Not a deploy and not a reconcile: nothing is re-rendered, the image is
+// unchanged and the release command does not run. A serverless app is refused.
+func (c *Client) RestartApp(ctx context.Context, id string) (*App, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+id+"/restart", nil)
+	if err != nil {
+		return nil, err
+	}
+	var app App
+	if err := c.do(httpReq, &app); err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
 // ScaleApp updates the scaling configuration for an app.
 func (c *Client) ScaleApp(ctx context.Context, id string, req ScaleRequest) (*App, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/scale", req)

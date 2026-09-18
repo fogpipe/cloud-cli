@@ -1812,6 +1812,51 @@ func printEmptyLogsHint(c *client.Client, appID, appRef string) {
 	fmt.Fprintf(os.Stderr, "No log lines in this window, and the app reports %d warning(s) — run `fpcloud app events %s`\n", len(events), appRef)
 }
 
+var appRestartCmd = &cobra.Command{
+	Use:   "restart <name>",
+	Short: "Roll an always-on app's pods under the spec they already run",
+	Long: `Roll an always-on app's pods under the spec they already run.
+
+Every pod is replaced by a fresh one, one at a time, so a container that
+crashed and came back — reported as an Error on the app until its pod is
+replaced — starts clean. Not a deploy and not a reconcile: nothing is
+re-rendered, the image is unchanged and the release command does not run.
+
+A serverless app is refused: its revision is immutable, so a deploy is what
+replaces it.
+
+  fpcloud app restart web`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		outputFormat := rootCmd.Flag("output").Value.String()
+		c := getClient()
+		appID, err := appIDFrom(c, cmd, args)
+		if err != nil {
+			return err
+		}
+		var app *client.App
+		var restartErr error
+		action := func() { app, restartErr = c.RestartApp(context.Background(), appID) }
+		if !isStructured(outputFormat) {
+			withSpinner("Restarting...", action)
+		} else {
+			action()
+		}
+		if restartErr != nil {
+			return restartErr
+		}
+		if isStructured(outputFormat) {
+			return renderData(app)
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+				fmt.Sprintf(" Restarting %s", app.Name),
+		))
+		fmt.Println("Watch it:  fpcloud project status --watch")
+		return nil
+	},
+}
+
 var appEventsCmd = &cobra.Command{
 	Use:   "events <name>",
 	Short: "Read the warnings recorded against an app",
@@ -1931,7 +1976,7 @@ func init() {
 
 	appCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
 	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
 	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)
