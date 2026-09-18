@@ -302,9 +302,7 @@ type App struct {
 	Mode                string           `json:"mode"`
 	Type                string           `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
 	Port                int              `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
-	Storage             string           `json:"storage"`
 	KubeServiceAccount  string           `json:"kube_service_account,omitempty"`
-	StoragePath         string           `json:"storage_path"`
 	ServiceAccountID    string           `json:"service_account_id,omitempty"`
 	HealthCheckPath     string           `json:"health_check_path"`
 	HealthCheckTimeout  int              `json:"health_check_timeout"`
@@ -477,11 +475,6 @@ type ScaleRequest struct {
 // SwitchModeRequest is the request body for switching an app's hosting mode.
 type SwitchModeRequest struct {
 	Mode string `json:"mode"`
-}
-
-// UpdateStorageRequest is the request body for growing an app's persistent storage.
-type UpdateStorageRequest struct {
-	Storage string `json:"storage"`
 }
 
 // UpdateAppRequest is the request body for PATCH /api/v1/apps/{appID}. Both fields

@@ -1249,19 +1249,6 @@ func (c *Client) SwitchMode(ctx context.Context, id, mode string) (*App, error) 
 	return &app, nil
 }
 
-// UpdateAppStorage grows an app's persistent volume (grow-only, always-on mode).
-func (c *Client) UpdateAppStorage(ctx context.Context, id, storage string) (*App, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/storage", UpdateStorageRequest{Storage: storage})
-	if err != nil {
-		return nil, err
-	}
-	var app App
-	if err := c.do(httpReq, &app); err != nil {
-		return nil, err
-	}
-	return &app, nil
-}
-
 // UpdateAppCommand changes an app's container entrypoint override (command),
 // arguments (args), and/or release command. Each is optional: a nil pointer
 // leaves the value untouched, a non-nil pointer (including an empty slice)

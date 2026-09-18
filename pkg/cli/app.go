@@ -569,15 +569,6 @@ var appGetCmd = &cobra.Command{
 			probesDisplay = strings.Join(lines, "\n")
 		}
 
-		storageDisplay := mutedStyle.Render("none")
-		if app.Storage != "" {
-			path := app.StoragePath
-			if path == "" {
-				path = "/data"
-			}
-			storageDisplay = fmt.Sprintf("%s at %s", app.Storage, path)
-		}
-
 		releaseDisplay := mutedStyle.Render("none")
 		if len(app.ReleaseCommand) > 0 {
 			releaseDisplay = strings.Join(app.ReleaseCommand, " ")
@@ -601,7 +592,6 @@ var appGetCmd = &cobra.Command{
 			{"Mode", app.Mode},
 			{"Status", renderStatus(app.Status)},
 			{"Replicas", fmt.Sprintf("%d", app.Replicas)},
-			{"Storage", storageDisplay},
 			{"Release Command", releaseDisplay},
 			{"Service Account", saDisplay},
 		}
@@ -1119,7 +1109,7 @@ var appScaleCmd = &cobra.Command{
 
 var appUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update an app's display name, vanity slug, hosting mode, storage, or container command",
+	Short: "Update an app's display name, vanity slug, hosting mode, or container command",
 	Long: `Update an app in place.
 
   --display-name  Change the app's cosmetic display name. The frozen name (which
@@ -1130,8 +1120,6 @@ var appUpdateCmd = &cobra.Command{
   --mode          Switch between hosting modes. 'always-on' is an always-on
                   Deployment; 'serverless' is a scale-to-zero Knative Service. The
                   switch recreates the runtime, preserving image, env, and secrets.
-  --storage       Grow the app's persistent volume (e.g. 100Gi). Grow-only — the
-                  volume can never shrink — and only for always-on apps with storage.
   --command       Override the container entrypoint (repeatable). Passing the flag
                   with no value clears the override back to the image ENTRYPOINT.
                   Triggers a redeploy so the running pod picks up the new entrypoint.
@@ -1155,7 +1143,6 @@ var appUpdateCmd = &cobra.Command{
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mode, _ := cmd.Flags().GetString("mode")
-		storage, _ := cmd.Flags().GetString("storage")
 		displayName, _ := cmd.Flags().GetString("display-name")
 		// --slug is set-if-changed so `--slug ""` explicitly clears the override
 		// (reverting to the derived host), distinct from omitting the flag.
@@ -1186,8 +1173,8 @@ var appUpdateCmd = &cobra.Command{
 		}
 		securityContextChanged := clearSecurityContext || securityContext != nil
 
-		if mode == "" && storage == "" && displayName == "" && !slugChanged && !databaseChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
-			return fmt.Errorf("nothing to update: pass --display-name, --slug, --database, --mode, --storage, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
+		if mode == "" && displayName == "" && !slugChanged && !databaseChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
+			return fmt.Errorf("nothing to update: pass --display-name, --slug, --database, --mode, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -1214,12 +1201,6 @@ var appUpdateCmd = &cobra.Command{
 			}
 			if databaseChanged {
 				app, updErr = c.SetAppDatabase(context.Background(), appID, database)
-				if updErr != nil {
-					return
-				}
-			}
-			if storage != "" {
-				app, updErr = c.UpdateAppStorage(context.Background(), appID, storage)
 				if updErr != nil {
 					return
 				}
@@ -1256,21 +1237,12 @@ var appUpdateCmd = &cobra.Command{
 			return renderData(app)
 		}
 
-		storageDisplay := mutedStyle.Render("none")
-		if app.Storage != "" {
-			path := app.StoragePath
-			if path == "" {
-				path = "/data"
-			}
-			storageDisplay = fmt.Sprintf("%s at %s", app.Storage, path)
-		}
 		fmt.Println(renderInfoBox("App Updated", [][]string{
 			{"ID", mutedStyle.Render(app.ID)},
 			{"Name", app.Name},
 			{"Display Name", app.DisplayName},
 			{"URL Slug", slugDisplay(app.URLSlug)},
 			{"Mode", app.Mode},
-			{"Storage", storageDisplay},
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
@@ -1964,7 +1936,6 @@ func init() {
 	appUpdateCmd.Flags().String("slug", "", "Set the vanity URL slug (<slug>.<tenant-domain>); pass --slug \"\" to clear it back to the derived host (always-on apps)")
 	appUpdateCmd.Flags().String("database", "", "Database this app's DATABASE_URL points at (name or id); pass --database \"\" to clear it back to the project's sole database")
 	appUpdateCmd.Flags().String("mode", "", "New hosting mode: 'always-on' or 'serverless'")
-	appUpdateCmd.Flags().String("storage", "", "Grow the persistent volume to this size (e.g. 100Gi). Grow-only, always-on mode")
 	appUpdateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; pass with no value to clear back to the image ENTRYPOINT)")
 	appUpdateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; pass with no value to clear back to the image CMD)")
 	appUpdateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; pass with no value to drop the release phase)")
