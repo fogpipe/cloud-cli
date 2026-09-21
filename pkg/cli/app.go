@@ -595,6 +595,14 @@ var appGetCmd = &cobra.Command{
 			{"Release Command", releaseDisplay},
 			{"Service Account", saDisplay},
 		}
+		if app.Template != "" {
+			templateDisplay := fmt.Sprintf("%s %s", app.Template, app.Release)
+			if app.TemplateUpdate != "" {
+				templateDisplay += "  " + lipgloss.NewStyle().Foreground(colorWarning).Render(
+					fmt.Sprintf("update available: %s (fpcloud app upgrade %s)", app.TemplateUpdate, app.Name))
+			}
+			rows = append(rows, []string{"Template", templateDisplay})
+		}
 		// Everything below describes how the app is reached or checked. A worker
 		// is reached by nothing and probed by nothing, so the rows are dropped
 		// rather than shown blank.
@@ -1829,6 +1837,49 @@ replaces it.
 	},
 }
 
+var appUpgradeCmd = &cobra.Command{
+	Use:   "upgrade <name>",
+	Short: "Deploy the catalog's current version of the template an app came from",
+	Long: `Deploy the catalog's current version of the template an app was deployed
+from, as a release named after that version. Any config key the new
+version adds is seeded; a key you have set is left as it is.
+
+"fpcloud app get" reports the version on offer as template_update. An app
+that was not deployed from the catalog, or that has since deployed an image
+of its own, is refused: deploy an image instead.
+
+  fpcloud app upgrade stats`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		outputFormat := rootCmd.Flag("output").Value.String()
+		c := getClient()
+		appID, err := appIDFrom(c, cmd, args)
+		if err != nil {
+			return err
+		}
+		var app *client.App
+		var upgradeErr error
+		action := func() { app, upgradeErr = c.UpgradeApp(context.Background(), appID) }
+		if !isStructured(outputFormat) {
+			withSpinner("Upgrading...", action)
+		} else {
+			action()
+		}
+		if upgradeErr != nil {
+			return upgradeErr
+		}
+		if isStructured(outputFormat) {
+			return renderData(app)
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
+				fmt.Sprintf(" Upgrading %s to %s %s", app.Name, app.Template, app.Release),
+		))
+		fmt.Println("Watch it:  fpcloud project status --watch")
+		return nil
+	},
+}
+
 var appEventsCmd = &cobra.Command{
 	Use:   "events <name>",
 	Short: "Read the warnings recorded against an app",
@@ -1947,7 +1998,7 @@ func init() {
 
 	appCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpgradeCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
 	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
 	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)

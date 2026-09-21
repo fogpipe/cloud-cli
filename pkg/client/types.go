@@ -286,6 +286,8 @@ type App struct {
 	DatabaseID          string           `json:"database_id,omitempty"` // database DATABASE_URL points at (#544); empty = the project's sole database, or none when it has several
 	Image               string           `json:"image"`
 	Release             string           `json:"release,omitempty"`         // user-named release currently live (#471)
+	Template            string           `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
+	TemplateUpdate      string           `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
 	Command             []string         `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
 	Args                []string         `json:"args,omitempty"`            // container arguments (empty = image CMD)
 	ReleaseCommand      []string         `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
@@ -2343,4 +2345,79 @@ type CreateDatabaseSubscriptionRequest struct {
 	// allowlists them; anything outside the migration-relevant set is refused
 	// rather than passed through.
 	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+// Template is one entry of the curated app catalog (ADR-235): a self-hosted
+// app deployed in one click as an app, a managed database and a bucket the
+// tenant then owns outright. Image is the platform's mirror of Upstream, the
+// reference the app is created with; Version is its tag and the release name
+// of every deploy made from it.
+type Template struct {
+	Name            string            `json:"name"`
+	Summary         string            `json:"summary"`
+	Licence         string            `json:"licence"`
+	Homepage        string            `json:"homepage"`
+	Upstream        TemplateUpstream  `json:"upstream"`
+	Version         string            `json:"version"`
+	Image           string            `json:"image"`
+	Port            int               `json:"port"`
+	HealthCheckPath string            `json:"health_check_path"`
+	Resources       TemplateResources `json:"resources"`
+	Command         []string          `json:"command"`
+	Env             map[string]string `json:"env"`
+	Secrets         []string          `json:"secrets"`
+	Inputs          []TemplateInput   `json:"inputs"`
+	Needs           TemplateNeeds     `json:"needs"`
+	Notes           string            `json:"notes"` // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
+}
+
+// TemplateUpstream is the source image a template's mirror was copied from,
+// pinned to the digest it was reviewed at.
+type TemplateUpstream struct {
+	Image  string `json:"image"`
+	Digest string `json:"digest"`
+}
+
+// TemplateResources is the size a template's app is created with.
+type TemplateResources struct {
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
+}
+
+// TemplateInput is one value a person supplies when deploying a template. Key
+// is the env var it lands in; Type is "string", "email" or "secret", and a
+// secret lands in the app's secret config.
+type TemplateInput struct {
+	Key      string `json:"key"`
+	Prompt   string `json:"prompt"`
+	Type     string `json:"type"`
+	Required bool   `json:"required"`
+	Default  string `json:"default"`
+}
+
+// TemplateNeeds is what a template creates beside its app: a managed database
+// bound as the app's DATABASE_URL, a bucket bound as its S3_*.
+type TemplateNeeds struct {
+	Database *TemplateDatabase `json:"database,omitempty"`
+	Bucket   *TemplateBucket   `json:"bucket,omitempty"`
+}
+
+// TemplateDatabase is the managed Postgres a template needs.
+type TemplateDatabase struct {
+	Engine     string   `json:"engine"`
+	Version    string   `json:"version"`
+	Extensions []string `json:"extensions"`
+}
+
+// TemplateBucket is the bucket a template needs.
+type TemplateBucket struct {
+	PublicRead bool `json:"public_read"`
+}
+
+// InstantiateTemplateRequest deploys a template into a project: Name is the
+// app's name (the database is <name>-db and the bucket <name>), Inputs answers
+// the template's inputs by key.
+type InstantiateTemplateRequest struct {
+	Name   string            `json:"name"`
+	Inputs map[string]string `json:"inputs,omitempty"`
 }

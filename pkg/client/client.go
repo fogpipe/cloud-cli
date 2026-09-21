@@ -1161,6 +1161,62 @@ func (c *Client) RestartApp(ctx context.Context, id string) (*App, error) {
 	return &app, nil
 }
 
+// UpgradeApp deploys the catalog's current version of the template an app was
+// deployed from, as a named release (ADR-235). Refused on an app with no
+// template.
+func (c *Client) UpgradeApp(ctx context.Context, id string) (*App, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+id+"/upgrade", nil)
+	if err != nil {
+		return nil, err
+	}
+	var app App
+	if err := c.do(httpReq, &app); err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
+// ListTemplates lists the curated app catalog (ADR-235).
+func (c *Client) ListTemplates(ctx context.Context) ([]Template, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/templates", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []Template
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetTemplate reads one catalog entry by name.
+func (c *Client) GetTemplate(ctx context.Context, name string) (*Template, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/templates/"+name, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out Template
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// InstantiateTemplate deploys a catalog entry into a project as an app, a
+// managed database and a bucket the project then owns outright (ADR-235).
+// It returns the app.
+func (c *Client) InstantiateTemplate(ctx context.Context, projectID, name string, req InstantiateTemplateRequest) (*App, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/templates/"+name, req)
+	if err != nil {
+		return nil, err
+	}
+	var app App
+	if err := c.do(httpReq, &app); err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
 // ScaleApp updates the scaling configuration for an app.
 func (c *Client) ScaleApp(ctx context.Context, id string, req ScaleRequest) (*App, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/scale", req)
