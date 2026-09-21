@@ -49,16 +49,31 @@ jobs:
             go build -ldflags "-X $pkg.version=$TAG" -o "$out" ./cmd/fpcloud
             sha256sum "$out" > "$out.sha256"
           done
+      # The notes come from the annotated tag's message, which is what the
+      # workspace release recipe wrote them into (fogpipe/cloud-workspace#1045).
+      #
+      # NOT --generate-notes, which produced a bare compare link against a tag it
+      # picked itself — v0.194.2's read v0.192.0...v0.194.2, four releases wide.
+      # The same message is what the control plane records, so this page and
+      # `fpcloud changelog` say the same thing on the day of the release.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          kind="$(git cat-file -t "$TAG")"
+          if [ "$kind" != "tag" ]; then
+            echo "::error::$TAG is a $kind, not an annotated tag — it carries no release notes. Cut it with 'just release'."
+            exit 1
+          fi
+          git for-each-ref --format='%(contents)' "refs/tags/${TAG}" > "${RUNNER_TEMP}/notes.md"
           gh release create "$TAG" \
             --repo "$REPO" \
             --title "$TAG" \
-            --generate-notes \
+            --notes-file "${RUNNER_TEMP}/notes.md" \
             fpcloud-* \
           || gh release upload "$TAG" fpcloud-* --clobber
 
