@@ -855,6 +855,28 @@ func (c *Client) ListPrices(ctx context.Context) ([]*Price, error) {
 	return prices, nil
 }
 
+// Changelog returns what changed in each release, newest first. A limit of 0
+// takes the platform's own default.
+//
+// Unauthenticated, like the price list: what shipped in a public release is a
+// published fact, and the caller deciding whether to install the product has no
+// account yet (fogpipe/cloud-workspace#1045).
+func (c *Client) Changelog(ctx context.Context, limit int) (*Changelog, error) {
+	path := "/api/v1/changelog"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out Changelog
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // OrgPrices returns the rates one org's own invoices will use, and the book
 // they come from.
 //

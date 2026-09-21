@@ -120,6 +120,22 @@ type Price struct {
 	EffectiveFrom time.Time `json:"effective_from"`
 }
 
+// Release is one released version of the product and what changed in it.
+//
+// ReleasedAt is when the release was recorded, not when its notes were last
+// corrected: a typo fixed afterwards is still the same release
+// (fogpipe/cloud-workspace#1045).
+type Release struct {
+	Version    string    `json:"version"`
+	Notes      string    `json:"notes"`
+	ReleasedAt time.Time `json:"released_at"`
+}
+
+// Changelog is what changed in each release, newest first.
+type Changelog struct {
+	Releases []Release `json:"releases"`
+}
+
 // OrgPriceList is the rates one org's own invoices will use, and the book they
 // came from — as opposed to the published list, which every caller sees.
 type OrgPriceList struct {
