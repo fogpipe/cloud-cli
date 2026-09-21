@@ -49,10 +49,12 @@ Authentication has two verbs and both are at the root (`fogpipe/cloud-workspace#
 API has accepted it) and `fpcloud logout` (both credentials, because there are
 two). There is no `auth` group — `auth login` was the same command, `auth
 status` said what `fpcloud context` says, and `auth configure-docker` is
-`fpcloud registry login`, which installs the Docker credential helper rather
-than running a `docker login` that expires with the token an hour later.
-`registry get-login-password` stays as the plumbing for a job with no binary
-on PATH for Docker to exec. Top-level rather than gcloud's `auth login` because
+`fpcloud registry login`, which configures docker however the machine allows:
+the Docker credential helper where fpcloud's own install prefix is writable and
+on PATH, so nothing expires, and a stored token otherwise. Reporting one while
+having done neither is what `fogpipe/cloud-workspace#1042` was.
+`registry get-login-password` stays as the plumbing for a job that configures
+its builder itself. Top-level rather than gcloud's `auth login` because
 the OpenTofu provider execs top-level `fpcloud get-token` for its fallback
 credential, the docs say `fpcloud login`, and fly, gh, vercel, heroku and render
 all do the same. No aliases: a deleted spelling is deleted.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -83,6 +84,32 @@ func dockerConfigPath() string {
 // addDockerCredHelpers merges `credHelpers[host] = fpcloud` into ~/.docker/config.json,
 // preserving every other field (auths, credsStore, etc.) untouched.
 func addDockerCredHelpers(hosts []string) (string, error) {
+	return editDockerCredHelpers(func(helpers map[string]string) {
+		for _, h := range hosts {
+			helpers[h] = dockerCredHelperName
+		}
+	})
+}
+
+// removeDockerCredHelpers drops our entry for each host, leaving anyone else's
+// alone.
+//
+// An entry naming a helper that is not on PATH hijacks the registry: docker
+// consults it before `auths`, so it cannot be worked around by logging in with
+// a password, and it outlives the binary that wrote it
+// (fogpipe/cloud-workspace#1042). So the fallback below removes the entry
+// rather than leaving it beside the credential it just stored.
+func removeDockerCredHelpers(hosts []string) (string, error) {
+	return editDockerCredHelpers(func(helpers map[string]string) {
+		for _, h := range hosts {
+			if helpers[h] == dockerCredHelperName {
+				delete(helpers, h)
+			}
+		}
+	})
+}
+
+func editDockerCredHelpers(edit func(helpers map[string]string)) (string, error) {
 	path := dockerConfigPath()
 
 	cfg := map[string]json.RawMessage{}
@@ -100,9 +127,7 @@ func addDockerCredHelpers(hosts []string) (string, error) {
 	if raw, ok := cfg["credHelpers"]; ok {
 		_ = json.Unmarshal(raw, &helpers)
 	}
-	for _, h := range hosts {
-		helpers[h] = dockerCredHelperName
-	}
+	edit(helpers)
 	raw, _ := json.Marshal(helpers)
 	cfg["credHelpers"] = raw
 
@@ -117,21 +142,36 @@ func addDockerCredHelpers(hosts []string) (string, error) {
 }
 
 // ensureDockerCredentialHelper installs a `docker-credential-fpcloud` symlink to the
-// running fpcloud binary, in the binary's own directory (gcloud's model). Returns the
-// symlink path. If the directory isn't writable (e.g. a read-only /nix/store), the
-// caller falls back to printing a manual instruction.
+// running fpcloud binary, in the binary's own directory (gcloud's model), and returns
+// the path docker will exec.
+//
+// It reports success only once the link is on PATH under the name docker looks
+// it up by. Both halves are needed and only one used to be checked: an install
+// prefix fpcloud cannot write to fails the symlink, and one that is not on PATH
+// takes the symlink and is never found — and docker answers both with
+// `exec: "docker-credential-fpcloud": executable file not found in $PATH`, long
+// after the login that was supposed to configure it
+// (fogpipe/cloud-workspace#1042).
 func ensureDockerCredentialHelper() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
 	link := filepath.Join(filepath.Dir(exe), dockerCredHelperPrefix+dockerCredHelperName)
-	if target, err := os.Readlink(link); err == nil && target == exe {
-		return link, nil // already correct
+	if target, err := os.Readlink(link); err != nil || target != exe {
+		_ = os.Remove(link) // replace a stale link/file
+		if err := os.Symlink(exe, link); err != nil {
+			return link, err
+		}
 	}
-	_ = os.Remove(link) // replace a stale link/file
-	if err := os.Symlink(exe, link); err != nil {
-		return link, err
+	found, err := exec.LookPath(dockerCredHelperPrefix + dockerCredHelperName)
+	if err != nil {
+		return link, fmt.Errorf("installed %s, which is not on PATH: %w", link, err)
+	}
+	if resolved, err := filepath.EvalSymlinks(found); err == nil {
+		if want, err := filepath.EvalSymlinks(link); err == nil && resolved != want {
+			return link, fmt.Errorf("installed %s, but %s on PATH resolves to %s", link, found, resolved)
+		}
 	}
 	return link, nil
 }

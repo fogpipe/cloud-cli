@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -68,13 +71,15 @@ var registryLoginCmd = &cobra.Command{
 	Use:   "login [REGISTRY...]",
 	Short: "Let Docker push to " + registryHost + " as you",
 	Long: "Configure Docker to authenticate to the fpcloud container registry with your\n" +
-		"fpcloud identity. Registers fpcloud as a Docker credential helper (a `credHelpers`\n" +
-		"entry in ~/.docker/config.json plus a `docker-credential-fpcloud` link beside the\n" +
-		"binary), so every `docker push`/`pull` fetches a fresh short-lived token — no\n" +
-		"`docker login`, no static password on disk, nothing that expires an hour later.\n\n" +
-		"Defaults to " + registryHost + "; pass extra hosts to configure them too.\n" +
-		"Where a helper cannot be installed (a CI job running the CLI with `go run`), pipe\n" +
-		"`fpcloud registry get-login-password` into `docker login --password-stdin` instead.",
+		"fpcloud identity.\n\n" +
+		"Where fpcloud can install its credential helper — a `docker-credential-fpcloud`\n" +
+		"link beside the binary, plus a `credHelpers` entry in ~/.docker/config.json —\n" +
+		"every `docker push`/`pull` fetches a fresh short-lived token, so nothing expires\n" +
+		"and no password is written to disk. Where it cannot (a package-managed install\n" +
+		"on a read-only prefix: nix, homebrew, /usr/local/bin without sudo), this stores a\n" +
+		"token with `docker login` instead — which works the same way and expires, so run\n" +
+		"it again when a push is refused.\n\n" +
+		"Defaults to " + registryHost + "; pass extra hosts to configure them too.",
 	Example: "  fpcloud registry login",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hosts := args
@@ -82,7 +87,18 @@ var registryLoginCmd = &cobra.Command{
 			hosts = []string{registryHost}
 		}
 
+		// The helper is installed BEFORE the config entry that names it
+		// (fogpipe/cloud-workspace#1042). Written the other way round, an
+		// install prefix fpcloud cannot write to left docker pointing at a
+		// helper that is not on PATH — and this command said so in a colour and
+		// exited 0, so the failure surfaced later as `docker push` reporting
+		// `error getting credentials - err: exit status 1`, which names neither
+		// the helper nor the login nor the prefix.
 		link, linkErr := ensureDockerCredentialHelper()
+		if linkErr != nil {
+			return loginWithStoredToken(hosts, linkErr)
+		}
+
 		cfgPath, err := addDockerCredHelpers(hosts)
 		if err != nil {
 			return err
@@ -94,21 +110,68 @@ var registryLoginCmd = &cobra.Command{
 			fmt.Println(mutedStyle.Render("    " + h))
 		}
 		fmt.Println(mutedStyle.Render("  Updated " + cfgPath))
-		if linkErr != nil {
-			exe, _ := os.Executable()
-			fmt.Println()
-			fmt.Println(lipgloss.NewStyle().Foreground(colorWarning).Render(
-				"  Could not install the docker-credential-fpcloud helper automatically:"))
-			fmt.Println(mutedStyle.Render("    " + linkErr.Error()))
-			fmt.Println(mutedStyle.Render("  Create it manually on your PATH (point it at the fpcloud binary), e.g.:"))
-			fmt.Println(mutedStyle.Render(fmt.Sprintf("    ln -s %q ~/.local/bin/%s%s", exe, dockerCredHelperPrefix, dockerCredHelperName)))
-		} else {
-			fmt.Println(mutedStyle.Render("  Helper: " + link))
-		}
+		fmt.Println(mutedStyle.Render("  Helper: " + link))
 		fmt.Println()
 		fmt.Println(mutedStyle.Render("  Now: docker push " + registryHost + "/<org>/<project>/<app>:<tag>"))
 		return nil
 	},
+}
+
+// loginWithStoredToken configures docker the way `aws ecr get-login-password`
+// does: it stores a token under `auths` instead of registering a helper.
+//
+// This is the path for every install prefix fpcloud cannot write into, which is
+// most package-managed ones — a nix store path is read-only, and so is a
+// homebrew cellar or a /usr/local/bin nobody has sudo for. It is a real
+// configuration and not a fallback that half-works: docker pushes with it, and
+// the only thing lost is the refresh, so the token expires with the credential
+// it was minted from.
+//
+// The stale `credHelpers` entry is removed first. Docker consults a helper
+// before `auths`, so an entry left behind by an earlier login goes on hijacking
+// the registry however many times a password is stored, and nothing in the
+// resulting error names it.
+func loginWithStoredToken(hosts []string, linkErr error) error {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("cannot install the docker-credential-fpcloud helper (%w), and docker is not on PATH to store a token instead — on a machine with neither, pipe `fpcloud registry get-login-password` into whatever logs your builder in", linkErr)
+	}
+	username, password, err := fetchRegistryCreds()
+	if err != nil {
+		return err
+	}
+	cfgPath, err := removeDockerCredHelpers(hosts)
+	if err != nil {
+		return err
+	}
+	for _, h := range hosts {
+		login := exec.Command("docker", "login", "--username", username, "--password-stdin", h)
+		login.Stdin = strings.NewReader(password)
+		// Combined, because docker writes "Login Succeeded" to stdout and the
+		// reason it did not to stderr, and a refusal that arrives with neither
+		// is the failure this command exists to stop reproducing.
+		out, err := login.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("docker login %s: %w: %s", h, err, bytes.TrimSpace(out))
+		}
+		if len(bytes.TrimSpace(out)) > 0 {
+			fmt.Println(mutedStyle.Render("  " + string(bytes.TrimSpace(out))))
+		}
+	}
+
+	ok := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓")
+	fmt.Println(ok + " Docker logged in to:")
+	for _, h := range hosts {
+		fmt.Println(mutedStyle.Render("    " + h))
+	}
+	fmt.Println(mutedStyle.Render("  Updated " + cfgPath))
+	fmt.Println()
+	fmt.Println(mutedStyle.Render("  fpcloud is not the credential helper docker would find for this registry:"))
+	fmt.Println(mutedStyle.Render("    " + linkErr.Error()))
+	fmt.Println(mutedStyle.Render("  So this is a stored token rather than one fetched per push. It expires —"))
+	fmt.Println(mutedStyle.Render("  run `fpcloud registry login` again when a push is refused."))
+	fmt.Println()
+	fmt.Println(mutedStyle.Render("  Now: docker push " + registryHost + "/<org>/<project>/<app>:<tag>"))
+	return nil
 }
 
 var registryReposCmd = &cobra.Command{

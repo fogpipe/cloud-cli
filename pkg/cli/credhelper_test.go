@@ -66,3 +66,51 @@ func TestAddDockerCredHelpersPreservesExisting(t *testing.T) {
 		t.Errorf("registry helper = %q, want %q", helpers[registryHost], dockerCredHelperName)
 	}
 }
+
+// A `credHelpers` entry naming a helper that is not installed hijacks the
+// registry: docker consults a helper before `auths`, so storing a token beside
+// the entry changes nothing and the push goes on failing with an error that
+// names neither (fogpipe/cloud-workspace#1042). The stored-token path removes
+// the entry for that reason, and only ours.
+func TestRemoveDockerCredHelpersDropsOnlyOurs(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".docker")
+	_ = os.MkdirAll(cfgDir, 0o755)
+	path := filepath.Join(cfgDir, "config.json")
+	_ = os.WriteFile(path, []byte(`{"auths":{"x":{}},"credHelpers":{"other.io":"osxkeychain","`+registryHost+`":"`+dockerCredHelperName+`"}}`), 0o600)
+	t.Setenv("DOCKER_CONFIG", cfgDir)
+
+	if _, err := removeDockerCredHelpers([]string{registryHost}); err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg map[string]json.RawMessage
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg["auths"]; !ok {
+		t.Error("auths field was dropped — the token this path just stored lives there")
+	}
+	var helpers map[string]string
+	_ = json.Unmarshal(cfg["credHelpers"], &helpers)
+	if _, ok := helpers[registryHost]; ok {
+		t.Errorf("our entry survived: %v", helpers)
+	}
+	if helpers["other.io"] != "osxkeychain" {
+		t.Errorf("someone else's entry was dropped: %v", helpers)
+	}
+}
+
+// Installing the link is half the job; docker finds it by name on PATH. A
+// prefix that takes the symlink and is not on PATH answers `executable file not
+// found in $PATH` at the next push, which is the same failure as a prefix that
+// refused the symlink — so both have to be an error here rather than a success
+// this command reports in a colour.
+func TestEnsureDockerCredentialHelperRefusesAPrefixOffPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	link, err := ensureDockerCredentialHelper()
+	if err == nil {
+		t.Fatalf("installed %s and reported success, with nothing on PATH to find it by", link)
+	}
+}
