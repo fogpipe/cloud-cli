@@ -54,7 +54,7 @@ buildGoModule (finalAttrs: {
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/fogpipe/cloud-cli/pkg/cli.version=${finalAttrs.version}"
+    "-X github.com/fogpipe/cloud-cli/pkg/cli.version=v${finalAttrs.version}"
   ];
 
   meta = {
