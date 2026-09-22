@@ -2389,7 +2389,8 @@ type Template struct {
 	Secrets         []string          `json:"secrets"`
 	Inputs          []TemplateInput   `json:"inputs"`
 	Needs           TemplateNeeds     `json:"needs"`
-	Notes           string            `json:"notes"` // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
+	Reserved        map[string]string `json:"reserved"` // what the deployment holds while it runs, per hour, by metered resource type in that type's billing unit (cores, GiB): the quantity billed for every hour it exists; bucket and backup storage are billed by use and absent
+	Notes           string            `json:"notes"`    // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
 }
 
 // TemplateUpstream is the source image a template's mirror was copied from,
@@ -2423,11 +2424,17 @@ type TemplateNeeds struct {
 	Bucket   *TemplateBucket   `json:"bucket,omitempty"`
 }
 
-// TemplateDatabase is the managed Postgres a template needs.
+// TemplateDatabase is the managed Postgres a template needs, and the size it
+// is created at: CPU, Memory and Storage are per instance, and every managed
+// database runs Instances of them.
 type TemplateDatabase struct {
 	Engine     string   `json:"engine"`
 	Version    string   `json:"version"`
 	Extensions []string `json:"extensions"`
+	CPU        string   `json:"cpu"`
+	Memory     string   `json:"memory"`
+	Storage    string   `json:"storage"`
+	Instances  int      `json:"instances"`
 }
 
 // TemplateBucket is the bucket a template needs.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -41,11 +42,19 @@ var templateListCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(templates)
 		}
+		book, prices := templateRates(cmd, c)
 		rows := make([][]string, 0, len(templates))
 		for _, t := range templates {
-			rows = append(rows, []string{t.Name, t.Version, templateNeeds(t), t.Summary})
+			cost, ok := monthlyCost(t.Reserved, prices)
+			if !ok {
+				cost = "—"
+			}
+			rows = append(rows, []string{t.Name, t.Version, templateNeeds(t), cost, t.Summary})
 		}
-		renderTable([]string{"NAME", "VERSION", "CREATES", "SUMMARY"}, rows)
+		renderTable([]string{"NAME", "VERSION", "CREATES", "PER MONTH", "SUMMARY"}, rows)
+		if book != "" {
+			fmt.Println(mutedStyle.Render("  Per month at the " + book + " rates, always on; bucket and backup storage are billed by use. Rates: fpcloud billing prices"))
+		}
 		return nil
 	},
 }
@@ -71,7 +80,15 @@ var templateGetCmd = &cobra.Command{
 		fmt.Printf("Upstream:  %s\n", t.Homepage)
 		fmt.Printf("Image:     %s\n", t.Image)
 		fmt.Printf("Size:      %s cpu, %s memory\n", t.Resources.CPU, t.Resources.Memory)
+		if db := t.Needs.Database; db != nil {
+			fmt.Printf("Database:  %s %s, %d instances of %s cpu, %s memory, %s storage\n", db.Engine, db.Version, db.Instances, db.CPU, db.Memory, db.Storage)
+		}
 		fmt.Printf("Creates:   %s\n", templateNeeds(*t))
+		if book, prices := templateRates(cmd, c); book != "" {
+			if cost, ok := monthlyCost(t.Reserved, prices); ok {
+				fmt.Printf("Per month: %s at the %s rates, always on; bucket and backup storage are billed by use\n", cost, book)
+			}
+		}
 		if len(t.Inputs) > 0 {
 			fmt.Println("\nInputs (--input KEY=VALUE):")
 			for _, in := range t.Inputs {
@@ -167,6 +184,55 @@ func templateNeeds(t client.Template) string {
 	}
 	sort.Strings(parts[1:])
 	return strings.Join(parts, " + ")
+}
+
+// hoursPerMonth is the month the price book is written against (365 × 24 / 12).
+const hoursPerMonth = 730
+
+// templateRates is the rate card a template is costed against: the org's own
+// book, or the published list for a caller with none. An unreadable card is
+// no book, so no cost is printed rather than a wrong one.
+func templateRates(cmd *cobra.Command, c *client.Client) (string, []*client.Price) {
+	if orgID, err := resolveOrgID(cmd); err == nil {
+		own, err := c.OrgPrices(cmd.Context(), orgID)
+		if err != nil {
+			return "", nil
+		}
+		return own.PriceBook, own.Prices
+	}
+	prices, err := c.ListPrices(cmd.Context())
+	if err != nil {
+		return "", nil
+	}
+	return "list (published)", prices
+}
+
+// monthlyCost is what a template's reservation costs for a month at the given
+// rates. A resource type with no rate, or rates in two currencies, is no
+// answer: pricing it at zero would read as free.
+func monthlyCost(reserved map[string]string, prices []*client.Price) (string, bool) {
+	rates := make(map[string]*client.Price, len(prices))
+	for _, p := range prices {
+		rates[p.ResourceType] = p
+	}
+	total, currency := 0.0, ""
+	for resourceType, quantity := range reserved {
+		p, ok := rates[resourceType]
+		if !ok || (currency != "" && p.Currency != currency) {
+			return "", false
+		}
+		q, qerr := strconv.ParseFloat(quantity, 64)
+		r, rerr := strconv.ParseFloat(p.UnitPrice, 64)
+		if qerr != nil || rerr != nil {
+			return "", false
+		}
+		total += q * r * hoursPerMonth
+		currency = p.Currency
+	}
+	if currency == "" {
+		return "", false
+	}
+	return fmt.Sprintf("%.2f %s", total, currency), true
 }
 
 func init() {
