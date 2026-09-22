@@ -68,8 +68,13 @@ what is in it.`,
 				fmt.Println()
 			}
 			fmt.Println(titleStyle.Render(r.Version) + mutedStyle.Render("  "+r.ReleasedAt.Format("2006-01-02")))
-			for _, line := range strings.Split(strings.TrimRight(r.Notes, "\n"), "\n") {
-				fmt.Println("  " + line)
+			// A release with no notes is a release that changed nothing you
+			// can see, and prints as its version and date alone
+			// (fogpipe/cloud-workspace#1052).
+			if notes := strings.TrimRight(r.Notes, "\n"); notes != "" {
+				for _, line := range strings.Split(notes, "\n") {
+					fmt.Println("  " + line)
+				}
 			}
 		}
 		return nil
