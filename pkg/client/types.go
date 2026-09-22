@@ -132,8 +132,13 @@ type Release struct {
 }
 
 // Changelog is what changed in each release, newest first.
+//
+// HasMore says the platform holds releases older than the last one here, so a
+// surface offering "show more" knows whether to offer it — a page that lands on
+// the last release is the same length as any other.
 type Changelog struct {
 	Releases []Release `json:"releases"`
+	HasMore  bool      `json:"has_more"`
 }
 
 // OrgPriceList is the rates one org's own invoices will use, and the book they
