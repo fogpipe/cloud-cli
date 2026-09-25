@@ -2389,8 +2389,10 @@ type Template struct {
 	Secrets         []string          `json:"secrets"`
 	Inputs          []TemplateInput   `json:"inputs"`
 	Needs           TemplateNeeds     `json:"needs"`
-	Reserved        map[string]string `json:"reserved"` // what the deployment holds while it runs, per hour, by metered resource type in that type's billing unit (cores, GiB): the quantity billed for every hour it exists; bucket and backup storage are billed by use and absent
-	Notes           string            `json:"notes"`    // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
+	Reserved        map[string]string `json:"reserved"`              // what the deployment holds while it runs, per hour, by metered resource type in that type's billing unit (cores, GiB): the quantity billed for every hour it exists; bucket and backup storage are billed by use and absent
+	RunAsUser       *int64            `json:"run_as_user,omitempty"` // the uid the app is created to run as, pinned non-root, where the image itself declares no user; absent when the image's own user is what runs
+	Startup         *ProbeSpec        `json:"startup,omitempty"`     // the startup probe the app is created with, where its first boot outlasts the shared health check; absent when the shared check decides
+	Notes           string            `json:"notes"`                 // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
 }
 
 // TemplateUpstream is the source image a template's mirror was copied from,

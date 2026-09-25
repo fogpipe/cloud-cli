@@ -80,6 +80,16 @@ var templateGetCmd = &cobra.Command{
 		fmt.Printf("Upstream:  %s\n", t.Homepage)
 		fmt.Printf("Image:     %s\n", t.Image)
 		fmt.Printf("Size:      %s cpu, %s memory\n", t.Resources.CPU, t.Resources.Memory)
+		if t.RunAsUser != nil {
+			fmt.Printf("Runs as:   uid %d, never root\n", *t.RunAsUser)
+		}
+		if s := t.Startup; s != nil && s.FailureThreshold > 0 {
+			period := s.PeriodSeconds
+			if period == 0 {
+				period = 10
+			}
+			fmt.Printf("Startup:   up to %ds for the first boot before the health check counts\n", s.FailureThreshold*period)
+		}
 		if db := t.Needs.Database; db != nil {
 			fmt.Printf("Database:  %s %s, %d instances of %s cpu, %s memory, %s storage\n", db.Engine, db.Version, db.Instances, db.CPU, db.Memory, db.Storage)
 		}
