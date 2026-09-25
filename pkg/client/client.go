@@ -1310,12 +1310,15 @@ func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, e
 	return &app, nil
 }
 
-// SetAppDatabase binds the app's unprefixed DATABASE_URL to one of its project's
-// databases by name or id (#544). An empty ref clears the binding: DATABASE_URL
-// then falls back to the project's sole database, or is omitted entirely when the
-// project has several.
-func (c *Client) SetAppDatabase(ctx context.Context, id, databaseRef string) (*App, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/apps/"+id, UpdateAppRequest{Database: &databaseRef})
+// SetSecretMounts replaces the whole map of an app's secret mounts: container
+// file path -> project secret name (#1069). An empty map unmounts everything.
+// The mount is the bind — mounting a database's owner secret is how an app is
+// pointed at that database.
+func (c *Client) SetSecretMounts(ctx context.Context, id string, mounts map[string]string) (*App, error) {
+	if mounts == nil {
+		mounts = map[string]string{}
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/secret-mounts", UpdateSecretMountsRequest{SecretMounts: mounts})
 	if err != nil {
 		return nil, err
 	}
@@ -1324,6 +1327,71 @@ func (c *Client) SetAppDatabase(ctx context.Context, id, databaseRef string) (*A
 		return nil, err
 	}
 	return &app, nil
+}
+
+// CreateProjectSecret creates a named secret in the project (#1069). The value
+// never comes back from any read.
+func (c *Client) CreateProjectSecret(ctx context.Context, projectID, name, value string) (*ProjectSecret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", CreateSecretRequest{Name: name, Value: value})
+	if err != nil {
+		return nil, err
+	}
+	var sec ProjectSecret
+	if err := c.do(httpReq, &sec); err != nil {
+		return nil, err
+	}
+	return &sec, nil
+}
+
+// ListProjectSecrets lists the project's secrets — names and who mounts them,
+// never values.
+func (c *Client) ListProjectSecrets(ctx context.Context, projectID string) ([]*ProjectSecret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/secrets", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []*ProjectSecret
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetProjectSecret reads one secret's metadata by id.
+func (c *Client) GetProjectSecret(ctx context.Context, id string) (*ProjectSecret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/secrets/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	var sec ProjectSecret
+	if err := c.do(httpReq, &sec); err != nil {
+		return nil, err
+	}
+	return &sec, nil
+}
+
+// UpdateProjectSecret replaces a secret's value and rolls every app mounting
+// it onto the new one. A database's owner secret refuses this; rotate the
+// database instead.
+func (c *Client) UpdateProjectSecret(ctx context.Context, id, value string) (*ProjectSecret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/secrets/"+id, UpdateSecretRequest{Value: value})
+	if err != nil {
+		return nil, err
+	}
+	var sec ProjectSecret
+	if err := c.do(httpReq, &sec); err != nil {
+		return nil, err
+	}
+	return &sec, nil
+}
+
+// DeleteProjectSecret removes a secret nothing mounts.
+func (c *Client) DeleteProjectSecret(ctx context.Context, id string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/secrets/"+id, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
 }
 
 // SwitchMode migrates an app between hosting modes ("always-on"/"serverless").
@@ -2461,11 +2529,10 @@ func (c *Client) RemoveDomain(ctx context.Context, appID string, domain string) 
 }
 
 // SetConfig sets a config value for an app.
-func (c *Client) SetConfig(ctx context.Context, appID, key, value string, isSecret bool) (*AppConfig, error) {
+func (c *Client) SetConfig(ctx context.Context, appID, key, value string) (*AppConfig, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+appID+"/config", SetConfigRequest{
-		Key:      key,
-		Value:    value,
-		IsSecret: isSecret,
+		Key:   key,
+		Value: value,
 	})
 	if err != nil {
 		return nil, err

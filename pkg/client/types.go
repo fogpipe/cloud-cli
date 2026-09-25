@@ -299,43 +299,43 @@ type AppEvent struct {
 
 // App represents a deployed application.
 type App struct {
-	ID                  string           `json:"id"`
-	ProjectID           string           `json:"project_id"`
-	Name                string           `json:"name"`
-	DisplayName         string           `json:"display_name"`
-	URLSlug             string           `json:"url_slug"`              // optional vanity host override (ADR-040); empty = derived host
-	DatabaseID          string           `json:"database_id,omitempty"` // database DATABASE_URL points at (#544); empty = the project's sole database, or none when it has several
-	Image               string           `json:"image"`
-	Release             string           `json:"release,omitempty"`         // user-named release currently live (#471)
-	Template            string           `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
-	TemplateUpdate      string           `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
-	Command             []string         `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
-	Args                []string         `json:"args,omitempty"`            // container arguments (empty = image CMD)
-	ReleaseCommand      []string         `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
-	Status              string           `json:"status"`
-	URL                 string           `json:"url"`
-	Domains             []string         `json:"domains"`
-	Replicas            int              `json:"replicas"`
-	MinScale            int32            `json:"min_scale"`
-	MaxScale            int32            `json:"max_scale"`
-	CPULimit            string           `json:"cpu_limit"`
-	MemoryLimit         string           `json:"memory_limit"`
-	Ingress             string           `json:"ingress"`
-	Routes              []Route          `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode                string           `json:"mode"`
-	Type                string           `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port                int              `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
-	KubeServiceAccount  string           `json:"kube_service_account,omitempty"`
-	ServiceAccountID    string           `json:"service_account_id,omitempty"`
-	HealthCheckPath     string           `json:"health_check_path"`
-	HealthCheckTimeout  int              `json:"health_check_timeout"`
-	HealthCheckInterval int              `json:"health_check_interval"`
-	HealthCheckRetries  int              `json:"health_check_retries"`
-	Probes              *ProbeOverrides  `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
-	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
-	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
-	CreatedAt           time.Time        `json:"created_at"`
-	UpdatedAt           time.Time        `json:"updated_at"`
+	ID                  string            `json:"id"`
+	ProjectID           string            `json:"project_id"`
+	Name                string            `json:"name"`
+	DisplayName         string            `json:"display_name"`
+	URLSlug             string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
+	SecretMounts        map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
+	Image               string            `json:"image"`
+	Release             string            `json:"release,omitempty"`         // user-named release currently live (#471)
+	Template            string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
+	TemplateUpdate      string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
+	Command             []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
+	Args                []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
+	ReleaseCommand      []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
+	Status              string            `json:"status"`
+	URL                 string            `json:"url"`
+	Domains             []string          `json:"domains"`
+	Replicas            int               `json:"replicas"`
+	MinScale            int32             `json:"min_scale"`
+	MaxScale            int32             `json:"max_scale"`
+	CPULimit            string            `json:"cpu_limit"`
+	MemoryLimit         string            `json:"memory_limit"`
+	Ingress             string            `json:"ingress"`
+	Routes              []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode                string            `json:"mode"`
+	Type                string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port                int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
+	KubeServiceAccount  string            `json:"kube_service_account,omitempty"`
+	ServiceAccountID    string            `json:"service_account_id,omitempty"`
+	HealthCheckPath     string            `json:"health_check_path"`
+	HealthCheckTimeout  int               `json:"health_check_timeout"`
+	HealthCheckInterval int               `json:"health_check_interval"`
+	HealthCheckRetries  int               `json:"health_check_retries"`
+	Probes              *ProbeOverrides   `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	VolumeMounts        []VolumeMount     `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
+	SecurityContext     *SecurityContext  `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
 }
 
 // ProbeOverrides lets liveness, readiness, and startup diverge from the shared
@@ -408,14 +408,14 @@ type CreateAppRequest struct {
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.
 	Type string `json:"type,omitempty"`
-	// EnvVars seeds the app's config store with plain (non-secret) values —
-	// shorthand for a SetConfig per key. Use SetConfig to change them afterwards;
-	// there is no second env layer on the app itself.
+	// EnvVars seeds the app's config store — shorthand for a SetConfig per key.
+	// Env is plain by definition (#1069): a secret is a project secret, mounted
+	// as a file through SecretMounts.
 	EnvVars map[string]string `json:"env_vars,omitempty"`
-	// Secrets seeds the same config store with secret values, so an app whose
-	// release command reads a secret is created with it already set (ADR-112).
-	// A key may appear in EnvVars or Secrets, never both.
-	Secrets             map[string]string `json:"secrets,omitempty"`
+	// SecretMounts maps a container file path to a project secret mounted
+	// there, written before the first rollout is gated on the release command,
+	// so a migration that reads one is created with it mounted (ADR-112).
+	SecretMounts        map[string]string `json:"secret_mounts,omitempty"`
 	ServiceAccount      string            `json:"service_account,omitempty"` // SA email or ID
 	HealthCheckPath     string            `json:"health_check_path,omitempty"`
 	HealthCheckTimeout  int               `json:"health_check_timeout,omitempty"`
@@ -507,9 +507,6 @@ type SwitchModeRequest struct {
 type UpdateAppRequest struct {
 	DisplayName string  `json:"display_name,omitempty"`
 	URLSlug     *string `json:"url_slug,omitempty"`
-	// Database binds the unprefixed DATABASE_URL to one of the project's
-	// databases (#544); a pointer to "" clears it back to the default.
-	Database *string `json:"database,omitempty"`
 }
 
 // UpdateCommandRequest is the request body for changing an app's container
@@ -602,9 +599,8 @@ type Database struct {
 	// Host/Port/Username are the database's address on the cluster network, as
 	// recorded at provisioning. Password is returned ONLY on create (and on
 	// restore) and is the password the database has — the platform provisions
-	// it and keeps no copy (fogpipe/cloud-workspace#265), so a later read has
-	// none; the live credential is the injected DATABASE_URL or
-	// `fpcloud db connect`.
+	// it and keeps no copy on the row (fogpipe/cloud-workspace#265); the live
+	// credential is the owner secret (Secret below) or `fpcloud db connect`.
 	Host string `json:"host"`
 	// ReadHost is the same database's REPLICA endpoint (CNPG's `-ro` Service),
 	// on the same Port and with the same credential — a replica is not a second
@@ -652,9 +648,16 @@ type Database struct {
 	// Nil when the cluster cannot be asked, which is NOT the same as zero: zero
 	// is a replica that is caught up, and a platform that cannot measure must
 	// not render as one that measured nothing wrong.
-	ReplicationLagSeconds *float64  `json:"replication_lag_seconds,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ReplicationLagSeconds *float64 `json:"replication_lag_seconds,omitempty"`
+	// Secret names the project secret holding this database's owner connection
+	// URL (#1069): created with the database, rewritten by rotate-password,
+	// deleted with it. Mount it on an app to hand the app the credential.
+	Secret string `json:"secret,omitempty"`
+	// MountedBy is the apps mounting that secret — the mount is the bind, so
+	// this is "which apps use this database".
+	MountedBy []string  `json:"mounted_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // DatabaseConnection is a database's live connection info (GET
@@ -1076,22 +1079,52 @@ type DomainVerification struct {
 	AcmeCNAMEValue string `json:"acme_cname_value,omitempty"`
 }
 
-// AppConfig represents an environment variable or secret for an application.
+// AppConfig represents one of an application's environment variables. Env is
+// plain by definition (#1069); secret material is a mounted project secret.
 type AppConfig struct {
 	ID        string    `json:"id"`
 	AppID     string    `json:"app_id"`
 	Key       string    `json:"key"`
 	Value     string    `json:"value"`
-	IsSecret  bool      `json:"is_secret"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SetConfigRequest is the request body for setting a config value.
 type SetConfigRequest struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	IsSecret bool   `json:"is_secret"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ProjectSecret is a named secret value scoped to a project (#1069). The value
+// is write-only: it goes in through create/update and reaches an app only as a
+// mounted file (App.SecretMounts). One owned by a database holds that
+// database's owner connection URL and is rotated with `db rotate-password`.
+type ProjectSecret struct {
+	ID              string    `json:"id"`
+	ProjectID       string    `json:"project_id"`
+	Name            string    `json:"name"`
+	OwnerDatabaseID string    `json:"owner_database_id,omitempty"`
+	MountedBy       []string  `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// CreateSecretRequest creates a named project secret.
+type CreateSecretRequest struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// UpdateSecretRequest replaces a secret's value; the name is fixed.
+type UpdateSecretRequest struct {
+	Value string `json:"value"`
+}
+
+// UpdateSecretMountsRequest replaces the whole map of an app's secret mounts:
+// container file path -> project secret name. An empty map unmounts everything.
+type UpdateSecretMountsRequest struct {
+	SecretMounts map[string]string `json:"secret_mounts"`
 }
 
 // Revision represents a Knative revision for an application.

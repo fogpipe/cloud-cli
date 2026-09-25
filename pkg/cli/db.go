@@ -105,6 +105,11 @@ var dbCreateCmd = &cobra.Command{
 		if len(db.Extensions) > 0 {
 			pairs = append(pairs, []string{"Extensions", strings.Join(db.Extensions, ", ")})
 		}
+		if db.Secret != "" {
+			// The owner credential's home: mount it on an app to hand the app
+			// this database (#1069).
+			pairs = append(pairs, []string{"Secret", db.Secret})
+		}
 		if addr := dbAddress(db); addr != "" {
 			pairs = append(pairs, []string{"Address", addr})
 		}
@@ -187,6 +192,8 @@ var dbGetCmd = &cobra.Command{
 			{"Read address", orDash(dbReadAddress(db))},
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 			{"Username", orDash(db.Username)},
+			{"Secret", orDash(db.Secret)},
+			{"Mounted by", orDash(strings.Join(db.MountedBy, ", "))},
 		}))
 		fmt.Println()
 		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))

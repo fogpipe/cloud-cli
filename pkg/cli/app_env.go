@@ -17,16 +17,16 @@ import (
 // (fogpipe/cloud-workspace#361).
 var appEnvCmd = &cobra.Command{
 	Use:   "env",
-	Short: "Manage an app's environment variables and secrets",
-	Long: `Set, list and remove the environment variables an app runs with. A value
-set with --secret is encrypted at rest and hidden from list. Every change
-rolls the app onto it.
+	Short: "Manage an app's environment variables",
+	Long: `Set, list and remove the environment variables an app runs with. Every
+change rolls the app onto it.
 
   fpcloud app env set web LOG_LEVEL=info
-  fpcloud app env set web STRIPE_KEY=sk_live_... --secret
   fpcloud app env list web
   fpcloud app env unset web LOG_LEVEL
 
+Env is plain: every value reads back in full. A credential belongs in a
+project secret, mounted as a file (` + "`fpcloud secret`" + `, ` + "`app update --mount-secret`" + `).
 Org-wide secret bundles mirrored into projects are ` + "`fpcloud secrets`" + `, a
 different thing.`,
 }
@@ -34,7 +34,7 @@ different thing.`,
 var appEnvSetCmd = &cobra.Command{
 	Use:   "set <app> KEY=VALUE",
 	Short: "Set an environment variable",
-	Long:  "Set an environment variable for an app and roll the app onto it. Use --secret to encrypt at rest.",
+	Long:  "Set an environment variable for an app and roll the app onto it.",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appRef := args[0]
@@ -46,7 +46,6 @@ var appEnvSetCmd = &cobra.Command{
 		key := parts[0]
 		value := parts[1]
 
-		isSecret, _ := cmd.Flags().GetBool("secret")
 		outputFormat := rootCmd.Flag("output").Value.String()
 
 		c := getClient()
@@ -57,7 +56,7 @@ var appEnvSetCmd = &cobra.Command{
 		var cfg interface{}
 		var setErr error
 		action := func() {
-			cfg, setErr = c.SetConfig(context.Background(), appID, key, value, isSecret)
+			cfg, setErr = c.SetConfig(context.Background(), appID, key, value)
 		}
 
 		if !isStructured(outputFormat) {
@@ -73,13 +72,9 @@ var appEnvSetCmd = &cobra.Command{
 			return renderData(cfg)
 		}
 
-		label := "Variable"
-		if isSecret {
-			label = "Secret"
-		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" %s %q set for app %s", label, key, appRef),
+				fmt.Sprintf(" Variable %q set for app %s", key, appRef),
 		))
 		return nil
 	},
@@ -105,15 +100,9 @@ var appEnvListCmd = &cobra.Command{
 
 		rows := make([][]string, len(configs))
 		for i, cfg := range configs {
-			secretLabel := ""
-			if cfg.IsSecret {
-				secretLabel = lipgloss.NewStyle().Foreground(colorWarning).Render("secret")
-			} else {
-				secretLabel = mutedStyle.Render("plain")
-			}
-			rows[i] = []string{cfg.Key, cfg.Value, secretLabel}
+			rows[i] = []string{cfg.Key, cfg.Value}
 		}
-		render([]string{"KEY", "VALUE", "TYPE"}, rows, configs)
+		render([]string{"KEY", "VALUE"}, rows, configs)
 		return nil
 	},
 }
@@ -148,7 +137,6 @@ var appEnvUnsetCmd = &cobra.Command{
 }
 
 func init() {
-	appEnvSetCmd.Flags().Bool("secret", false, "Encrypt the value at rest and hide it from list")
 	appEnvCmd.AddCommand(appEnvSetCmd, appEnvListCmd, appEnvUnsetCmd)
 	appCmd.AddCommand(appEnvCmd)
 }
