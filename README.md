@@ -32,7 +32,7 @@ Or add it to your flake:
 
 ```nix
 {
-  inputs.fpcloud.url = "github:fogpipe/cloud-cli";
+  inputs.fpcloud.url = "github:fogpipe/cloud-cli/release";
   # then, in your outputs, for a given system:
   #   fpcloud.packages.${system}.default
 }
@@ -52,7 +52,9 @@ Update through the channel you installed from:
 `fpcloud upgrade` replaces the binary in place with the version your control
 plane advertises, so the CLI tracks the API you talk to. It only works for the
 shell install: a Nix-installed fpcloud lives in the read-only store and can't
-replace itself, so `fpcloud upgrade` prints the commands above instead.
+replace itself, so `fpcloud upgrade` prints the commands above instead. It also
+shows no upgrade notice: the Nix channel moves on its own schedule, and
+`nix flake update` is the only way to follow it.
 
 ## Quickstart
 

@@ -57,12 +57,9 @@ var upgradeCmd = &cobra.Command{
 		"binary belongs to that manager, and upgrade prints its update command\n" +
 		"instead of replacing anything.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		exePath, err := os.Executable()
+		exePath, err := executable()
 		if err != nil {
 			return fmt.Errorf("locate current binary: %w", err)
-		}
-		if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
-			exePath = resolved
 		}
 
 		// Both checks read the RESOLVED path, so a symlinked install is caught
@@ -109,6 +106,22 @@ var upgradeCmd = &cobra.Command{
 		fmt.Printf("Upgraded fpcloud %s → %s (%s)\n", version, latest, exePath)
 		return nil
 	},
+}
+
+var executable = func() (string, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, nil
+	}
+	return path, nil
+}
+
+func installedByNix() bool {
+	path, err := executable()
+	return err == nil && strings.HasPrefix(path, nixStorePrefix)
 }
 
 func isUpToDate(current, latest string) bool {

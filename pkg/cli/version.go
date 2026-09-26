@@ -180,7 +180,7 @@ func latestVersion() (string, error) {
 // semver orders that below the tag it is built past — so the release it is ahead of
 // would read as an upgrade, and `fpcloud upgrade` would install older code.
 func warnIfOutdated() {
-	if !isReleaseBuild() {
+	if !isReleaseBuild() || installedByNix() {
 		return
 	}
 	latest, ok := noticeLatest()

@@ -60,3 +60,18 @@ func TestVersionFlagNoteIsSuppressible(t *testing.T) {
 		t.Errorf("got %q, want nothing", got)
 	}
 }
+
+func TestANixInstallIsNeverToldToUpgrade(t *testing.T) {
+	isolateState(t)
+	defer stubLatestRelease(t, "v0.190.1", nil)()
+	prevExe := executable
+	executable = func() (string, error) { return "/nix/store/abc-fpcloud-0.189.0/bin/fpcloud", nil }
+	defer func() { executable = prevExe }()
+	prev := version
+	version = "v0.189.0"
+	defer func() { version = prev }()
+
+	if got := stderrOf(t, noteLatestRelease); got != "" {
+		t.Errorf("got %q, want nothing", got)
+	}
+}
