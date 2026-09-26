@@ -147,7 +147,7 @@ With --app it is that app's own domains, with their routing.`,
 			if err != nil {
 				return err
 			}
-			status, _, err := c.ProjectStatus(context.Background(), project, "")
+			status, _, err := c.ProjectStatus(context.Background(), project, "", 0)
 			if err != nil {
 				return err
 			}

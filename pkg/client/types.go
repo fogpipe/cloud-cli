@@ -2198,7 +2198,12 @@ type AppStatus struct {
 	// Pods is the app's population by state: running, coming up, going away.
 	Pods *PodPhases `json:"pods,omitempty"`
 	// Config is how much configuration the app carries — counts, never values.
-	Config   *ConfigCount    `json:"config,omitempty"`
+	Config *ConfigCount `json:"config,omitempty"`
+	// Load is what the app's pods actually used over the window the caller
+	// asked for, beside the limit each pod is held to. Present only when the
+	// document was read with a load window; absent otherwise, and absent with
+	// "load" among Unchecked when the store could not answer.
+	Load     *AppLoad        `json:"load,omitempty"`
 	Problems []StatusProblem `json:"problems,omitempty"`
 }
 
@@ -2206,6 +2211,28 @@ type AppStatus struct {
 type ConfigCount struct {
 	Values  int `json:"values"`
 	Secrets int `json:"secrets"`
+}
+
+// AppLoad is an app's measured resource use over Window, per replica — the
+// limit is per pod, so the average and the peak are too.
+//
+// A nil axis is a measured nothing: no pod of the app produced a sample in the
+// window, which is what a serverless app scaled to zero looks like. It is not
+// the store failing to answer — that is reported as an unchecked "load", and
+// the whole Load is absent.
+type AppLoad struct {
+	Window string    `json:"window"`
+	CPU    *LoadAxis `json:"cpu,omitempty"`
+	Memory *LoadAxis `json:"memory,omitempty"`
+}
+
+// LoadAxis is one axis of an app's load: the average and the peak over the
+// window, and the limit the app declared. CPU is in millicores, memory in
+// bytes. Limit is zero when the app's declared limit could not be read.
+type LoadAxis struct {
+	Avg   int64 `json:"avg"`
+	Peak  int64 `json:"peak"`
+	Limit int64 `json:"limit,omitempty"`
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,

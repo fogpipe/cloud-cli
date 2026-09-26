@@ -29,13 +29,13 @@ func TestWatchPollRecoversWhenCredentialsBecomeValid(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, _, err := client.New(srv.URL, "stale-token").ProjectStatus(t.Context(), "p1", "")
+	_, _, err := client.New(srv.URL, "stale-token").ProjectStatus(t.Context(), "p1", "", 0)
 	require.Error(t, err)
 	assert.Contains(t, pollFailure(err), "fpcloud login",
 		"a 401 must tell the watcher what to do, since the view keeps retrying rather than exiting")
 
 	valid.Store(true)
-	status, _, err := client.New(srv.URL, "fresh-token").ProjectStatus(t.Context(), "p1", "")
+	status, _, err := client.New(srv.URL, "fresh-token").ProjectStatus(t.Context(), "p1", "", 0)
 	require.NoError(t, err, "a rebuilt client must pick the new credentials up")
 	assert.Equal(t, "demo", status.Project.Name)
 }

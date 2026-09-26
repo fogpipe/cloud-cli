@@ -39,6 +39,14 @@ whose certificate never issued, backups that stopped producing restore points.
                                          following fpcloud switch; a named
                                          project stays pinned
   fpcloud project status -o json         the whole document, for a script
+  fpcloud project status --load          what each app actually used over the
+                                         last hour, against its limit
+  fpcloud project status --load --window 6h
+
+--load reads each app's pods from the metrics store and prints, under the app,
+its cpu and memory over the window: the average and the peak per replica, and
+the limit the app declared. A serverless app with no pod in the window reads
+idle. Without --load the document carries no load and no metrics read is made.
 
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
@@ -60,10 +68,17 @@ healthy if it also says that everything was looked at.`,
 		if interval < minWatchInterval {
 			interval = minWatchInterval
 		}
+		load, _ := cmd.Flags().GetBool("load")
+		window, _ := cmd.Flags().GetDuration("window")
+		if !load {
+			window = 0
+		} else if window <= 0 {
+			return fmt.Errorf("--window must be a positive duration")
+		}
 
 		c := getClient()
 		if !watch {
-			status, _, err := c.ProjectStatus(context.Background(), project, "")
+			status, _, err := c.ProjectStatus(context.Background(), project, "", window)
 			if err != nil {
 				return err
 			}
@@ -76,7 +91,7 @@ healthy if it also says that everything was looked at.`,
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return fmt.Errorf("--watch renders a live view; it cannot be combined with -o %s", rootCmd.Flag("output").Value.String())
 		}
-		return watchProjectStatus(projectSource(args), interval)
+		return watchProjectStatus(projectSource(args), interval, window)
 	},
 }
 
@@ -102,7 +117,7 @@ healthy if it also says that everything was looked at.`,
 // one to disk — could not reach it. Rebuilding per tick both picks up that new
 // token and lets `currentIDToken` do the refresh it already knows how to do,
 // silently, from the refresh token.
-func watchProjectStatus(source func() (string, error), interval time.Duration) error {
+func watchProjectStatus(source func() (string, error), interval, load time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -126,7 +141,7 @@ func watchProjectStatus(source func() (string, error), interval time.Duration) e
 			watched, prev, etag = project, nil, ""
 		}
 		if err == nil {
-			status, newETag, err = getClient().ProjectStatus(ctx, watched, etag)
+			status, newETag, err = getClient().ProjectStatus(ctx, watched, etag, load)
 		}
 		switch {
 		case ctx.Err() != nil:
@@ -172,9 +187,12 @@ func projectSource(args []string) func() (string, error) {
 
 // statusRow is one resource line, the problems hanging under it, and any
 // in-progress activity. Hints are not problems and must not read as one — a
-// rollout is the platform working, not the platform broken.
+// rollout is the platform working, not the platform broken. Details are
+// measurements the row carries — neither activity nor a problem — and render
+// as plain continuation lines.
 type statusRow struct {
 	cells   []string
+	details []string
 	notes   []string
 	hints   []string
 	changed bool
@@ -275,9 +293,10 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 			hints = append(hints, moving)
 		}
 		appRows = append(appRows, statusRow{
-			cells: []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
-			notes: problemNotes(a.Problems),
-			hints: hints,
+			cells:   []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
+			details: loadLines(a, s.Unchecked),
+			notes:   problemNotes(a.Problems),
+			hints:   hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
 			// its every step counts as a change — including the step from
 			// rolling to settled, which no other field moves for.
@@ -432,6 +451,9 @@ func renderStatusSection(title string, columns []string, rows []statusRow) strin
 			marker = lipgloss.NewStyle().Foreground(colorInfo).Render("› ")
 		}
 		b.WriteString(marker + pad(r.cells) + "\n")
+		for _, detail := range r.details {
+			b.WriteString(gutter + strings.Repeat(" ", widths[0]) + "  " + mutedStyle.Render(detail) + "\n")
+		}
 		for _, hint := range r.hints {
 			b.WriteString("  " + lipgloss.NewStyle().Foreground(colorInfo).Render("  └ "+hint) + "\n")
 		}
@@ -553,6 +575,8 @@ func humanAge(t time.Time) string {
 func init() {
 	projectStatusCmd.Flags().BoolP("watch", "w", false, "Redraw the view as the project changes")
 	projectStatusCmd.Flags().Duration("interval", 2*time.Second, "How often --watch polls (minimum 1s)")
+	projectStatusCmd.Flags().Bool("load", false, "Show each app's measured cpu and memory against its limit")
+	projectStatusCmd.Flags().Duration("window", time.Hour, "How far back --load measures")
 }
 
 // runningImage is what the cluster actually reports, falling back to what the

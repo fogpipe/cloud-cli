@@ -3241,8 +3241,16 @@ func (c *Client) DisconnectGitHub(ctx context.Context, projectID string) error {
 // a project pays for a document only when there is a new one. A nil status with
 // a nil error therefore means "what you already have is still current" and is
 // never an empty project.
-func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch string) (*ProjectStatus, string, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/status", nil)
+//
+// A non-zero load asks for each app's measured use over that window
+// (AppStatus.Load); zero leaves the document as it is, so a watcher never pays
+// for a metrics read it did not ask for.
+func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch string, load time.Duration) (*ProjectStatus, string, error) {
+	path := "/api/v1/projects/" + projectID + "/status"
+	if load > 0 {
+		path += "?load=" + url.QueryEscape(load.String())
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, "", err
 	}
