@@ -103,7 +103,7 @@ healthy if it also says that everything was looked at.`,
 			if isStructured(rootCmd.Flag("output").Value.String()) {
 				return renderData(status)
 			}
-			fmt.Print(renderProjectStatus(status, nil))
+			fmt.Print(renderProjectStatus(status, nil, query.Suggest))
 			return nil
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
@@ -170,7 +170,7 @@ func watchProjectStatus(source func() (string, error), interval time.Duration, l
 			// someone opened it for.
 			fmt.Print("\x1b[H\x1b[2J" + errorBox.Render(pollFailure(err)) + "\n")
 		case status != nil:
-			fmt.Print("\x1b[H\x1b[2J" + renderProjectStatus(status, prev) +
+			fmt.Print("\x1b[H\x1b[2J" + renderProjectStatus(status, prev, load.Suggest) +
 				mutedStyle.Render(fmt.Sprintf("\nwatching every %s — ctrl-c to stop\n", interval)))
 			prev, etag = status, newETag
 		}
@@ -275,7 +275,7 @@ func registryAge(p client.StatusProject) string {
 // renderProjectStatus renders the whole document. prev, when non-nil, is the
 // previous observation: rows that differ from it are marked, so a watcher sees
 // what moved rather than re-reading the whole screen.
-func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) string {
+func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, suggestions bool) string {
 	var b strings.Builder
 
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(s.Project.Name)
@@ -312,7 +312,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		}
 		appRows = append(appRows, statusRow{
 			cells:   []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
-			details: loadLines(a.Load, "app scale "+a.Name, s.Unchecked),
+			details: loadLines(a.Load, "app scale "+a.Name, suggestions, s.Unchecked),
 			notes:   problemNotes(a.Problems),
 			hints:   hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
@@ -340,7 +340,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		}
 		dbRows = append(dbRows, statusRow{
 			cells:   []string{d.Name, engine, renderStatus(d.Status), pooler},
-			details: loadLines(d.Load, "db update "+d.Name, s.Unchecked),
+			details: loadLines(d.Load, "db update "+d.Name, suggestions, s.Unchecked),
 			notes:   problemNotes(d.Problems),
 		})
 	}

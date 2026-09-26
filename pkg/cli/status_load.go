@@ -18,7 +18,7 @@ import (
 // an app without one under --load is the store not answering, which the
 // unchecked list names — that is said on the line rather than left as a row
 // that merely lacks two lines.
-func loadLines(l *client.Load, sizing string, unchecked []client.UncheckedStatus) []string {
+func loadLines(l *client.Load, sizing string, suggestions bool, unchecked []client.UncheckedStatus) []string {
 	if l == nil {
 		for _, u := range unchecked {
 			if u.Check == "load" {
@@ -58,22 +58,29 @@ func loadLines(l *client.Load, sizing string, unchecked []client.UncheckedStatus
 	if note := loadNote(l); note != "" {
 		lines[0] += "   (" + note + ")"
 	}
-	if l.Suggest != nil {
+	if suggestions {
 		lines = append(lines, suggestLine(l, sizing))
 	}
 	return lines
 }
 
 // suggestLine is the limit the reading argues for, as the command that sets
-// it. Only the API decides whether there is one: the whole window covered,
-// both axes read, a window of at least a day.
+// it, over what was covered. The API decides whether there is one — a day
+// covered, both axes read — and when there is none the line says which
+// was missing rather than leaving a flag that printed nothing.
 func suggestLine(l *client.Load, sizing string) string {
+	if l.Suggest == nil {
+		if l.CPU == nil || l.Memory == nil {
+			return "suggest —  nothing to size from: no reading on both axes"
+		}
+		return fmt.Sprintf("suggest —  needs a day covered, has %s", l.Covered)
+	}
 	from := "peak"
 	if l.Percentile > 0 {
 		from = fmt.Sprintf("p%d", l.Percentile)
 	}
 	return fmt.Sprintf("suggest fpcloud %s --cpu %s --memory %s   (cpu from the %s, memory from the peak, over %s)",
-		sizing, l.Suggest.CPU, l.Suggest.Memory, from, l.Window)
+		sizing, l.Suggest.CPU, l.Suggest.Memory, from, l.Covered)
 }
 
 // loadAxisCells is one axis as columns — "10m avg", "31m p95", "48m peak",
