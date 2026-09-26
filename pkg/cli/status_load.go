@@ -7,7 +7,7 @@ import (
 	"github.com/fogpipe/cloud-cli/pkg/client"
 )
 
-// loadLines renders an app's measured use as two lines, cpu then memory, each
+// loadLines renders a resource's measured use as two lines, cpu then memory, each
 // the average per replica, the requested percentile if any, the peak, and the
 // limit the app declared with how much of it the average is — in columns, so
 // the two read as one table. The cpu line carries the window's caveats: how
@@ -18,8 +18,8 @@ import (
 // an app without one under --load is the store not answering, which the
 // unchecked list names — that is said on the line rather than left as a row
 // that merely lacks two lines.
-func loadLines(a client.AppStatus, unchecked []client.UncheckedStatus) []string {
-	if a.Load == nil {
+func loadLines(l *client.Load, sizing string, unchecked []client.UncheckedStatus) []string {
+	if l == nil {
 		for _, u := range unchecked {
 			if u.Check == "load" {
 				return []string{"cpu     not read — " + u.Error, "memory  not read — " + u.Error}
@@ -28,8 +28,8 @@ func loadLines(a client.AppStatus, unchecked []client.UncheckedStatus) []string 
 		return nil
 	}
 	rows := [][]string{
-		append([]string{"cpu"}, loadAxisCells(a.Load.CPU, a.Load, formatMillicores)...),
-		append([]string{"memory"}, loadAxisCells(a.Load.Memory, a.Load, humanizeSize)...),
+		append([]string{"cpu"}, loadAxisCells(l.CPU, l, formatMillicores)...),
+		append([]string{"memory"}, loadAxisCells(l.Memory, l, humanizeSize)...),
 	}
 	// The two lines are one small table: every cell padded to its column
 	// across both, so avg sits under avg and the share under the share.
@@ -55,17 +55,37 @@ func loadLines(a client.AppStatus, unchecked []client.UncheckedStatus) []string 
 		}
 		lines = append(lines, strings.TrimRight(strings.Join(cells, "  "), " "))
 	}
-	if note := loadNote(a.Load); note != "" {
+	if note := loadNote(l); note != "" {
 		lines[0] += "   (" + note + ")"
+	}
+	if l.Suggest != nil {
+		lines = append(lines, suggestLine(l, sizing))
 	}
 	return lines
 }
 
+// suggestLine is the limit the reading argues for, as the command that sets
+// it. Only the API decides whether there is one: the whole window covered,
+// both axes read, a window of at least a day.
+func suggestLine(l *client.Load, sizing string) string {
+	from := "peak"
+	if l.Percentile > 0 {
+		from = fmt.Sprintf("p%d", l.Percentile)
+	}
+	return fmt.Sprintf("suggest fpcloud %s --cpu %s --memory %s   (cpu from the %s, memory from the peak, over %s)",
+		sizing, l.Suggest.CPU, l.Suggest.Memory, from, l.Window)
+}
+
 // loadAxisCells is one axis as columns — "10m avg", "31m p95", "48m peak",
-// "of 250m", "4%" — or what an axis with no sample in the window is: idle,
-// which is measured, not missing.
-func loadAxisCells(axis *client.LoadAxis, l *client.AppLoad, format func(int64) string) []string {
+// "of 250m", "4%" — or what an axis with no sample is. Over a window the
+// source covered that is idle, which is measured; over one it holds nothing
+// of it is unknown, and saying idle there is the zero that reads as healthy
+// (fogpipe/cloud-workspace#1087).
+func loadAxisCells(axis *client.LoadAxis, l *client.Load, format func(int64) string) []string {
 	if axis == nil {
+		if l.Covered == "0s" {
+			return []string{"nothing recorded over " + l.Window}
+		}
 		return []string{"idle over " + l.Window}
 	}
 	cells := []string{format(axis.Avg) + " avg"}
@@ -81,7 +101,7 @@ func loadAxisCells(axis *client.LoadAxis, l *client.AppLoad, format func(int64) 
 
 // loadNote is what the window's answer is not: shorter than asked, or coarser
 // than a minute. Empty when the answer is the whole window at full resolution.
-func loadNote(l *client.AppLoad) string {
+func loadNote(l *client.Load) string {
 	parts := []string{}
 	if l.Covered != "" && l.Covered != l.Window {
 		parts = append(parts, "covered "+l.Covered+" of "+l.Window)

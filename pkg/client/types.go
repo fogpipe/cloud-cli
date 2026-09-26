@@ -2203,7 +2203,7 @@ type AppStatus struct {
 	// asked for, beside the limit each pod is held to. Present only when the
 	// document was read with a load window; absent otherwise, and absent with
 	// "load" among Unchecked when the store could not answer.
-	Load     *AppLoad        `json:"load,omitempty"`
+	Load     *Load           `json:"load,omitempty"`
 	Problems []StatusProblem `json:"problems,omitempty"`
 }
 
@@ -2213,8 +2213,9 @@ type ConfigCount struct {
 	Secrets int `json:"secrets"`
 }
 
-// AppLoad is an app's measured resource use over Window, per replica — the
-// limit is per pod, so the average and the peak are too.
+// Load is a resource's measured use over Window, per replica — an app's pods
+// or a database's instances; the limit is per pod, so the average and the
+// peak are too.
 //
 // Step is the resolution the window was read at: a minute up to a day, read
 // from the metrics store; an hour beyond that, read from the hourly record
@@ -2227,7 +2228,7 @@ type ConfigCount struct {
 // window, which is what a serverless app scaled to zero looks like. It is not
 // the store failing to answer — that is reported as an unchecked "load", and
 // the whole Load is absent.
-type AppLoad struct {
+type Load struct {
 	Window  string `json:"window"`
 	Step    string `json:"step"`
 	Covered string `json:"covered"`
@@ -2236,6 +2237,19 @@ type AppLoad struct {
 	Percentile int       `json:"percentile,omitempty"`
 	CPU        *LoadAxis `json:"cpu,omitempty"`
 	Memory     *LoadAxis `json:"memory,omitempty"`
+	// Suggest is the limit the platform would set from this reading, present
+	// only when asked for (LoadQuery.Suggest) and only when it stands: the
+	// source covered the whole window, both axes were read, and the window is
+	// at least a day. Cpu is sized from the percentile (the peak when none
+	// was asked for) with headroom; memory from the peak, since an
+	// out-of-memory kill happens at the maximum.
+	Suggest *LoadSuggestion `json:"suggest,omitempty"`
+}
+
+// LoadSuggestion is a limit per axis, spelled as a limit is declared.
+type LoadSuggestion struct {
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
 }
 
 // LoadAxis is one axis of an app's load over the window: the average, the
@@ -2259,6 +2273,8 @@ type LoadAxis struct {
 type LoadQuery struct {
 	Window     string
 	Percentile int
+	// Suggest asks for the limit each reading argues for.
+	Suggest bool
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,
@@ -2286,12 +2302,15 @@ type RolloutStatus struct {
 
 // DatabaseStatus is one managed database and the state of its restore points.
 type DatabaseStatus struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Engine   string          `json:"engine"`
-	Version  string          `json:"version"`
-	Status   string          `json:"status"`
-	Pooler   bool            `json:"pooler"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Engine  string `json:"engine"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
+	Pooler  bool   `json:"pooler"`
+	// Load is what the database's instances actually used over the window
+	// the caller asked for, as for an app.
+	Load     *Load           `json:"load,omitempty"`
 	Problems []StatusProblem `json:"problems,omitempty"`
 }
 

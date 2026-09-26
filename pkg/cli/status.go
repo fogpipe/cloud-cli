@@ -42,6 +42,7 @@ whose certificate never issued, backups that stopped producing restore points.
   fpcloud project status --load          what each app actually used over the
                                          last hour, against its limit
   fpcloud project status --load --window 3d --percentile 95
+  fpcloud project status --load --window 7d --percentile 95 --suggestions
 
 --load prints, under each app, its cpu and memory over the window: the average
 per replica, the peak, and the limit the app declared; --percentile adds that
@@ -50,7 +51,10 @@ level between the two. --window is spelled like a Prometheus duration (30m,
 store at one-minute steps, beyond that from the hourly record the platform
 keeps, and the line says when the record covers less than was asked. A
 serverless app with no pod in the window reads idle. Without --load the
-document carries no load and no metrics read is made.
+document carries no load and no metrics read is made. --suggestions adds the
+limit each reading argues for — cpu from the percentile with headroom, memory
+from the peak — as the command that sets it, only where the whole window was
+covered.
 
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
@@ -75,6 +79,10 @@ healthy if it also says that everything was looked at.`,
 		load, _ := cmd.Flags().GetBool("load")
 		window, _ := cmd.Flags().GetString("window")
 		percentile, _ := cmd.Flags().GetInt("percentile")
+		suggestions, _ := cmd.Flags().GetBool("suggestions")
+		if suggestions && !load {
+			return fmt.Errorf("--suggestions needs --load")
+		}
 		var query client.LoadQuery
 		if load {
 			if window == "" {
@@ -83,7 +91,7 @@ healthy if it also says that everything was looked at.`,
 			if percentile < 0 || percentile > 99 {
 				return fmt.Errorf("--percentile must be between 1 and 99")
 			}
-			query = client.LoadQuery{Window: window, Percentile: percentile}
+			query = client.LoadQuery{Window: window, Percentile: percentile, Suggest: suggestions}
 		}
 
 		c := getClient()
@@ -304,7 +312,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 		}
 		appRows = append(appRows, statusRow{
 			cells:   []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
-			details: loadLines(a, s.Unchecked),
+			details: loadLines(a.Load, "app scale "+a.Name, s.Unchecked),
 			notes:   problemNotes(a.Problems),
 			hints:   hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
@@ -331,8 +339,9 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus) st
 			pooler = "yes"
 		}
 		dbRows = append(dbRows, statusRow{
-			cells: []string{d.Name, engine, renderStatus(d.Status), pooler},
-			notes: problemNotes(d.Problems),
+			cells:   []string{d.Name, engine, renderStatus(d.Status), pooler},
+			details: loadLines(d.Load, "db update "+d.Name, s.Unchecked),
+			notes:   problemNotes(d.Problems),
 		})
 	}
 	b.WriteString(renderStatusSection("DATABASES", []string{"ENGINE", "STATUS", "POOLER"}, dbRows))
@@ -588,6 +597,7 @@ func init() {
 	projectStatusCmd.Flags().Bool("load", false, "Show each app's measured cpu and memory against its limit")
 	projectStatusCmd.Flags().String("window", "1h", "How far back --load measures (30m, 6h, 3d, 2w; 5m to 1y)")
 	projectStatusCmd.Flags().Int("percentile", 0, "Also show this percentile (1-99) of --load's samples")
+	projectStatusCmd.Flags().Bool("suggestions", false, "With --load, print the limit each reading argues for, as the command that sets it")
 }
 
 // runningImage is what the cluster actually reports, falling back to what the

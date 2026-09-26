@@ -3253,6 +3253,9 @@ func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch strin
 		if load.Percentile > 0 {
 			q.Set("percentile", strconv.Itoa(load.Percentile))
 		}
+		if load.Suggest {
+			q.Set("suggest", "true")
+		}
 		path += "?" + q.Encode()
 	}
 	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
