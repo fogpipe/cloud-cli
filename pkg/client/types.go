@@ -2216,23 +2216,49 @@ type ConfigCount struct {
 // AppLoad is an app's measured resource use over Window, per replica — the
 // limit is per pod, so the average and the peak are too.
 //
+// Step is the resolution the window was read at: a minute up to a day, read
+// from the metrics store; an hour beyond that, read from the hourly record
+// the platform keeps. Covered is how much of the window the answer is
+// actually over — shorter than Window when the record does not reach that far
+// back, and stated rather than assumed so a week asked of three days of data
+// never reads as a week.
+//
 // A nil axis is a measured nothing: no pod of the app produced a sample in the
 // window, which is what a serverless app scaled to zero looks like. It is not
 // the store failing to answer — that is reported as an unchecked "load", and
 // the whole Load is absent.
 type AppLoad struct {
-	Window string    `json:"window"`
-	CPU    *LoadAxis `json:"cpu,omitempty"`
-	Memory *LoadAxis `json:"memory,omitempty"`
+	Window  string `json:"window"`
+	Step    string `json:"step"`
+	Covered string `json:"covered"`
+	// Percentile is the level Pct on each axis was read at, zero when none was
+	// asked for.
+	Percentile int       `json:"percentile,omitempty"`
+	CPU        *LoadAxis `json:"cpu,omitempty"`
+	Memory     *LoadAxis `json:"memory,omitempty"`
 }
 
-// LoadAxis is one axis of an app's load: the average and the peak over the
-// window, and the limit the app declared. CPU is in millicores, memory in
-// bytes. Limit is zero when the app's declared limit could not be read.
+// LoadAxis is one axis of an app's load over the window: the average, the
+// requested percentile, the peak, and the limit the app declared. CPU is in
+// millicores, memory in bytes. Pct is present only when a percentile was asked
+// for; Limit is zero when the app's declared limit could not be read.
+//
+// The average is over every replica; the percentile and the peak are the
+// busiest replica's, since the limit is what one pod is held to.
 type LoadAxis struct {
 	Avg   int64 `json:"avg"`
+	Pct   int64 `json:"pct,omitempty"`
 	Peak  int64 `json:"peak"`
 	Limit int64 `json:"limit,omitempty"`
+}
+
+// LoadQuery asks the status document for each app's measured use. The zero
+// value asks for none. Window is spelled the way Prometheus reads one — 30m,
+// 6h, 3d, 2w — five minutes to a year; Percentile, 1 to 99, adds that level
+// on each axis.
+type LoadQuery struct {
+	Window     string
+	Percentile int
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,

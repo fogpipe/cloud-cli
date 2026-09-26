@@ -10,26 +10,37 @@ import (
 )
 
 // --load prints cpu on one line and memory on the next, each the per-replica
-// average and peak over the window beside the declared limit, and the share of
-// the limit the average is (fogpipe/cloud-workspace#1078).
+// average, the percentile when one was asked for, the peak and the declared
+// limit with the share of it the average is; the cpu line says when the record
+// covered less than the window asked, and when the step is coarser than a
+// minute (fogpipe/cloud-workspace#1078, #1083).
 func TestLoadLinesRenderCPUThenMemoryAgainstTheLimit(t *testing.T) {
 	a := client.AppStatus{Name: "api", Load: &client.AppLoad{
-		Window: "1h",
+		Window: "1h", Step: "1m", Covered: "1h",
 		CPU:    &client.LoadAxis{Avg: 10, Peak: 48, Limit: 250},
 		Memory: &client.LoadAxis{Avg: 80 << 20, Peak: 91 << 20, Limit: 256 << 20},
 	}}
-	lines := loadLines(a, nil)
 	assert.Equal(t, []string{
-		"cpu     10m avg · 48m peak · of 250m    4%",
-		"memory  80Mi avg · 91Mi peak · of 256Mi   31%",
-	}, lines)
+		"cpu     10m avg   48m peak   of 250m    4%",
+		"memory  80Mi avg  91Mi peak  of 256Mi  31%",
+	}, loadLines(a, nil))
+
+	week := client.AppStatus{Name: "api", Load: &client.AppLoad{
+		Window: "7d", Step: "1h", Covered: "3d11h", Percentile: 95,
+		CPU:    &client.LoadAxis{Avg: 10, Pct: 31, Peak: 48, Limit: 250},
+		Memory: &client.LoadAxis{Avg: 80 << 20, Pct: 88 << 20, Peak: 91 << 20, Limit: 256 << 20},
+	}}
+	assert.Equal(t, []string{
+		"cpu     10m avg   31m p95   48m peak   of 250m    4%   (covered 3d11h of 7d, 1h steps)",
+		"memory  80Mi avg  88Mi p95  91Mi peak  of 256Mi  31%",
+	}, loadLines(week, nil))
 }
 
 // An axis with no sample is a measured nothing — a serverless app scaled to
 // zero — and reads idle; an app with no load block under a load read is the
 // store not answering, and the line says what the unchecked entry says.
 func TestLoadLinesSeparateIdleFromUnread(t *testing.T) {
-	idle := client.AppStatus{Name: "web", Mode: "serverless", Load: &client.AppLoad{Window: "6h"}}
+	idle := client.AppStatus{Name: "web", Mode: "serverless", Load: &client.AppLoad{Window: "6h", Step: "1m", Covered: "6h"}}
 	assert.Equal(t, []string{"cpu     idle over 6h", "memory  idle over 6h"}, loadLines(idle, nil))
 
 	unread := loadLines(client.AppStatus{Name: "api"}, []client.UncheckedStatus{{Check: "load", Error: "prometheus unreachable"}})
@@ -53,7 +64,7 @@ func TestProjectStatusRendersLoadUnderTheApp(t *testing.T) {
 	s := &client.ProjectStatus{
 		Project: client.StatusProject{Name: "demo", Namespace: "acme-demo", Egress: "open"},
 		Apps: []client.AppStatus{{Name: "api", Mode: "always-on", Status: "running", Desired: 1, Ready: 1, Load: &client.AppLoad{
-			Window: "1h",
+			Window: "1h", Step: "1m", Covered: "1h",
 			CPU:    &client.LoadAxis{Avg: 10, Peak: 48, Limit: 250},
 			Memory: &client.LoadAxis{Avg: 80 << 20, Peak: 91 << 20, Limit: 256 << 20},
 		}}},
@@ -67,6 +78,6 @@ func TestProjectStatusRendersLoadUnderTheApp(t *testing.T) {
 		}
 	}
 	assert.NotZero(t, row)
-	assert.Contains(t, lines[row+1], "cpu     10m avg · 48m peak · of 250m")
-	assert.Contains(t, lines[row+2], "memory  80Mi avg · 91Mi peak · of 256Mi")
+	assert.Contains(t, lines[row+1], "cpu     10m avg   48m peak   of 250m")
+	assert.Contains(t, lines[row+2], "memory  80Mi avg  91Mi peak  of 256Mi")
 }

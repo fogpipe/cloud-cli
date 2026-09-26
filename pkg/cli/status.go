@@ -41,12 +41,16 @@ whose certificate never issued, backups that stopped producing restore points.
   fpcloud project status -o json         the whole document, for a script
   fpcloud project status --load          what each app actually used over the
                                          last hour, against its limit
-  fpcloud project status --load --window 6h
+  fpcloud project status --load --window 3d --percentile 95
 
---load reads each app's pods from the metrics store and prints, under the app,
-its cpu and memory over the window: the average and the peak per replica, and
-the limit the app declared. A serverless app with no pod in the window reads
-idle. Without --load the document carries no load and no metrics read is made.
+--load prints, under each app, its cpu and memory over the window: the average
+per replica, the peak, and the limit the app declared; --percentile adds that
+level between the two. --window is spelled like a Prometheus duration (30m,
+6h, 3d, 2w), five minutes to a year: up to a day it is read from the metrics
+store at one-minute steps, beyond that from the hourly record the platform
+keeps, and the line says when the record covers less than was asked. A
+serverless app with no pod in the window reads idle. Without --load the
+document carries no load and no metrics read is made.
 
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
@@ -69,16 +73,22 @@ healthy if it also says that everything was looked at.`,
 			interval = minWatchInterval
 		}
 		load, _ := cmd.Flags().GetBool("load")
-		window, _ := cmd.Flags().GetDuration("window")
-		if !load {
-			window = 0
-		} else if window <= 0 {
-			return fmt.Errorf("--window must be a positive duration")
+		window, _ := cmd.Flags().GetString("window")
+		percentile, _ := cmd.Flags().GetInt("percentile")
+		var query client.LoadQuery
+		if load {
+			if window == "" {
+				return fmt.Errorf("--window must name a duration, like 6h or 3d")
+			}
+			if percentile < 0 || percentile > 99 {
+				return fmt.Errorf("--percentile must be between 1 and 99")
+			}
+			query = client.LoadQuery{Window: window, Percentile: percentile}
 		}
 
 		c := getClient()
 		if !watch {
-			status, _, err := c.ProjectStatus(context.Background(), project, "", window)
+			status, _, err := c.ProjectStatus(context.Background(), project, "", query)
 			if err != nil {
 				return err
 			}
@@ -91,7 +101,7 @@ healthy if it also says that everything was looked at.`,
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return fmt.Errorf("--watch renders a live view; it cannot be combined with -o %s", rootCmd.Flag("output").Value.String())
 		}
-		return watchProjectStatus(projectSource(args), interval, window)
+		return watchProjectStatus(projectSource(args), interval, query)
 	},
 }
 
@@ -117,7 +127,7 @@ healthy if it also says that everything was looked at.`,
 // one to disk — could not reach it. Rebuilding per tick both picks up that new
 // token and lets `currentIDToken` do the refresh it already knows how to do,
 // silently, from the refresh token.
-func watchProjectStatus(source func() (string, error), interval, load time.Duration) error {
+func watchProjectStatus(source func() (string, error), interval time.Duration, load client.LoadQuery) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -576,7 +586,8 @@ func init() {
 	projectStatusCmd.Flags().BoolP("watch", "w", false, "Redraw the view as the project changes")
 	projectStatusCmd.Flags().Duration("interval", 2*time.Second, "How often --watch polls (minimum 1s)")
 	projectStatusCmd.Flags().Bool("load", false, "Show each app's measured cpu and memory against its limit")
-	projectStatusCmd.Flags().Duration("window", time.Hour, "How far back --load measures")
+	projectStatusCmd.Flags().String("window", "1h", "How far back --load measures (30m, 6h, 3d, 2w; 5m to 1y)")
+	projectStatusCmd.Flags().Int("percentile", 0, "Also show this percentile (1-99) of --load's samples")
 }
 
 // runningImage is what the cluster actually reports, falling back to what the
