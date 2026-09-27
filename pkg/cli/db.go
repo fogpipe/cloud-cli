@@ -263,8 +263,9 @@ A credential that cannot be rotated cannot be revoked: any copy of the
 password — Terraform state, a CI log, a screenshot — is valid for the life of
 the database. This issues a new one, in the order that makes it safe: the
 platform writes it where Postgres reads it and waits for the role to carry
-it, then re-renders every app in the project so their injected DATABASE_URLs
-name it and rolls the pods. The old password stops authenticating new
+it, then rewrites the <name>-owner secret and rolls every app mounting it. An
+app still holding the password in its own env would be left on the old one,
+so the rotation is refused and names it until those keys are gone. The old password stops authenticating new
 connections the moment the new one is live; sessions already open keep
 running until they close.
 
