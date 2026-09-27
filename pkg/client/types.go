@@ -758,6 +758,11 @@ type Bucket struct {
 	// active (ADR-130).
 	URL            string `json:"url,omitempty"`
 	WebsiteVersion int    `json:"website_version"`
+
+	// Secret names the project secret holding this bucket's read+write key as
+	// an AWS config file (#1101); mount it on an app to hand the app the bucket.
+	Secret    string   `json:"secret,omitempty"`
+	MountedBy []string `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
 }
 
 // WebsiteVersion is one published version of a static site (#476). It exists
@@ -910,27 +915,6 @@ type UpdateBucketKeyPermissionsRequest struct {
 	Read  bool `json:"read"`
 	Write bool `json:"write"`
 	Owner bool `json:"owner"`
-}
-
-// AppBucketBinding is an explicit app ⇄ bucket binding (#264). Binding injects the
-// bucket's S3_*/AWS_* credentials into the app's pod via a k8s Secret + envFrom.
-// The secret access key is never returned.
-type AppBucketBinding struct {
-	AppID       string    `json:"app_id"`
-	BucketID    string    `json:"bucket_id"`
-	BucketName  string    `json:"bucket_name,omitempty"`
-	Endpoint    string    `json:"endpoint,omitempty"`
-	Region      string    `json:"region,omitempty"`
-	ReadOnly    bool      `json:"read_only"`
-	AccessKeyID string    `json:"access_key_id,omitempty"`
-	SecretName  string    `json:"secret_name,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// BindBucketRequest is the request body for binding a bucket to an app.
-type BindBucketRequest struct {
-	BucketID string `json:"bucket_id"`
-	ReadOnly bool   `json:"read_only,omitempty"`
 }
 
 // BucketCredentials are the S3 connection details for a bucket. SecretAccessKey
@@ -1099,12 +1083,14 @@ type SetConfigRequest struct {
 // ProjectSecret is a named secret value scoped to a project (#1069). The value
 // is write-only: it goes in through create/update and reaches an app only as a
 // mounted file (App.SecretMounts). One owned by a database holds that
-// database's owner connection URL and is rotated with `db rotate-password`.
+// database's owner connection URL and is rotated with `db rotate-password`;
+// one owned by a bucket holds its read+write key as an AWS config file.
 type ProjectSecret struct {
 	ID              string    `json:"id"`
 	ProjectID       string    `json:"project_id"`
 	Name            string    `json:"name"`
 	OwnerDatabaseID string    `json:"owner_database_id,omitempty"`
+	OwnerBucketID   string    `json:"owner_bucket_id,omitempty"`
 	MountedBy       []string  `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
@@ -2525,7 +2511,7 @@ type TemplateInput struct {
 }
 
 // TemplateNeeds is what a template creates beside its app: a managed database
-// bound as the app's DATABASE_URL, a bucket bound as its S3_*.
+// and a bucket, whose connection values are seeded into the app's env.
 type TemplateNeeds struct {
 	Database *TemplateDatabase `json:"database,omitempty"`
 	Bucket   *TemplateBucket   `json:"bucket,omitempty"`

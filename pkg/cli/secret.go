@@ -29,6 +29,12 @@ database — so mounting it is how an app is handed the database:
 
   fpcloud app update web --mount-secret /secrets/db=mydb-owner
 
+A bucket's key is one as well — <bucket>-key, an AWS config file holding the
+key, region and endpoint, read by any AWS SDK through AWS_CONFIG_FILE:
+
+  fpcloud app update web --mount-secret /secrets/s3=media-key
+  fpcloud app env set web AWS_CONFIG_FILE=/secrets/s3
+
 Env stays plain (` + "`fpcloud app env`" + `); org-wide bundles are ` + "`fpcloud secrets`" + `.`,
 }
 

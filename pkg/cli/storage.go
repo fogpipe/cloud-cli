@@ -21,7 +21,7 @@ import (
 var storageCmd = &cobra.Command{
 	Use:     "storage",
 	Aliases: []string{"st"},
-	Short:   "Manage object-storage buckets, scoped keys, and app bindings",
+	Short:   "Manage object-storage buckets and scoped keys",
 }
 
 var storageBucketCmd = &cobra.Command{
@@ -208,6 +208,11 @@ var storageBucketCreateCmd = &cobra.Command{
 		if b.AccessKeyID != "" {
 			pairs = append(pairs, []string{"Access Key", b.AccessKeyID})
 		}
+		if b.Secret != "" {
+			// The key's home: mount it on an app to hand the app this bucket
+			// (#1101).
+			pairs = append(pairs, []string{"Secret", b.Secret})
+		}
 		if b.SecretAccessKey != "" {
 			pairs = append(pairs,
 				[]string{"Secret Key", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(b.SecretAccessKey)},
@@ -277,6 +282,8 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
 			{"Status", renderStatus(b.Status)},
 			{"Access Key", accessKey},
+			{"Secret", dashIfEmpty(b.Secret)},
+			{"Mounted by", dashIfEmpty(strings.Join(b.MountedBy, ", "))},
 		}))
 		return nil
 	},
@@ -599,110 +606,6 @@ var storageBucketWebsiteShowCmd = &cobra.Command{
 	},
 }
 
-var storageBucketBindCmd = &cobra.Command{
-	Use:   "bind <bucket> --app <app>",
-	Short: "Bind a bucket to an app (injects S3 credentials into its pods)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appRef, _ := cmd.Flags().GetString("app")
-		if appRef == "" {
-			return fmt.Errorf("--app is required")
-		}
-		readOnly, _ := cmd.Flags().GetBool("read-only")
-
-		c := getClient()
-		bucketID, err := resolveBucketID(c, args[0])
-		if err != nil {
-			return err
-		}
-		appID, err := resolveAppID(c, appRef)
-		if err != nil {
-			return err
-		}
-
-		outputFormat := rootCmd.Flag("output").Value.String()
-		var binding *client.AppBucketBinding
-		var bindErr error
-		action := func() { binding, bindErr = c.BindAppBucket(context.Background(), appID, bucketID, readOnly) }
-		if !isStructured(outputFormat) {
-			withSpinner("Binding bucket...", action)
-		} else {
-			action()
-		}
-		if bindErr != nil {
-			return bindErr
-		}
-		if isStructured(outputFormat) {
-			return renderData(binding)
-		}
-		fmt.Println(renderInfoBox("Bucket Bound", [][]string{
-			{"Bucket", dashIfEmpty(binding.BucketName)},
-			{"Endpoint", binding.Endpoint},
-			{"Region", binding.Region},
-			{"Read Only", yesNo(binding.ReadOnly)},
-			{"Access Key", binding.AccessKeyID},
-			{"Secret Name", binding.SecretName},
-		}))
-		return nil
-	},
-}
-
-var storageBucketUnbindCmd = &cobra.Command{
-	Use:   "unbind <bucket> --app <app>",
-	Short: "Remove a bucket ⇄ app binding",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appRef, _ := cmd.Flags().GetString("app")
-		if appRef == "" {
-			return fmt.Errorf("--app is required")
-		}
-		c := getClient()
-		bucketID, err := resolveBucketID(c, args[0])
-		if err != nil {
-			return err
-		}
-		appID, err := resolveAppID(c, appRef)
-		if err != nil {
-			return err
-		}
-		var unbindErr error
-		withSpinner("Unbinding bucket...", func() {
-			unbindErr = c.UnbindAppBucket(context.Background(), appID, bucketID)
-		})
-		if unbindErr != nil {
-			return unbindErr
-		}
-		fmt.Println(successBox.Render(
-			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") + " Bucket unbound.",
-		))
-		return nil
-	},
-}
-
-var storageBucketBindingsCmd = &cobra.Command{
-	Use:     "bindings <app>",
-	Aliases: []string{"list-bindings"},
-	Short:   "List an app's bucket bindings",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		appID, err := resolveAppID(c, args[0])
-		if err != nil {
-			return err
-		}
-		bindings, err := c.ListAppBuckets(context.Background(), appID)
-		if err != nil {
-			return err
-		}
-		rows := make([][]string, len(bindings))
-		for i, b := range bindings {
-			rows[i] = []string{dashIfEmpty(b.BucketName), b.Endpoint, b.Region, yesNo(b.ReadOnly), b.AccessKeyID}
-		}
-		render([]string{"BUCKET", "ENDPOINT", "REGION", "READ ONLY", "ACCESS KEY"}, rows, bindings)
-		return nil
-	},
-}
-
 var storageKeysCreateCmd = &cobra.Command{
 	Use:   "create <bucket>",
 	Short: "Mint a scoped S3 access key for a bucket",
@@ -1006,11 +909,6 @@ func init() {
 	storageBucketCORSSetCmd.Flags().String("from-file", "", "JSON file holding the whole rule list, for configurations one rule cannot express")
 	storageBucketCORSCmd.AddCommand(storageBucketCORSListCmd, storageBucketCORSSetCmd, storageBucketCORSClearCmd)
 
-	storageBucketBindCmd.Flags().String("app", "", "App to bind the bucket to (name or id, required)")
-	storageBucketBindCmd.Flags().Bool("read-only", false, "Bind with a read-only scoped key")
-
-	storageBucketUnbindCmd.Flags().String("app", "", "App to unbind the bucket from (name or id, required)")
-
 	storageKeysCreateCmd.Flags().String("name", "", "Optional label for the key")
 	storageKeysCreateCmd.Flags().String("format", "table", "Output form: table | env (shell-eval'able, with the secret) | json")
 	storageKeysCreateCmd.Flags().Bool("read", false, "Grant read (GetObject/ListBucket)")
@@ -1030,9 +928,6 @@ func init() {
 		storageBucketWebsiteCmd,
 		storageBucketLifecycleCmd,
 		storageBucketCORSCmd,
-		storageBucketBindCmd,
-		storageBucketUnbindCmd,
-		storageBucketBindingsCmd,
 	)
 	storageKeysUpdateCmd.Flags().Bool("read", false, "Grant read (GetObject/ListBucket)")
 	storageKeysUpdateCmd.Flags().Bool("write", false, "Grant write (PutObject/DeleteObject)")

@@ -1312,7 +1312,7 @@ func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, e
 
 // SetSecretMounts replaces the whole map of an app's secret mounts: container
 // file path -> project secret name (#1069). An empty map unmounts everything.
-// The mount is the bind — mounting a database's owner secret is how an app is
+// The mount is the bind — mounting a database's or a bucket's secret is how an app is
 // pointed at that database.
 func (c *Client) SetSecretMounts(ctx context.Context, id string, mounts map[string]string) (*App, error) {
 	if mounts == nil {
@@ -2182,42 +2182,6 @@ func (c *Client) PresignBucketObject(ctx context.Context, bucketID string, req P
 // DeleteBucketObject deletes a single object from a bucket (#268).
 func (c *Client) DeleteBucketObject(ctx context.Context, bucketID, key string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/objects?key="+url.QueryEscape(key), nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
-// BindAppBucket binds a bucket to an app, injecting its S3_*/AWS_* credentials
-// into the app's pod (#264). readOnly requests a read-only scoped key.
-func (c *Client) BindAppBucket(ctx context.Context, appID, bucketID string, readOnly bool) (*AppBucketBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+appID+"/buckets", BindBucketRequest{BucketID: bucketID, ReadOnly: readOnly})
-	if err != nil {
-		return nil, err
-	}
-	var b AppBucketBinding
-	if err := c.do(httpReq, &b); err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
-
-// ListAppBuckets lists an app's bucket bindings (never the secret).
-func (c *Client) ListAppBuckets(ctx context.Context, appID string) ([]*AppBucketBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+appID+"/buckets", nil)
-	if err != nil {
-		return nil, err
-	}
-	var bindings []*AppBucketBinding
-	if err := c.do(httpReq, &bindings); err != nil {
-		return nil, err
-	}
-	return bindings, nil
-}
-
-// UnbindAppBucket removes an app ⇄ bucket binding, dropping the injected creds.
-func (c *Client) UnbindAppBucket(ctx context.Context, appID, bucketID string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/apps/"+appID+"/buckets/"+bucketID, nil)
 	if err != nil {
 		return err
 	}
