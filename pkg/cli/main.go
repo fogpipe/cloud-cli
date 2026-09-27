@@ -94,7 +94,7 @@ func init() {
 	}
 
 	rootCmd.PersistentFlags().String("api-url", defaultURL, "API server URL (else FPCLOUD_API_URL, or config.yaml)")
-	rootCmd.PersistentFlags().String("api-key", defaultKey, "API key for authentication (else FPCLOUD_API_KEY, config.yaml, or the fpcloud login)")
+	rootCmd.PersistentFlags().String("api-key", defaultKey, "API key for authentication (else FPCLOUD_API_KEY or the file FPCLOUD_API_KEY_FILE names, config.yaml, or the fpcloud login)")
 	rootCmd.PersistentFlags().String("org", defaultOrg, "Current organization")
 	rootCmd.PersistentFlags().String("project", defaultProject, "Current project")
 	rootCmd.PersistentFlags().StringP("output", "o", "table", "Output format (table, json, yaml)")

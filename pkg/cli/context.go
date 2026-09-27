@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -110,7 +109,7 @@ or {identity} appears in --format, so prompt use stays fast.`,
 // the credential itself. A provider the platform cannot ask answers "", shown
 // as nothing rather than read as no second factor.
 func currentCredential() (credential, signIn string) {
-	if flag := rootCmd.Flag("api-key"); flag.Changed || os.Getenv("FPCLOUD_API_KEY") != "" || flag.Value.String() != "" {
+	if flag := rootCmd.Flag("api-key"); flag.Changed || envAPIKey() != "" || flag.Value.String() != "" {
 		return "API key", ""
 	}
 	credential = "browser login"

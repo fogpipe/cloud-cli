@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // setAPIKeyFlag mirrors what cobra does when --api-key is passed, and restores
 // both the value and its Changed bit afterwards — rootCmd is package state
@@ -74,5 +78,23 @@ func TestResolveAPIKey_EmptyWhenNothingSet(t *testing.T) {
 
 	if got := resolveAPIKey(); got != "" {
 		t.Errorf("expected no credential, got %q", got)
+	}
+}
+
+// Inside an app with a service account the key is a mounted file, named by
+// FPCLOUD_API_KEY_FILE; it authenticates ahead of config.yaml, like the variable
+// (fogpipe/cloud-workspace#1106).
+func TestResolveAPIKey_ReadsTheMountedKeyFile(t *testing.T) {
+	isolateState(t)
+	file := filepath.Join(t.TempDir(), "api-key")
+	if err := os.WriteFile(file, []byte("fp-mounted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FPCLOUD_API_KEY", "")
+	t.Setenv("FPCLOUD_API_KEY_FILE", file)
+	setAPIKeyFlag(t, "fp-config", false)
+
+	if got := resolveAPIKey(); got != "fp-mounted" {
+		t.Errorf("expected the mounted key, got %q", got)
 	}
 }
