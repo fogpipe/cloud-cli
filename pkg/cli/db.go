@@ -264,8 +264,8 @@ password — Terraform state, a CI log, a screenshot — is valid for the life o
 the database. This issues a new one, in the order that makes it safe: the
 platform writes it where Postgres reads it and waits for the role to carry
 it, then rewrites the <name>-owner secret and rolls every app mounting it. An
-app still holding the password in its own env would be left on the old one,
-so the rotation is refused and names it until those keys are gone. The old password stops authenticating new
+app holding a copy of the password in its own env keeps the old one and
+loses the database. The old password stops authenticating new
 connections the moment the new one is live; sessions already open keep
 running until they close.
 
