@@ -197,7 +197,7 @@ var dbGetCmd = &cobra.Command{
 		}))
 		fmt.Println()
 		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))
-		fmt.Println(mutedStyle.Render("  Reads can go to the replica via DATABASE_READ_URL; they may be stale, so never read your own write there."))
+		fmt.Println(mutedStyle.Render("  Reads can go to the replica at the read address; they may be stale, so never read your own write there."))
 		return nil
 	},
 }
@@ -916,7 +916,7 @@ func init() {
 	dbCreateCmd.Flags().String("cpu", "", "CPU request/limit per instance (e.g. 500m); default 250m")
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 1Gi")
 	dbCreateCmd.Flags().String("storage", "", "Persistent storage size (e.g. 20Gi); default 10Gi")
-	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (adds DATABASE_POOL_URL)")
+	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (reached at the owner URL's host with -rw replaced by -pooler)")
 	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable; name or name:schema (needs Postgres 18+)")
 
 	dbUpdateCmd.Flags().String("display-name", "", "New cosmetic label")
