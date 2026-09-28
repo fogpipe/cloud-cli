@@ -476,7 +476,7 @@ func securityContextFromFlags(cmd *cobra.Command) *client.SecurityContext {
 	runAsNonRoot, _ := cmd.Flags().GetBool("run-as-non-root")
 	readOnlyRootFS, _ := cmd.Flags().GetBool("read-only-root-fs")
 
-	if runAsUser < 0 && runAsGroup < 0 && fsGroup < 0 && !runAsNonRoot && !readOnlyRootFS {
+	if runAsUser < 0 && runAsGroup < 0 && fsGroup < 0 && !cmd.Flags().Changed("run-as-non-root") && !readOnlyRootFS {
 		return nil
 	}
 	sc := &client.SecurityContext{RunAsNonRoot: runAsNonRoot, ReadOnlyRootFilesystem: readOnlyRootFS}
