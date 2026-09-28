@@ -66,7 +66,7 @@ STATUS says how far each person has got to signing in: active (signed in),
 invited (an account exists and its setup mail was sent), not_provisioned (no
 account yet, so no mail either), or unchecked (not read by the provisioning
 pass yet, which runs every few minutes).`,
-	Args:  cobra.MaximumNArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var orgID string
 		var err error
