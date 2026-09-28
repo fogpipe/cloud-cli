@@ -349,7 +349,10 @@ var iamSetCmd = &cobra.Command{
 
 var iamListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List IAM bindings for a project",
+	Short: "List everyone who can reach a project, org roles included",
+	Long: `List everyone who can reach a project: the roles granted on it, and the
+organization's, which every project inherits. SCOPE says which one granted a
+role. An organization role is removed with ` + "`fpcloud org remove`" + `.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := requireProject()
 		if err != nil {
@@ -365,7 +368,7 @@ var iamListCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"ID", "ROLE", "MEMBER TYPE", "MEMBER", "CREATED"}
+		headers := []string{"ID", "ROLE", "MEMBER TYPE", "MEMBER", "SCOPE", "CREATED"}
 		var rows [][]string
 		for _, b := range bindings {
 			rows = append(rows, []string{
@@ -373,6 +376,7 @@ var iamListCmd = &cobra.Command{
 				b.Role,
 				b.MemberType,
 				b.Member,
+				b.ResourceType,
 				b.CreatedAt,
 			})
 		}

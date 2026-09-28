@@ -201,6 +201,9 @@ func completeIAMBindings(cmd *cobra.Command, args []string, toComplete string) (
 	}
 	out := make([]string, 0, len(bindings))
 	for _, b := range bindings {
+		if b.ResourceType != "project" {
+			continue
+		}
 		out = append(out, b.ID+"\t"+b.Member+" ("+b.Role+")")
 	}
 	return out, noFile
