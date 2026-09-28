@@ -57,7 +57,15 @@ var orgListCmd = &cobra.Command{
 
 var orgMembersCmd = &cobra.Command{
 	Use:   "members [org-id]",
-	Short: "List members of an organization",
+	Short: "List everyone who can reach an organization",
+	Long: `List everyone who can reach an organization: those holding an org role,
+and those holding a role on one of its projects only, shown with no org role.
+PROJECTS lists the project roles each person holds.
+
+STATUS says how far each person has got to signing in: active (signed in),
+invited (an account exists and its setup mail was sent), not_provisioned (no
+account yet, so no mail either), or unchecked (not read by the provisioning
+pass yet, which runs every few minutes).`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var orgID string
@@ -79,7 +87,7 @@ var orgMembersCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"USER ID", "EMAIL", "NAME", "ROLE", "STATUS"}
+		headers := []string{"USER ID", "EMAIL", "NAME", "ROLE", "PROJECTS", "STATUS"}
 		var rows [][]string
 		for _, m := range members {
 			rows = append(rows, []string{
@@ -87,6 +95,7 @@ var orgMembersCmd = &cobra.Command{
 				m.UserEmail,
 				m.UserName,
 				renderRole(m.Role),
+				memberProjects(m.Projects),
 				renderStatus(m.Status),
 			})
 		}
@@ -120,9 +129,9 @@ var orgInviteCmd = &cobra.Command{
 			return err
 		}
 
-		statusLabel := "Invited (active)"
-		if member.Status == "pending" {
-			statusLabel = "Invited (pending registration)"
+		statusLabel := "Invited — setup mail goes out with the next provisioning pass"
+		if member.Status == "active" {
+			statusLabel = "Added (already signed in)"
 		}
 
 		fmt.Println(renderInfoBox("Member Invited", [][]string{
@@ -235,6 +244,8 @@ func resolveOrgRef(ctx context.Context, ref string) (string, error) {
 
 func renderRole(role string) string {
 	switch role {
+	case "":
+		return mutedStyle.Render("project access only")
 	case "owner":
 		return titleStyle.Render(role)
 	case "editor":
@@ -242,6 +253,14 @@ func renderRole(role string) string {
 	default: // viewer
 		return mutedStyle.Render(role)
 	}
+}
+
+func memberProjects(projects []client.OrgMemberProject) string {
+	out := make([]string, len(projects))
+	for i, p := range projects {
+		out[i] = p.Project + " (" + p.Role + ")"
+	}
+	return strings.Join(out, ", ")
 }
 
 var orgRenameCmd = &cobra.Command{

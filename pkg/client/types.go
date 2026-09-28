@@ -1369,14 +1369,27 @@ type OrgMember struct {
 	ID             string `json:"id"`
 	OrganizationID string `json:"organization_id"`
 	UserID         string `json:"user_id"`
-	Role           string `json:"role"`
-	InvitedBy      string `json:"invited_by,omitempty"`
-	InvitedEmail   string `json:"invited_email,omitempty"`
-	Status         string `json:"status"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
-	UserEmail      string `json:"user_email,omitempty"`
-	UserName       string `json:"user_name,omitempty"`
+	// Role is the org role; empty for a person who reaches the org only
+	// through Projects.
+	Role         string `json:"role"`
+	InvitedBy    string `json:"invited_by,omitempty"`
+	InvitedEmail string `json:"invited_email,omitempty"`
+	// Status is how far the person has got to signing in: active, invited (an
+	// account exists and its setup mail was sent), not_provisioned (no account
+	// yet), or unchecked (not read by a provisioning pass yet).
+	Status    string             `json:"status"`
+	CreatedAt string             `json:"created_at"`
+	UpdatedAt string             `json:"updated_at"`
+	UserEmail string             `json:"user_email,omitempty"`
+	UserName  string             `json:"user_name,omitempty"`
+	Projects  []OrgMemberProject `json:"projects,omitempty"`
+}
+
+// OrgMemberProject is one project role an org member holds.
+type OrgMemberProject struct {
+	ProjectID string `json:"project_id"`
+	Project   string `json:"project"`
+	Role      string `json:"role"`
 }
 
 // InviteOrgMemberRequest is the request body for inviting a member to an organization.
