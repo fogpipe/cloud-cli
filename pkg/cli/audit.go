@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"net/url"
 
 	"github.com/fogpipe/cloud-cli/pkg/client"
@@ -31,6 +32,22 @@ var auditLogCmd = &cobra.Command{
 		}
 
 		c := getClient()
+		// The log has two addresses (ADR-268): the organization's, which is
+		// everything the caller may see, and one project's. The project is the
+		// root --project, resolved to its id because the filter is by id.
+		if scope, _ := cmd.Flags().GetString("scope"); scope == "project" {
+			ref, err := requireProject()
+			if err != nil {
+				return err
+			}
+			project, err := c.GetProject(cmd.Context(), ref)
+			if err != nil {
+				return err
+			}
+			q.Set("project_id", project.ID)
+		} else if scope != "" && scope != "org" {
+			return fmt.Errorf("--scope must be org or project, got %q", scope)
+		}
 		var entries []*client.AuditEntry
 		var err error
 		withSpinner("Fetching audit log...", func() {
@@ -127,6 +144,7 @@ func init() {
 	auditStatementsCmd.Flags().String("until", "", "The far end of the window, same forms")
 	auditStatementsCmd.Flags().Int("limit", 0, "Most entries to return")
 	auditLogCmd.Flags().String("limit", "", "Max entries (default 100)")
+	auditLogCmd.Flags().String("scope", "org", "org: everything you may see; project: the current project only")
 	auditCmd.AddCommand(auditLogCmd)
 	auditCmd.AddCommand(auditStatementsCmd)
 	rootCmd.AddCommand(auditCmd)
