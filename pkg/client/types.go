@@ -160,14 +160,15 @@ type BillingAccount struct {
 }
 
 // Invoice is what an org owed for one closed period (#111). Amounts are decimal
-// strings; a finalized invoice is immutable.
+// strings. An invoice is written once its month is complete and is final from
+// then on (ADR-269).
 type Invoice struct {
 	ID               string    `json:"id"`
 	BillingAccountID string    `json:"billing_account_id"`
 	OrgID            string    `json:"org_id"`
 	PeriodStart      time.Time `json:"period_start"`
 	PeriodEnd        time.Time `json:"period_end"`
-	Status           string    `json:"status"` // draft, finalized, void
+	Status           string    `json:"status"` // finalized, void
 	Currency         string    `json:"currency"`
 	// One amount, summed from the lines. No subtotal or tax: VAT is #115 and
 	// arrives with the code that computes it.
@@ -178,19 +179,25 @@ type Invoice struct {
 	Lines []*InvoiceLineItem `json:"lines,omitempty"`
 }
 
-// InvoiceLineItem is one (resource type, project, rate) component of an invoice.
+// InvoiceLineItem is one (resource type, project, rate, usage month) component
+// of an invoice.
 //
 // UnitPrice is the rate this was BILLED at, stored on the line rather than
 // looked up — an invoice that referenced the current price would be rewritten by
 // the next reprice and a dispute would have no evidence left.
+//
+// UsagePeriodStart is the month the line's usage belongs to: the invoice's own
+// month, or an earlier one for usage that arrived after that month was invoiced
+// and is billed on this one instead (ADR-269).
 type InvoiceLineItem struct {
-	ResourceType string `json:"resource_type"`
-	ProjectID    string `json:"project_id,omitempty"`
-	ProjectName  string `json:"project_name,omitempty"`
-	Unit         string `json:"unit"`
-	Quantity     string `json:"quantity"`
-	UnitPrice    string `json:"unit_price"`
-	Amount       string `json:"amount"`
+	ResourceType     string    `json:"resource_type"`
+	ProjectID        string    `json:"project_id,omitempty"`
+	ProjectName      string    `json:"project_name,omitempty"`
+	Unit             string    `json:"unit"`
+	UsagePeriodStart time.Time `json:"usage_period_start"`
+	Quantity         string    `json:"quantity"`
+	UnitPrice        string    `json:"unit_price"`
+	Amount           string    `json:"amount"`
 }
 
 // BillingBudget is what an org means to spend in a period, with the percentages

@@ -173,6 +173,11 @@ nothing else. Name an invoice and it is shown with the line items the total is
 made of — that is the only place they are readable, and the only way to tell a
 period rated to zero from one with no lines rated yet.
 
+A month is invoiced once its usage is all metered, from 06:00 UTC on the first
+of the next month, and the invoice never changes after that. Usage that arrives
+after its month was invoiced is billed on the next invoice, on a line whose
+MONTH is the month it was used in.
+
   fpcloud billing invoices
   fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf`,
 	Args: cobra.MaximumNArgs(1),
@@ -223,13 +228,15 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 		if project == "" {
 			project = "(org)"
 		}
-		rows[i] = []string{project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
+		rows[i] = []string{l.UsagePeriodStart.UTC().Format("2006-01"), project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
 	}
 	// The unit price is a column, not a footnote: it is the rate this line
 	// was BILLED at, stored on the invoice, and it is what a dispute is
 	// settled against. A period spanning a price change shows the same
-	// resource twice, once per rate.
-	render([]string{"PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, inv)
+	// resource twice, once per rate. MONTH is the month the usage belongs
+	// to, which differs from the invoice's own for usage that arrived after
+	// its month was invoiced (ADR-269).
+	render([]string{"MONTH", "PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, inv)
 
 	fmt.Printf("\n  %s — %s\n", inv.PeriodStart.UTC().Format("2006-01-02"), inv.PeriodEnd.UTC().Format("2006-01-02"))
 	fmt.Printf("  Total: %s %s (%s)\n", inv.Total, inv.Currency, inv.Status)
