@@ -19,6 +19,10 @@ var orgCmd = &cobra.Command{
 var orgListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List organizations you belong to",
+	Long: `List every organization you hold a role in: on the organization itself,
+on one of its projects, or on its billing. ROLE says which: your org role and
+billing role, or "projects only" when you hold roles on some of its projects
+and nothing on the organization.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
 		var orgs []*client.Organization
@@ -34,7 +38,7 @@ var orgListCmd = &cobra.Command{
 		// REGISTRY is spend against the ceiling: what the org's projects were
 		// last measured to hold beside what a push is refused above (ADR-128,
 		// fogpipe/cloud-workspace#284). Never measured is said, not shown as 0.
-		headers := []string{"", "ID", "NAME", "REGISTRY", "BACKUPS", "CREATED"}
+		headers := []string{"", "ID", "NAME", "ROLE", "REGISTRY", "BACKUPS", "CREATED"}
 		var rows [][]string
 		for _, o := range orgs {
 			marker := " "
@@ -45,6 +49,7 @@ var orgListCmd = &cobra.Command{
 				marker,
 				o.ShortID,
 				o.DisplayName,
+				orgRoles(o),
 				orgRegistrySpend(o),
 				orgBackupSpend(o),
 				o.CreatedAt.Format("2006-01-02 15:04"),
@@ -53,6 +58,22 @@ var orgListCmd = &cobra.Command{
 		render(headers, rows, orgs)
 		return nil
 	},
+}
+
+// orgRoles is what the caller holds in an org: its org role and billing role
+// as the API names them, or "projects only" when it holds neither, which is
+// the one other way an org is listed.
+func orgRoles(o *client.Organization) string {
+	var held []string
+	for _, r := range []string{o.Role, o.BillingRole} {
+		if r != "" {
+			held = append(held, r)
+		}
+	}
+	if len(held) == 0 {
+		return "projects only"
+	}
+	return strings.Join(held, ", ")
 }
 
 var orgMembersCmd = &cobra.Command{

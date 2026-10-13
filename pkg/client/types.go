@@ -1148,6 +1148,16 @@ type Organization struct {
 	ShortID     string `json:"short_id"`
 	DisplayName string `json:"display_name"`
 
+	// Role and BillingRole are the caller's own roles in the org: its org role
+	// (owner, editor, viewer) and its billing role (billing.viewer,
+	// billing.admin). Either is absent when the caller holds none, so an org
+	// reached through a project role alone carries neither and one reached
+	// through a billing role alone carries only BillingRole. Set on the reads a
+	// caller makes of its own orgs (the org list, a get, an update), never on an
+	// operator's reads of every org.
+	Role        string `json:"role,omitempty"`
+	BillingRole string `json:"billing_role,omitempty"`
+
 	// The org's resource ceiling, shared by every project it owns. A project
 	// carries no ceiling of its own: a tenant decides how many projects it has,
 	// so bounding each one bounded a number the tenant could raise by creating
