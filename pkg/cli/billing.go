@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"math/big"
 	"net/url"
 	"strings"
 	"time"
@@ -17,22 +18,33 @@ var billingCmd = &cobra.Command{
 
 Billing access is a SEPARATE permission from the one that lets you read a
 project. Being an organization owner does not grant it — someone with
-billing.admin has to give you billing.viewer or billing.admin first. Metered
-quantities (` + "`fpcloud usage`" + `) stay readable to anyone who can read the project.`,
+billing.admin has to give you billing.viewer or billing.admin first. A
+project's own cost (` + "`fpcloud billing cost --project`" + `) and its metered
+quantities (` + "`fpcloud usage`" + `) stay readable to anyone who can read the
+project.`,
 }
 
 var billingCostCmd = &cobra.Command{
 	Use:   "cost",
-	Short: "Show the cost of the period in progress",
-	Long: `Estimate what the current period will cost.
+	Short: "Show what your organization or a project cost",
+	Long: `Show what the organization, or one project, cost over a period.
 
-This is computed on demand, not an invoice: the usage is still accruing and the
-number changes every hour. The default period is the current calendar month in
-UTC — the same period that becomes the invoice, so this and the eventual bill
-cover the same hours.
+Computed from metered usage at your rates, not an invoice: the default period is
+the month in progress, so the number grows every hour. Amounts are shown to the
+cent; the invoice rounds once per line and is the bill.
+
+--group-by takes up to one of project, resource and type (a resource is an app,
+database, job, runner or bucket) and up to one of hour, day and month. Grouping
+by type shows quantities and rates, one row per rate that applied.
+
+The organization's cost needs a billing role. A project's cost needs only read
+on the project, and is priced at the organization's real rates.
 
   fpcloud billing cost
+  fpcloud billing cost --group-by project,day
+  fpcloud billing cost --project api --group-by resource
   fpcloud billing cost --from 2026-07-01T00:00:00Z --to 2026-08-01T00:00:00Z`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		q := url.Values{}
 		for _, f := range []string{"from", "to"} {
@@ -51,52 +63,187 @@ cover the same hours.
 		if len(q) == 1 {
 			return fmt.Errorf("give both --from and --to, or neither")
 		}
-
-		orgID, err := resolveOrgID(cmd)
+		groupBy, err := costGroupBy(cmd)
 		if err != nil {
 			return err
 		}
+		q.Set("group_by", strings.Join(groupBy, ","))
+
 		c := getClient()
-		var rated *client.RatedPeriod
-		withSpinner("Calculating cost...", func() {
-			rated, err = c.GetBillingEstimate(cmd.Context(), orgID, q.Encode())
-		})
+		var report *client.CostReport
+		// The org by default, which is what this command has always shown. A
+		// project only when one is named on the command line: the current
+		// project from config is the default for commands about a project, and
+		// would otherwise turn the org's cost into one project's unasked.
+		if cmd.Flag("project").Changed {
+			project, perr := requireProject()
+			if perr != nil {
+				return perr
+			}
+			withSpinner("Calculating cost...", func() {
+				report, err = c.ProjectCost(cmd.Context(), project, q.Encode())
+			})
+		} else {
+			orgID, oerr := resolveOrgID(cmd)
+			if oerr != nil {
+				return oerr
+			}
+			withSpinner("Calculating cost...", func() {
+				report, err = c.OrgCost(cmd.Context(), orgID, q.Encode())
+			})
+		}
 		if err != nil {
 			return err
 		}
 
-		rows := make([][]string, 0, len(rated.Lines))
-		for _, l := range rated.Lines {
-			amount := l.Amount
-			price := l.UnitPrice
-			if !l.Priced {
-				// Never blank, and never zero: a resource with no price is not
-				// free, it is unpriced, and a blank cell reads as "costs
-				// nothing".
-				amount, price = "not priced", "—"
-			}
-			// The quantity is display-rounded here and the amount is not: the
-			// amount arrives already rounded to the cent it will be billed at, so
-			// touching it would put a second opinion about money in the CLI.
-			rows = append(rows, []string{l.ResourceType, formatQuantity(l.Quantity), l.Unit, price, amount})
-		}
-		render([]string{"RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, rated)
+		headers, rows := costRows(report)
+		render(headers, rows, report)
 
-		fmt.Printf("\n  Total: %s %s\n", rated.Total, rated.Currency)
-		if len(rated.UnpricedTypes) > 0 {
+		fmt.Printf("\n  Total: %s %s\n", report.Total, report.Currency)
+		if len(report.Unpriced) > 0 {
 			// The total excludes these, so saying nothing would present an
 			// understatement as complete.
-			fmt.Printf("  Excludes unpriced: %s\n", strings.Join(rated.UnpricedTypes, ", "))
+			parts := make([]string, len(report.Unpriced))
+			for i, u := range report.Unpriced {
+				parts[i] = u.ResourceType + " " + formatQuantity(u.Quantity) + " " + u.Unit
+			}
+			fmt.Printf("  Not in the total, no rate yet: %s\n", strings.Join(parts, ", "))
 		}
 		// Which book produced these rates, next to the total they produced. An
 		// org on a card other than the published one otherwise has no way to see
 		// why its figures differ from the price page.
-		if rated.PriceBook != "" {
-			fmt.Println(mutedStyle.Render("  Price book: " + rated.PriceBook))
+		if books := costBooks(report.PriceBooks); books != "" {
+			fmt.Println(mutedStyle.Render("  " + books))
 		}
-		fmt.Println(mutedStyle.Render("  Estimate for the period so far — not an invoice."))
+		fmt.Println(mutedStyle.Render("  Computed from usage so far, not an invoice."))
 		return nil
 	},
+}
+
+// costEntities and costGrains are the --group-by words, each mapped to the
+// API's. "type" is the CLI's word for resource_type, short enough to type.
+var (
+	costEntities = map[string]string{"project": "project", "resource": "resource", "type": "resource_type"}
+	costGrains   = map[string]string{"hour": "hour", "day": "day", "month": "month"}
+)
+
+// costGroupBy reads --group-by into the API's words, refusing two of one axis
+// before the request rather than after it. Unset is "type", which is what this
+// command has always shown.
+func costGroupBy(cmd *cobra.Command) ([]string, error) {
+	raw, _ := cmd.Flags().GetString("group-by")
+	if raw == "" {
+		raw = "type"
+	}
+	var entity, grain string
+	for _, w := range strings.Split(raw, ",") {
+		w = strings.TrimSpace(w)
+		switch {
+		case costEntities[w] != "" && entity == "":
+			entity = costEntities[w]
+		case costGrains[w] != "" && grain == "":
+			grain = costGrains[w]
+		case costEntities[w] != "" || costGrains[w] != "":
+			return nil, fmt.Errorf("--group-by takes one of project, resource, type and one of hour, day, month; %q is a second of one", w)
+		default:
+			return nil, fmt.Errorf("--group-by: %q is not one of project, resource, type, hour, day, month", w)
+		}
+	}
+	var out []string
+	for _, a := range []string{entity, grain} {
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// costRows lays a report out by its grouping: the keys asked for, then the
+// amount, shown to the cent. The report's own amounts are unrounded so that
+// they sum to its total; rounding here is display only, and -o json carries
+// them as they came.
+func costRows(r *client.CostReport) ([]string, [][]string) {
+	has := map[string]bool{}
+	for _, g := range r.GroupBy {
+		has[g] = true
+	}
+	var headers []string
+	switch {
+	case has["hour"]:
+		headers = append(headers, "HOUR")
+	case has["day"]:
+		headers = append(headers, "DAY")
+	case has["month"]:
+		headers = append(headers, "MONTH")
+	}
+	if has["project"] || has["resource"] {
+		headers = append(headers, "PROJECT")
+	}
+	if has["resource"] {
+		headers = append(headers, "RESOURCE")
+	}
+	if has["resource_type"] {
+		headers = append(headers, "TYPE", "QUANTITY", "UNIT", "UNIT PRICE")
+	}
+	headers = append(headers, "AMOUNT")
+
+	rows := make([][]string, 0, len(r.Rows))
+	for _, row := range r.Rows {
+		var cells []string
+		if row.PeriodStart != nil {
+			at := row.PeriodStart.UTC()
+			switch {
+			case has["hour"]:
+				cells = append(cells, at.Format("2006-01-02 15:04 MST"))
+			case has["day"]:
+				cells = append(cells, at.Format("2006-01-02"))
+			default:
+				cells = append(cells, at.Format("2006-01"))
+			}
+		}
+		if has["project"] || has["resource"] {
+			cells = append(cells, row.ProjectName)
+		}
+		if has["resource"] {
+			name := row.ResourceName
+			if row.ResourceID == "" {
+				// Usage measured on the project and no resource of it. Named,
+				// so the rows still visibly add up to the project.
+				name = "(project)"
+			}
+			cells = append(cells, name)
+		}
+		if has["resource_type"] {
+			cells = append(cells, row.ResourceType, formatQuantity(row.Quantity), row.Unit, row.UnitPrice)
+		}
+		rows = append(rows, append(cells, formatAmount(row.Amount)))
+	}
+	return headers, rows
+}
+
+// formatAmount shows an unrounded decimal amount to the cent.
+func formatAmount(amount string) string {
+	v, ok := new(big.Rat).SetString(amount)
+	if !ok {
+		return amount
+	}
+	return v.FloatString(2)
+}
+
+// costBooks says which rate cards priced the window, and over which part of
+// it when there was more than one.
+func costBooks(books []client.CostPriceBook) string {
+	switch len(books) {
+	case 0:
+		return ""
+	case 1:
+		return "Price book: " + books[0].PriceBook
+	}
+	parts := make([]string, len(books))
+	for i, b := range books {
+		parts[i] = fmt.Sprintf("%s from %s", b.PriceBook, b.From.UTC().Format("2006-01-02 15:04 MST"))
+	}
+	return "Price books: " + strings.Join(parts, ", then ")
 }
 
 var billingPricesCmd = &cobra.Command{
@@ -443,6 +590,7 @@ func percentList(thresholds []int) string {
 func init() {
 	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h")
 	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
+	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
 
 	billingRolesGrantCmd.Flags().String("role", "", "billing.viewer or billing.admin (required)")
 	billingRolesGrantCmd.Flags().String("member-type", "", "user (default) or serviceAccount")

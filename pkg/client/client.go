@@ -813,17 +813,25 @@ func (c *Client) ListOrgUsage(ctx context.Context, orgID, query string) ([]*Usag
 	return entries, nil
 }
 
-// GetBillingEstimate returns the cost of the period in progress (#111).
+// OrgCost reads what an org cost over a window (ADR-273). query takes from/to
+// (RFC3339) and group_by (comma-separated: up to one of project, resource,
+// resource_type and one of hour, day, month); empty means the month in
+// progress, by resource type.
 //
-// Computed, never persisted: the usage is still accruing and the number changes
-// every hour. query takes from/to (RFC3339); empty means the current UTC
-// calendar month — the same period the close task invoices, so an estimate and
-// the bill that replaces it cover the same hours.
-//
-// Gated on the BILLING axis (#114), not the resource roles: a caller who can
-// read the org's usage may still be refused here.
-func (c *Client) GetBillingEstimate(ctx context.Context, orgID, query string) (*RatedPeriod, error) {
-	path := "/api/v1/orgs/" + orgID + "/billing/estimate"
+// Gated on the billing axis: a caller who can read the org's usage may still be
+// refused here.
+func (c *Client) OrgCost(ctx context.Context, orgID, query string) (*CostReport, error) {
+	return c.cost(ctx, "/api/v1/orgs/"+orgID+"/cost", query)
+}
+
+// ProjectCost reads what one project cost over a window, at its org's real
+// rates (ADR-273). query is OrgCost's. Needs read on the project, or a billing
+// role on its org.
+func (c *Client) ProjectCost(ctx context.Context, projectID, query string) (*CostReport, error) {
+	return c.cost(ctx, "/api/v1/projects/"+projectID+"/cost", query)
+}
+
+func (c *Client) cost(ctx context.Context, path, query string) (*CostReport, error) {
 	if query != "" {
 		path += "?" + query
 	}
@@ -831,11 +839,11 @@ func (c *Client) GetBillingEstimate(ctx context.Context, orgID, query string) (*
 	if err != nil {
 		return nil, err
 	}
-	var rated RatedPeriod
-	if err := c.do(httpReq, &rated); err != nil {
+	var report CostReport
+	if err := c.do(httpReq, &report); err != nil {
 		return nil, err
 	}
-	return &rated, nil
+	return &report, nil
 }
 
 // ListPrices returns the platform's current price list.

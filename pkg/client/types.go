@@ -64,44 +64,66 @@ type UsageEntry struct {
 	Quantity string `json:"quantity"`
 }
 
-// RatedLine is one priced component of a period's usage (#112).
+// CostReport is what an org, or one of its projects, cost over a window,
+// grouped by up to one entity axis and one time axis (ADR-273).
 //
-// One line per (resource type, RATE) — a period spanning a price change yields
-// two lines for the same resource, each at the rate that actually applied.
-// Grouping these by resource type alone double-counts or silently picks one
-// rate.
-//
-// Quantity, UnitPrice and Amount are decimal strings for the same reason
-// UsageEntry.Quantity is: the arithmetic happens in Postgres NUMERIC and a
-// float64 round-trip loses exactness money cannot afford. Parse only to format.
-type RatedLine struct {
+// Amounts are decimal strings and are not rounded: the rows sum exactly to
+// Total before its one rounding to the currency's minor unit. The invoice
+// rounds per line and is the bill, so the two can differ by under a cent per
+// invoice line. Parse only to format.
+type CostReport struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+	// GroupBy is the grouping the rows are in: up to one of project, resource
+	// and resource_type, and up to one of hour, day and month.
+	GroupBy  []string `json:"group_by"`
+	Currency string   `json:"currency"`
+	// PriceBooks are the rate cards the window was priced under, each with the
+	// part of the window it held. The same usage costs differently under a
+	// different card, so a figure quoted without its book cannot be checked.
+	PriceBooks []CostPriceBook `json:"price_books"`
+	Rows       []CostRow       `json:"rows"`
+	Total      string          `json:"total"`
+	// Unpriced is the usage in the window that no rate prices. It is in neither
+	// Rows nor Total, and it is not free: its invoice waits for a rate (ADR-271).
+	Unpriced []UnpricedCost `json:"unpriced"`
+}
+
+// CostPriceBook is a rate card and the part of a cost window it priced.
+type CostPriceBook struct {
+	PriceBook string    `json:"price_book"`
+	From      time.Time `json:"from"`
+	To        time.Time `json:"to"`
+}
+
+// CostRow is one group of a CostReport. Only the keys of the grouping asked
+// for are set.
+type CostRow struct {
+	// Set when grouped by project or by resource.
+	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+	// Set when grouped by resource: the app, database, job, runner or bucket
+	// the usage was measured on, by its newest name. Empty for usage measured
+	// on no resource of the project.
+	ResourceID   string `json:"resource_id,omitempty"`
+	ResourceName string `json:"resource_name,omitempty"`
+	// Set when grouped by resource_type. One row per type and rate, so a window
+	// spanning a price change shows each rate that applied rather than an
+	// average nobody was charged. Quantities only add within one type.
+	ResourceType string `json:"resource_type,omitempty"`
+	Unit         string `json:"unit,omitempty"`
+	UnitPrice    string `json:"unit_price,omitempty"`
+	Quantity     string `json:"quantity,omitempty"`
+	// PeriodStart is the hour, day or month the row covers, when grouped by one.
+	PeriodStart *time.Time `json:"period_start,omitempty"`
+	Amount      string     `json:"amount"`
+}
+
+// UnpricedCost is usage in a cost window that no rate prices.
+type UnpricedCost struct {
 	ResourceType string `json:"resource_type"`
 	Unit         string `json:"unit"`
 	Quantity     string `json:"quantity"`
-	// Empty when Priced is false.
-	UnitPrice string `json:"unit_price,omitempty"`
-	Amount    string `json:"amount,omitempty"`
-	Currency  string `json:"currency"`
-	// Priced is false when the resource is metered but has no price in effect.
-	// Reported rather than billed at zero — metering keeps adding resource types
-	// and each arrives before anyone has priced it.
-	Priced bool `json:"priced"`
-}
-
-// RatedPeriod is what a scope's usage came to over a period.
-//
-// Total covers the priced lines only, and UnpricedTypes names what it left out.
-// A non-empty UnpricedTypes means Total is an understatement and a surface
-// showing it has to say so.
-type RatedPeriod struct {
-	Lines    []*RatedLine `json:"lines"`
-	Total    string       `json:"total"`
-	Currency string       `json:"currency"`
-	// PriceBook is the rate card these lines were priced against. The same usage
-	// totals differently depending on it, so a figure quoted without it cannot be
-	// reconciled against the published price list.
-	PriceBook     string   `json:"price_book"`
-	UnpricedTypes []string `json:"unpriced_types,omitempty"`
 }
 
 // Price is what one unit of a metered resource costs.
