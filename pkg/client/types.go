@@ -88,7 +88,7 @@ type CostReport struct {
 	// Rows nor Total, and it is not free: its invoice waits for a rate (ADR-271).
 	Unpriced []UnpricedCost `json:"unpriced"`
 	// Credits and AmountDue are present when the window is whole months and
-	// the read is the org's (ADR-275): one entry per month the org held a
+	// the read is the org's (ADR-276): one entry per month the org held a
 	// credit in, and Total less every credit applied. Total keeps meaning
 	// usage at the org's rates. Both are absent for a window not aligned to
 	// months and for a project's cost.
@@ -96,7 +96,7 @@ type CostReport struct {
 	AmountDue string       `json:"amount_due,omitempty"`
 }
 
-// CostCredit is one month's credit in a cost window (ADR-275): the allowance
+// CostCredit is one month's credit in a cost window (ADR-276): the allowance
 // the org held for the month, and what of it the month's priced usage in the
 // window consumed, never more than the allowance.
 type CostCredit struct {
@@ -229,7 +229,7 @@ type Invoice struct {
 // and is billed on this one instead (ADR-269).
 type InvoiceLineItem struct {
 	// Kind is what the line is a sum of: usage at a rate, or the credit
-	// taken off the invoice (ADR-275). A credit line names no resource type,
+	// taken off the invoice (ADR-276). A credit line names no resource type,
 	// project or unit; its Description says what it is for.
 	Kind             string    `json:"kind"`
 	Description      string    `json:"description,omitempty"`

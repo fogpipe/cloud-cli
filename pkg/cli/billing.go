@@ -101,7 +101,7 @@ on the project, and is priced at the organization's real rates.
 
 		fmt.Printf("\n  Total: %s %s\n", report.Total, report.Currency)
 		// A credit is taken off the month's invoice, never off the usage
-		// (ADR-275), so the total stays what the usage cost, and what the
+		// (ADR-276), so the total stays what the usage cost, and what the
 		// credit took off and what is due are said beneath it.
 		if len(report.Credits) > 0 {
 			for _, cr := range report.Credits {
@@ -382,7 +382,7 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 	rows := make([][]string, len(inv.Lines))
 	for i, l := range inv.Lines {
 		month := l.UsagePeriodStart.UTC().Format("2006-01")
-		// The credit taken off the invoice (ADR-275): no resource, no
+		// The credit taken off the invoice (ADR-276): no resource, no
 		// quantity, no rate, so those cells say nothing rather than
 		// something that is not there.
 		if l.Kind == "credit" {
