@@ -100,6 +100,16 @@ on the project, and is priced at the organization's real rates.
 		render(headers, rows, report)
 
 		fmt.Printf("\n  Total: %s %s\n", report.Total, report.Currency)
+		// A credit is taken off the month's invoice, never off the usage
+		// (ADR-275), so the total stays what the usage cost, and what the
+		// credit took off and what is due are said beneath it.
+		if len(report.Credits) > 0 {
+			for _, cr := range report.Credits {
+				fmt.Printf("  Credit %s: %s of %s %s applied\n",
+					cr.PeriodStart.UTC().Format("2006-01"), cr.Applied, cr.Allowance, report.Currency)
+			}
+			fmt.Printf("  Amount due: %s %s\n", report.AmountDue, report.Currency)
+		}
 		if len(report.Unpriced) > 0 {
 			// The total excludes these, so saying nothing would present an
 			// understatement as complete.
@@ -371,11 +381,19 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 
 	rows := make([][]string, len(inv.Lines))
 	for i, l := range inv.Lines {
+		month := l.UsagePeriodStart.UTC().Format("2006-01")
+		// The credit taken off the invoice (ADR-275): no resource, no
+		// quantity, no rate, so those cells say nothing rather than
+		// something that is not there.
+		if l.Kind == "credit" {
+			rows[i] = []string{month, "", "credit: " + l.Description, "", "", "", l.Amount}
+			continue
+		}
 		project := l.ProjectName
 		if project == "" {
 			project = "(org)"
 		}
-		rows[i] = []string{l.UsagePeriodStart.UTC().Format("2006-01"), project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
+		rows[i] = []string{month, project, l.ResourceType, formatQuantity(l.Quantity), l.Unit, l.UnitPrice, l.Amount}
 	}
 	// The unit price is a column, not a footnote: it is the rate this line
 	// was BILLED at, stored on the invoice, and it is what a dispute is
