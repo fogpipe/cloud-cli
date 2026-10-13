@@ -37,12 +37,18 @@ cent; the invoice rounds once per line and is the bill.
 database, job, runner or bucket) and up to one of hour, day and month. Grouping
 by type shows quantities and rates, one row per rate that applied.
 
+--resource narrows the read to one app, database, job, runner or bucket by its
+name, found among the resources that cost something in the period, so a
+deleted one still answers. With the default grouping it is that resource by
+type.
+
 The organization's cost needs a billing role. A project's cost needs only read
 on the project, and is priced at the organization's real rates.
 
   fpcloud billing cost
   fpcloud billing cost --group-by project,day
   fpcloud billing cost --project api --group-by resource
+  fpcloud billing cost --project api --resource web
   fpcloud billing cost --from 2026-07-01T00:00:00Z --to 2026-08-01T00:00:00Z`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -70,28 +76,48 @@ on the project, and is priced at the organization's real rates.
 		q.Set("group_by", strings.Join(groupBy, ","))
 
 		c := getClient()
-		var report *client.CostReport
 		// The org by default, which is what this command has always shown. A
 		// project only when one is named on the command line: the current
 		// project from config is the default for commands about a project, and
 		// would otherwise turn the org's cost into one project's unasked.
+		var read func(url.Values) (*client.CostReport, error)
 		if cmd.Flag("project").Changed {
 			project, perr := requireProject()
 			if perr != nil {
 				return perr
 			}
-			withSpinner("Calculating cost...", func() {
-				report, err = c.ProjectCost(cmd.Context(), project, q.Encode())
-			})
+			read = func(v url.Values) (*client.CostReport, error) {
+				return c.ProjectCost(cmd.Context(), project, v.Encode())
+			}
 		} else {
 			orgID, oerr := resolveOrgID(cmd)
 			if oerr != nil {
 				return oerr
 			}
-			withSpinner("Calculating cost...", func() {
-				report, err = c.OrgCost(cmd.Context(), orgID, q.Encode())
-			})
+			read = func(v url.Values) (*client.CostReport, error) { return c.OrgCost(cmd.Context(), orgID, v.Encode()) }
 		}
+		var report *client.CostReport
+		withSpinner("Calculating cost...", func() {
+			// A resource is named the way the record names it: read the period
+			// by resource first, so one deleted since still resolves.
+			if name, _ := cmd.Flags().GetString("resource"); name != "" {
+				byResource := url.Values{}
+				for k, v := range q {
+					byResource[k] = v
+				}
+				byResource.Set("group_by", "resource")
+				var all *client.CostReport
+				if all, err = read(byResource); err != nil {
+					return
+				}
+				var id string
+				if id, err = costResourceID(all.Rows, name); err != nil {
+					return
+				}
+				q.Set("resource", id)
+			}
+			report, err = read(q)
+		})
 		if err != nil {
 			return err
 		}
@@ -128,6 +154,30 @@ on the project, and is priced at the organization's real rates.
 		fmt.Println(mutedStyle.Render("  Computed from usage so far, not an invoice."))
 		return nil
 	},
+}
+
+// costResourceID finds the one resource a name means among the rows of a read
+// grouped by resource. An id is taken as given; a name two projects share is
+// refused with the projects that hold it, since an org read spans them.
+func costResourceID(rows []client.CostRow, name string) (string, error) {
+	var ids, where []string
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.ResourceID == "" || seen[r.ResourceID] || (r.ResourceID != name && r.ResourceName != name) {
+			continue
+		}
+		seen[r.ResourceID] = true
+		ids = append(ids, r.ResourceID)
+		where = append(where, r.ResourceName+" in "+r.ProjectName)
+	}
+	switch len(ids) {
+	case 0:
+		return "", fmt.Errorf("no resource named %q cost anything in this period", name)
+	case 1:
+		return ids[0], nil
+	default:
+		return "", fmt.Errorf("%q names more than one resource (%s); add --project", name, strings.Join(where, ", "))
+	}
 }
 
 // costEntities and costGrains are the --group-by words, each mapped to the
@@ -609,6 +659,7 @@ func init() {
 	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h")
 	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
 	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
+	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name")
 
 	billingRolesGrantCmd.Flags().String("role", "", "billing.viewer or billing.admin (required)")
 	billingRolesGrantCmd.Flags().String("member-type", "", "user (default) or serviceAccount")

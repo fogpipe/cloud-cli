@@ -81,3 +81,27 @@ func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 		t.Errorf("by-type row = %v, want %v", rows[0], want)
 	}
 }
+
+// --resource resolves a name among the resources that cost something in the
+// period, so a deleted one still answers; an id is taken as given, and a name
+// two projects share is refused with where each one is.
+func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
+	rows := []client.CostRow{
+		{ProjectName: "shop", ResourceID: "a1", ResourceName: "web", Amount: "1"},
+		{ProjectName: "shop", ResourceID: "d1", ResourceName: "db", Amount: "1"},
+		{ProjectName: "blog", ResourceID: "a2", ResourceName: "web", Amount: "1"},
+		{ProjectName: "shop", Amount: "1"},
+	}
+	if id, err := costResourceID(rows, "db"); err != nil || id != "d1" {
+		t.Errorf("costResourceID(db) = %q, %v; want d1", id, err)
+	}
+	if id, err := costResourceID(rows, "a2"); err != nil || id != "a2" {
+		t.Errorf("costResourceID(a2) = %q, %v; want a2", id, err)
+	}
+	if _, err := costResourceID(rows, "web"); err == nil {
+		t.Error("a name two projects share resolved; want a refusal naming both")
+	}
+	if _, err := costResourceID(rows, "gone"); err == nil {
+		t.Error("a name with no cost resolved")
+	}
+}
