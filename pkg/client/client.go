@@ -821,17 +821,26 @@ func (c *Client) ListOrgUsage(ctx context.Context, orgID, query string) ([]*Usag
 // Gated on the billing axis: a caller who can read the org's usage may still be
 // refused here.
 func (c *Client) OrgCost(ctx context.Context, orgID, query string) (*CostReport, error) {
-	return c.cost(ctx, "/api/v1/orgs/"+orgID+"/cost", query)
+	path := "/api/v1/orgs/" + orgID + "/cost"
+	if query != "" {
+		path += "?" + query
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var report CostReport
+	if err := c.do(httpReq, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
 
 // ProjectCost reads what one project cost over a window, at its org's real
 // rates (ADR-273). query is OrgCost's. Needs read on the project, or a billing
 // role on its org.
 func (c *Client) ProjectCost(ctx context.Context, projectID, query string) (*CostReport, error) {
-	return c.cost(ctx, "/api/v1/projects/"+projectID+"/cost", query)
-}
-
-func (c *Client) cost(ctx context.Context, path, query string) (*CostReport, error) {
+	path := "/api/v1/projects/" + projectID + "/cost"
 	if query != "" {
 		path += "?" + query
 	}
