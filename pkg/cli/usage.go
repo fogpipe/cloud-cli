@@ -27,6 +27,9 @@ what a since-deleted app used.
   # one app, day by day
   fpcloud usage --app api --group-by day
 
+  # every workload's trend
+  fpcloud usage --group-by day,app
+
   # every project in the org, last week
   fpcloud usage --org-wide --from 7d`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -97,43 +100,53 @@ what a since-deleted app used.
 	},
 }
 
-// usageRows lays a result set out for the axis it was grouped along: the leading
-// column is whatever distinguishes one row from the next.
+// usageRows lays a result set out for the axes it was grouped along: one
+// leading column per axis, in the order day, project, app, so a workload's
+// trend (--group-by day,app) reads top to bottom then left to right.
 func usageRows(groupBy string, entries []*client.UsageEntry) ([]string, [][]string) {
-	lead := func(e *client.UsageEntry) (string, bool) {
-		switch groupBy {
-		case "app":
+	asked := map[string]bool{}
+	for _, a := range strings.Split(groupBy, ",") {
+		asked[strings.TrimSpace(a)] = true
+	}
+	type column struct {
+		header string
+		cell   func(e *client.UsageEntry) string
+	}
+	var lead []column
+	if asked["day"] {
+		lead = append(lead, column{"DAY", func(e *client.UsageEntry) string {
+			if e.Day == nil {
+				return ""
+			}
+			return e.Day.Format("2006-01-02")
+		}})
+	}
+	if asked["project"] {
+		lead = append(lead, column{"PROJECT", func(e *client.UsageEntry) string { return e.ProjectName }})
+	}
+	if asked["app"] {
+		lead = append(lead, column{"APP", func(e *client.UsageEntry) string {
 			if e.AppName == "" {
 				// Usage the collector could attribute to the project but not to a
 				// workload — a pod with no app label. Naming it keeps the column
 				// total honest instead of hiding a blank row.
-				return "(project)", true
+				return "(project)"
 			}
-			return e.AppName, true
-		case "project":
-			return e.ProjectName, true
-		case "day":
-			if e.Day == nil {
-				return "", true
-			}
-			return e.Day.Format("2006-01-02"), true
-		default:
-			return "", false
-		}
+			return e.AppName
+		}})
 	}
 
 	headers := []string{"RESOURCE", "QUANTITY", "UNIT"}
-	if _, leading := lead(&client.UsageEntry{}); leading {
-		headers = append([]string{strings.ToUpper(groupBy)}, headers...)
+	for i := len(lead) - 1; i >= 0; i-- {
+		headers = append([]string{lead[i].header}, headers...)
 	}
-
 	rows := make([][]string, len(entries))
 	for i, e := range entries {
-		row := []string{e.ResourceType, formatQuantity(e.Quantity), e.Unit}
-		if name, leading := lead(e); leading {
-			row = append([]string{name}, row...)
+		row := make([]string, 0, len(lead)+3)
+		for _, c := range lead {
+			row = append(row, c.cell(e))
 		}
-		rows[i] = row
+		rows[i] = append(row, e.ResourceType, formatQuantity(e.Quantity), e.Unit)
 	}
 	return headers, rows
 }
@@ -170,7 +183,7 @@ func parseTimeRef(raw string) (time.Time, error) {
 func init() {
 	usageCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h (default 30d)")
 	usageCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d (default now)")
-	usageCmd.Flags().String("group-by", "", "Break down by app, day, project, or resource")
+	usageCmd.Flags().String("group-by", "", "Break down by app, day, project, or resource; combine axes with a comma (day,app)")
 	usageCmd.Flags().String("app", "", "Limit to one app or database (name or id)")
 	usageCmd.Flags().Bool("org-wide", false, "Roll up every project in the organization")
 	rootCmd.AddCommand(usageCmd)
