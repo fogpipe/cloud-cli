@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,10 +50,56 @@ func parseObjectURL(s string) (bucket, key string, isRemote bool) {
 
 // --- exclude/include filtering ----------------------------------------------
 
+// glob is an `aws s3`-style filter pattern, compiled once: `*` matches any run
+// of characters, a slash included, `?` one character and `[...]` a class, so
+// `v1/*` is the whole tree under v1/ and `*.log` is every log at any depth.
+// filepath.Match is not this: its `*` stops at a slash, which left all but the
+// first level of v1/ in a recursive delete asked to exclude `v1/*`
+// (fogpipe/cloud-workspace#1203).
+type glob struct {
+	pattern string
+	re      *regexp.Regexp
+}
+
+func newGlob(pattern string) (glob, error) {
+	var b strings.Builder
+	b.WriteByte('^')
+	for i := 0; i < len(pattern); i++ {
+		switch c := pattern[i]; c {
+		case '*':
+			b.WriteString(".*")
+		case '?':
+			b.WriteByte('.')
+		case '[':
+			end := strings.IndexByte(pattern[i+1:], ']')
+			if end <= 0 {
+				b.WriteString(`\[`)
+				continue
+			}
+			class := pattern[i+1 : i+1+end]
+			if class[0] == '!' {
+				class = "^" + class[1:]
+			}
+			b.WriteString("[" + strings.ReplaceAll(class, `\`, `\\`) + "]")
+			i += end + 1
+		default:
+			b.WriteString(regexp.QuoteMeta(string(c)))
+		}
+	}
+	b.WriteByte('$')
+	re, err := regexp.Compile(b.String())
+	if err != nil {
+		return glob{}, fmt.Errorf("invalid glob %q: %w", pattern, err)
+	}
+	return glob{pattern: pattern, re: re}, nil
+}
+
+func (g glob) match(name string) bool { return g.re.MatchString(name) }
+
 // filterRule is one --exclude/--include glob, in command-line order.
 type filterRule struct {
 	include bool
-	pattern string
+	glob    glob
 }
 
 // includedByFilters reports whether a path survives the exclude/include rules.
@@ -61,11 +108,7 @@ type filterRule struct {
 func includedByFilters(rules []filterRule, p string) bool {
 	included := true
 	for _, r := range rules {
-		if ok, _ := filepath.Match(r.pattern, p); ok {
-			included = r.include
-		}
-		// aws also matches the basename; mirror that so `*.log` works on keys.
-		if ok, _ := filepath.Match(r.pattern, path.Base(p)); ok {
+		if r.glob.match(p) {
 			included = r.include
 		}
 	}
@@ -82,7 +125,11 @@ type globFilter struct {
 func (g globFilter) String() string { return "" }
 func (g globFilter) Type() string   { return "glob" }
 func (g globFilter) Set(v string) error {
-	*g.rules = append(*g.rules, filterRule{include: g.include, pattern: v})
+	gl, err := newGlob(v)
+	if err != nil {
+		return err
+	}
+	*g.rules = append(*g.rules, filterRule{include: g.include, glob: gl})
 	return nil
 }
 
@@ -345,8 +392,8 @@ const cacheControlFlagHelp = "Cache-Control for matching objects, \"<glob>=<valu
 
 // cacheRule is one --cache-control glob=value override.
 type cacheRule struct {
-	pattern string
-	value   string
+	glob  glob
+	value string
 }
 
 // looksLikeHash reports whether a filename segment is a build fingerprint.
@@ -414,12 +461,8 @@ type putOpts struct {
 // then the web defaults when enabled, otherwise nothing is set (a plain
 // `storage cp` of a data object should not acquire a web cache policy).
 func (o putOpts) cacheControlFor(key string) string {
-	base := path.Base(key)
 	for _, r := range o.cacheRules {
-		if ok, _ := path.Match(r.pattern, key); ok {
-			return r.value
-		}
-		if ok, _ := path.Match(r.pattern, base); ok {
+		if r.glob.match(key) {
 			return r.value
 		}
 	}
@@ -438,7 +481,11 @@ func parseCacheControlFlags(values []string) ([]cacheRule, error) {
 		if !ok || pattern == "" || value == "" {
 			return nil, fmt.Errorf("invalid --cache-control %q (expected \"<glob>=<value>\", e.g. \"*.html=no-cache\")", raw)
 		}
-		rules = append(rules, cacheRule{pattern: pattern, value: value})
+		gl, err := newGlob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --cache-control %q: %w", raw, err)
+		}
+		rules = append(rules, cacheRule{glob: gl, value: value})
 	}
 	return rules, nil
 }

@@ -38,7 +38,18 @@ func TestParseObjectURL(t *testing.T) {
 	}
 }
 
+func mustGlob(t *testing.T, pattern string) glob {
+	t.Helper()
+	g, err := newGlob(pattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
 func TestIncludedByFilters(t *testing.T) {
+	exclude := func(p string) filterRule { return filterRule{false, mustGlob(t, p)} }
+	include := func(p string) filterRule { return filterRule{true, mustGlob(t, p)} }
 	cases := []struct {
 		name  string
 		rules []filterRule
@@ -46,33 +57,65 @@ func TestIncludedByFilters(t *testing.T) {
 		want  bool
 	}{
 		{"no rules includes everything", nil, "any/file.txt", true},
-		{"exclude matches", []filterRule{{false, "*.log"}}, "app.log", false},
-		{"exclude non-match stays included", []filterRule{{false, "*.log"}}, "app.txt", true},
+		{"exclude matches", []filterRule{exclude("*.log")}, "app.log", false},
+		{"exclude non-match stays included", []filterRule{exclude("*.log")}, "app.txt", true},
 		{
 			"exclude-all then re-include txt: txt wins",
-			[]filterRule{{false, "*"}, {true, "*.txt"}},
+			[]filterRule{exclude("*"), include("*.txt")},
 			"notes.txt", true,
 		},
 		{
 			"exclude-all then re-include txt: log excluded",
-			[]filterRule{{false, "*"}, {true, "*.txt"}},
+			[]filterRule{exclude("*"), include("*.txt")},
 			"app.log", false,
 		},
 		{
 			"later rule wins (include then exclude)",
-			[]filterRule{{true, "*.txt"}, {false, "secret.txt"}},
+			[]filterRule{include("*.txt"), exclude("secret.txt")},
 			"secret.txt", false,
 		},
 		{
-			"basename match on nested key",
-			[]filterRule{{false, "*.log"}},
+			"star crosses a slash: nested key",
+			[]filterRule{exclude("*.log")},
 			"deep/nested/app.log", false,
 		},
+		{
+			"a prefix glob holds the whole tree out",
+			[]filterRule{exclude("v1/*")},
+			"v1/sv/tjanster/utvecklare/index.html", false,
+		},
+		{
+			"a prefix glob leaves the rest in",
+			[]filterRule{exclude("v1/*")},
+			"sv/tjanster/utvecklare/index.html", true,
+		},
+		{
+			"exclude-all then re-include a tree",
+			[]filterRule{exclude("*"), include("assets/*")},
+			"assets/fonts/plex.woff2", true,
+		},
+		{
+			"a bare name matches only at the root, as in aws s3",
+			[]filterRule{exclude("secret.txt")},
+			"deep/secret.txt", true,
+		},
+		{"question mark is one character", []filterRule{exclude("v?/*")}, "v1/index.html", false},
+		{"class", []filterRule{exclude("*.[jc]ss")}, "app.css", false},
+		{"negated class", []filterRule{exclude("*.[!j]s")}, "app.js", true},
 	}
 	for _, c := range cases {
 		if got := includedByFilters(c.rules, c.path); got != c.want {
-			t.Errorf("%s: includedByFilters(%v, %q) = %v, want %v", c.name, c.rules, c.path, got, c.want)
+			t.Errorf("%s: includedByFilters(%q) = %v, want %v", c.name, c.path, got, c.want)
 		}
+	}
+}
+
+func TestNewGlob_RefusesWhatItCannotCompile(t *testing.T) {
+	if _, err := newGlob("[a-"); err != nil {
+		t.Fatalf("an unclosed bracket is a literal, got %v", err)
+	}
+	if _, err := newGlob("[z-a]"); err == nil {
+		t.Fatal("an inverted range is refused at parse, not silently never matching")
 	}
 }
 
@@ -161,28 +204,30 @@ func TestPutOpts_CacheControlPrecedence(t *testing.T) {
 	assert.Empty(t, putOpts{}.cacheControlFor("index.html"))
 
 	// An explicit override beats the default, matching on base name or full key.
-	o := putOpts{webCache: true, cacheRules: []cacheRule{{pattern: "*.html", value: "public, max-age=60"}}}
+	o := putOpts{webCache: true, cacheRules: []cacheRule{{glob: mustGlob(t, "*.html"), value: "public, max-age=60"}}}
 	assert.Equal(t, "public, max-age=60", o.cacheControlFor("index.html"))
+	assert.Equal(t, "public, max-age=60", o.cacheControlFor("sv/om-oss/index.html"))
 	assert.Equal(t, immutableCacheControl, o.cacheControlFor("assets/index-DfGh1a2b.js"))
 
 	// First match wins, so an earlier rule shadows a later one.
 	o = putOpts{cacheRules: []cacheRule{
-		{pattern: "assets/*", value: "first"},
-		{pattern: "*.js", value: "second"},
+		{glob: mustGlob(t, "assets/*"), value: "first"},
+		{glob: mustGlob(t, "*.js"), value: "second"},
 	}}
 	assert.Equal(t, "first", o.cacheControlFor("assets/app.js"))
+	assert.Equal(t, "first", o.cacheControlFor("assets/vendor/deep/app.js"))
 }
 
 func TestParseCacheControlFlags(t *testing.T) {
 	rules, err := parseCacheControlFlags([]string{"*.html=no-cache", " *.js = public, max-age=99 "})
 	require.NoError(t, err)
 	require.Len(t, rules, 2)
-	assert.Equal(t, "*.html", rules[0].pattern)
+	assert.Equal(t, "*.html", rules[0].glob.pattern)
 	assert.Equal(t, "no-cache", rules[0].value)
 	// A value containing '=' survives: only the first '=' separates.
 	assert.Equal(t, "public, max-age=99", rules[1].value)
 
-	for _, bad := range []string{"nokey", "=value", "pattern=", ""} {
+	for _, bad := range []string{"nokey", "=value", "pattern=", "", "[z-a]=no-cache"} {
 		_, err := parseCacheControlFlags([]string{bad})
 		assert.Error(t, err, bad)
 	}
