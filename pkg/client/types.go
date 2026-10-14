@@ -142,6 +142,73 @@ type UnpricedCost struct {
 	Quantity     string `json:"quantity"`
 }
 
+// CapacityReport is what an organization, or one of its projects, holds
+// against what it may hold, one axis at a time (ADR-279). An axis is one
+// dimension in its own unit, and nothing in the report adds across axes: a
+// GiB of memory and a GiB of disk are different resources at different prices.
+// Money, the one total across resources, is the cost read's.
+type CapacityReport struct {
+	// Scope is "organization" or "project".
+	Scope string    `json:"scope"`
+	From  time.Time `json:"from"`
+	To    time.Time `json:"to"`
+	// Step is the width of each point of an axis's Series: "hour" or "day".
+	Step string         `json:"step"`
+	Axes []CapacityAxis `json:"axes"`
+}
+
+// CapacityAxis is one dimension of a CapacityReport.
+//
+// Allowed and Admitted are the organization's whatever the scope: the bound on
+// this axis and what is already counted against it, the two numbers a create
+// is refused by (ADR-184). Reserved and Used are the scope's, now: what
+// metering last billed on this axis and what was last measured, each from the
+// latest hour its source recorded. A value that is absent was not measured,
+// which is never the same as zero.
+type CapacityAxis struct {
+	// Axis is the ceiling axis: cpu, memory, storage, object_storage,
+	// registry_storage, backup_storage, pods or objects.
+	Axis string `json:"axis"`
+	// Unit is "core", "byte" or "count".
+	Unit     string   `json:"unit"`
+	Allowed  *float64 `json:"allowed,omitempty"`
+	Admitted *float64 `json:"admitted,omitempty"`
+	Reserved *float64 `json:"reserved,omitempty"`
+	Used     *float64 `json:"used,omitempty"`
+	// Series is reserved and used over the window, one point per Step, each the
+	// average held over the hours of its step that its source recorded.
+	Series []CapacityPoint `json:"series"`
+	// Rows are the projects (organization scope) or resources (project scope)
+	// that reserved or used anything on this axis in the window, each averaged
+	// over it, largest reservation first.
+	Rows []CapacityRow `json:"rows"`
+	// Unmeasured names the kinds of resource whose use this axis does not
+	// measure (runner, job, database, volume): their reservation is in
+	// Reserved and their use is in neither Used nor any row's.
+	Unmeasured []string `json:"unmeasured,omitempty"`
+}
+
+// CapacityPoint is one step of an axis's series.
+type CapacityPoint struct {
+	Start    time.Time `json:"start"`
+	Reserved *float64  `json:"reserved,omitempty"`
+	Used     *float64  `json:"used,omitempty"`
+}
+
+// CapacityRow is one project or resource on an axis, averaged over the window.
+type CapacityRow struct {
+	// Kind is project, app, database, job, runner or bucket. At project scope a
+	// row of kind project is what was measured on no resource of the project:
+	// its registry share, its backups, a volume no resource owns.
+	Kind string `json:"kind"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Deleted marks a project the record still holds whose project is gone.
+	Deleted  bool     `json:"deleted,omitempty"`
+	Reserved *float64 `json:"reserved,omitempty"`
+	Used     *float64 `json:"used,omitempty"`
+}
+
 // Price is what one unit of a metered resource costs.
 //
 // The unit lives on the usage, not here — it is a property of how a resource is
