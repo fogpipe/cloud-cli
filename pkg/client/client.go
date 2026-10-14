@@ -859,16 +859,25 @@ func (c *Client) ProjectCost(ctx context.Context, projectID, query string) (*Cos
 // (ADR-279). query takes from/to (RFC3339) and step (hour or day); empty means
 // the last 30 days, by day. Needs read on the org.
 func (c *Client) OrgCapacity(ctx context.Context, orgID, query string) (*CapacityReport, error) {
-	return c.capacity(ctx, "/api/v1/orgs/"+orgID+"/capacity", query)
+	path := "/api/v1/orgs/" + orgID + "/capacity"
+	if query != "" {
+		path += "?" + query
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var report CapacityReport
+	if err := c.do(httpReq, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
 
 // ProjectCapacity reads what one project holds, beside its org's bound on each
 // axis (ADR-279). query is OrgCapacity's. Needs read on the project.
 func (c *Client) ProjectCapacity(ctx context.Context, projectID, query string) (*CapacityReport, error) {
-	return c.capacity(ctx, "/api/v1/projects/"+projectID+"/capacity", query)
-}
-
-func (c *Client) capacity(ctx context.Context, path, query string) (*CapacityReport, error) {
+	path := "/api/v1/projects/" + projectID + "/capacity"
 	if query != "" {
 		path += "?" + query
 	}
