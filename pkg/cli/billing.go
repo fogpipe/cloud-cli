@@ -38,8 +38,9 @@ database, job, runner or bucket) and up to one of hour, day and month. Grouping
 by type shows quantities and rates, one row per rate that applied.
 
 --resource narrows the read to one app, database, job, runner or bucket by its
-name, found among the resources that cost something in the period, so a
-deleted one still answers. With the default grouping it is that resource by
+name or id, found among the resources that cost something in the period, so a
+deleted one still answers. A name two resources share is refused with each
+one's id. With the default grouping it is that resource by
 type.
 
 The organization's cost needs a billing role. A project's cost needs only read
@@ -111,7 +112,7 @@ on the project, and is priced at the organization's real rates.
 					return
 				}
 				var id string
-				if id, err = costResourceID(all.Rows, name); err != nil {
+				if id, err = costResourceID(all, name); err != nil {
 					return
 				}
 				q.Set("resource", id)
@@ -157,27 +158,38 @@ on the project, and is priced at the organization's real rates.
 }
 
 // costResourceID finds the one resource a name means among the rows of a read
-// grouped by resource. An id is taken as given; a name two projects share is
-// refused with the projects that hold it, since an org read spans them.
-func costResourceID(rows []client.CostRow, name string) (string, error) {
-	var ids, where []string
+// grouped by resource. An id is taken as given. A name is unique only among one
+// kind's live resources, so two of one project's can share it (an app and a
+// bucket, or a deleted resource and the one that took its name), and the
+// refusal lists each by its id, the one spelling that tells them apart, with
+// what it cost; --project is suggested only where the projects differ.
+func costResourceID(report *client.CostReport, name string) (string, error) {
+	var found []client.CostRow
 	seen := map[string]bool{}
-	for _, r := range rows {
+	for _, r := range report.Rows {
 		if r.ResourceID == "" || seen[r.ResourceID] || (r.ResourceID != name && r.ResourceName != name) {
 			continue
 		}
 		seen[r.ResourceID] = true
-		ids = append(ids, r.ResourceID)
-		where = append(where, r.ResourceName+" in "+r.ProjectName)
+		found = append(found, r)
 	}
-	switch len(ids) {
+	switch len(found) {
 	case 0:
 		return "", fmt.Errorf("no resource named %q cost anything in this period", name)
 	case 1:
-		return ids[0], nil
-	default:
-		return "", fmt.Errorf("%q names more than one resource (%s); add --project", name, strings.Join(where, ", "))
+		return found[0].ResourceID, nil
 	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%q names more than one resource; pass one's id to --resource", name)
+	projects := map[string]bool{}
+	for _, r := range found {
+		projects[r.ProjectName] = true
+		fmt.Fprintf(&b, "\n  %s  %s in %s, %s %s", r.ResourceID, r.ResourceName, r.ProjectName, formatAmount(r.Amount), report.Currency)
+	}
+	if len(projects) > 1 {
+		b.WriteString("\nor name its project with --project")
+	}
+	return "", fmt.Errorf("%s", b.String())
 }
 
 // costEntities and costGrains are the --group-by words, each mapped to the
@@ -659,7 +671,7 @@ func init() {
 	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h")
 	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
 	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
-	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name")
+	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
 
 	billingRolesGrantCmd.Flags().String("role", "", "billing.viewer or billing.admin (required)")
 	billingRolesGrantCmd.Flags().String("member-type", "", "user (default) or serviceAccount")

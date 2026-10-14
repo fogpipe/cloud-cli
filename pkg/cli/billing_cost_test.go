@@ -2,6 +2,7 @@ package cli
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,25 +84,45 @@ func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 }
 
 // --resource resolves a name among the resources that cost something in the
-// period, so a deleted one still answers; an id is taken as given, and a name
-// two projects share is refused with where each one is.
+// period, so a deleted one still answers; an id is taken as given. A name two
+// resources share is refused with each one's id, and --project is suggested
+// only when they sit in different projects: in one project, a name taken again
+// after a delete, it cannot help.
 func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
-	rows := []client.CostRow{
+	report := &client.CostReport{Currency: "EUR", Rows: []client.CostRow{
 		{ProjectName: "shop", ResourceID: "a1", ResourceName: "web", Amount: "1"},
-		{ProjectName: "shop", ResourceID: "d1", ResourceName: "db", Amount: "1"},
+		{ProjectName: "shop", ResourceID: "d1", ResourceName: "db", Amount: "1.3904"},
+		{ProjectName: "shop", ResourceID: "d0", ResourceName: "db", Amount: "0.001"},
 		{ProjectName: "blog", ResourceID: "a2", ResourceName: "web", Amount: "1"},
 		{ProjectName: "shop", Amount: "1"},
+	}}
+	if id, err := costResourceID(report, "d1"); err != nil || id != "d1" {
+		t.Errorf("costResourceID(d1) = %q, %v; want d1", id, err)
 	}
-	if id, err := costResourceID(rows, "db"); err != nil || id != "d1" {
-		t.Errorf("costResourceID(db) = %q, %v; want d1", id, err)
-	}
-	if id, err := costResourceID(rows, "a2"); err != nil || id != "a2" {
-		t.Errorf("costResourceID(a2) = %q, %v; want a2", id, err)
-	}
-	if _, err := costResourceID(rows, "web"); err == nil {
-		t.Error("a name two projects share resolved; want a refusal naming both")
-	}
-	if _, err := costResourceID(rows, "gone"); err == nil {
+	if _, err := costResourceID(report, "gone"); err == nil {
 		t.Error("a name with no cost resolved")
+	}
+
+	_, err := costResourceID(report, "web")
+	if err == nil {
+		t.Fatal("a name two projects share resolved; want a refusal")
+	}
+	for _, want := range []string{"a1  web in shop, 1.00 EUR", "a2  web in blog, 1.00 EUR", "--project"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not say %q", err, want)
+		}
+	}
+
+	_, err = costResourceID(report, "db")
+	if err == nil {
+		t.Fatal("a name one project holds twice resolved; want a refusal")
+	}
+	for _, want := range []string{"d1  db in shop, 1.39 EUR", "d0  db in shop, 0.00 EUR"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not say %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "--project") {
+		t.Errorf("refusal %q suggests --project, which cannot tell two of one project's resources apart", err)
 	}
 }
