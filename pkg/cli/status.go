@@ -42,7 +42,9 @@ whose certificate never issued, backups that stopped producing restore points.
   fpcloud project status --load          what each app actually used over the
                                          last hour, against its limit
   fpcloud project status --load --window 3d --percentile 95
-  fpcloud project status --load --window 7d --percentile 95 --suggestions
+  fpcloud project status --load --suggestions
+                                         the limits a week of readings argues
+                                         for (7d at p95 unless told otherwise)
 
 --load prints, under each app, its cpu and memory over the window: the average
 per replica, the peak, and the limit the app declared; --percentile adds that
@@ -52,9 +54,10 @@ store at one-minute steps, beyond that from the hourly record the platform
 keeps, and the line says when the record covers less than was asked. A
 serverless app with no pod in the window reads idle. Without --load the
 document carries no load and no metrics read is made. --suggestions adds the
-limit each reading argues for — cpu from the percentile with headroom, memory
-from the peak — as the command that sets it, only where the whole window was
-covered.
+limit each reading argues for (cpu from the percentile with headroom, memory
+from the peak) as the command that sets it, once a day of the window is
+covered. It reads the last seven days at p95 unless --window or --percentile
+says otherwise: a limit sized from one quiet day is cut before a busy one.
 
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
@@ -82,6 +85,15 @@ healthy if it also says that everything was looked at.`,
 		suggestions, _ := cmd.Flags().GetBool("suggestions")
 		if suggestions && !load {
 			return fmt.Errorf("--suggestions needs --load")
+		}
+		// A suggestion is sized from a week at p95 unless told otherwise
+		// (ADR-279 §5): the hour --window defaults to says nothing about a
+		// nightly job, and the server makes no suggestion under a day.
+		if suggestions && !cmd.Flags().Changed("window") {
+			window = "7d"
+		}
+		if suggestions && !cmd.Flags().Changed("percentile") {
+			percentile = 95
 		}
 		var query client.LoadQuery
 		if load {
