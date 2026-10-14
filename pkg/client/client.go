@@ -3275,6 +3275,9 @@ func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch strin
 		if load.Suggest {
 			q.Set("suggest", "true")
 		}
+		if load.Series {
+			q.Set("series", "true")
+		}
 		path += "?" + q.Encode()
 	}
 	req, err := c.newRequest(ctx, http.MethodGet, path, nil)

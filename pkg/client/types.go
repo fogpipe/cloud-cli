@@ -2398,6 +2398,31 @@ type Load struct {
 	// was asked for) with headroom; memory from the peak, since an
 	// out-of-memory kill happens at the maximum.
 	Suggest *LoadSuggestion `json:"suggest,omitempty"`
+	// Series is the reading over the window, oldest first, one point per
+	// SeriesStep, present only when asked for (LoadQuery.Series). The step is
+	// sized to the window: a minute up to an hour, then 5 minutes, 15 minutes,
+	// an hour, 6 hours and a day (ADR-282), so a chart holds a few hundred
+	// points at most; each point's peak keeps a spike shorter than its step.
+	SeriesStep string      `json:"series_step,omitempty"`
+	Series     []LoadPoint `json:"series,omitempty"`
+}
+
+// LoadPoint is one step of a load series, from Start for one SeriesStep.
+// Covered says whether the source holds that step at all. Over a covered step
+// an absent axis is one no pod of the resource ran in, which is idle; over an
+// uncovered one there is no reading, and both axes are absent.
+type LoadPoint struct {
+	Start   time.Time      `json:"start"`
+	Covered bool           `json:"covered"`
+	CPU     *LoadPointAxis `json:"cpu,omitempty"`
+	Memory  *LoadPointAxis `json:"memory,omitempty"`
+}
+
+// LoadPointAxis is one axis over one step: the average over every replica and
+// the busiest replica's peak, in millicores or bytes as on LoadAxis.
+type LoadPointAxis struct {
+	Avg  int64 `json:"avg"`
+	Peak int64 `json:"peak"`
 }
 
 // LoadSuggestion is a limit per axis, spelled as a limit is declared.
@@ -2429,6 +2454,8 @@ type LoadQuery struct {
 	Percentile int
 	// Suggest asks for the limit each reading argues for.
 	Suggest bool
+	// Series asks for each reading's points over the window (Load.Series).
+	Series bool
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,

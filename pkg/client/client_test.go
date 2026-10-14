@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -518,4 +519,29 @@ func TestRetryAfter_FallsBackWhenTheHeaderIsUnusable(t *testing.T) {
 // time.
 func TestRetryAfter_IsCapped(t *testing.T) {
 	assert.LessOrEqual(t, retryAfter("86400"), maxRetryAfter+maxRetryAfter/2)
+}
+
+// A load read asks for its series only when told to, and never without a
+// window (ADR-282).
+func TestProjectStatusAsksForTheSeriesWhenTold(t *testing.T) {
+	var asked url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Query()
+		json.NewEncoder(w).Encode(ProjectStatus{})
+	}))
+	defer server.Close()
+	c := New(server.URL, "test-key")
+
+	_, _, err := c.ProjectStatus(context.Background(), "proj-1", "", LoadQuery{Window: "24h", Series: true})
+	require.NoError(t, err)
+	assert.Equal(t, "true", asked.Get("series"))
+	assert.Equal(t, "24h", asked.Get("load"))
+
+	_, _, err = c.ProjectStatus(context.Background(), "proj-1", "", LoadQuery{Window: "24h"})
+	require.NoError(t, err)
+	assert.Empty(t, asked.Get("series"))
+
+	_, _, err = c.ProjectStatus(context.Background(), "proj-1", "", LoadQuery{Series: true})
+	require.NoError(t, err)
+	assert.Empty(t, asked.Encode(), "no window, no load read at all")
 }

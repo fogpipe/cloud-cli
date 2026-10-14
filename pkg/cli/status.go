@@ -45,6 +45,9 @@ whose certificate never issued, backups that stopped producing restore points.
   fpcloud project status --load --suggestions
                                          the limits a week of readings argues
                                          for (7d at p95 unless told otherwise)
+  fpcloud project status --load --window 24h --series
+                                         each reading over the day, drawn
+                                         against its limit
 
 --load prints, under each app, its cpu and memory over the window: the average
 per replica, the peak, and the limit the app declared; --percentile adds that
@@ -58,6 +61,10 @@ limit each reading argues for (cpu from the percentile with headroom, memory
 from the peak) as the command that sets it, once a day of the window is
 covered. It reads the last seven days at p95 unless --window or --percentile
 says otherwise: a limit sized from one quiet day is cut before a busy one.
+--series draws each axis's peaks over the window against the limit, at a step
+sized to the window (a minute up to an hour, then 5m, 15m, 1h, 6h and a day);
+-o json carries every point, each with its average and peak, and a step the
+record holds nothing for reads "·", never idle.
 
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
@@ -86,6 +93,10 @@ healthy if it also says that everything was looked at.`,
 		if suggestions && !load {
 			return fmt.Errorf("--suggestions needs --load")
 		}
+		series, _ := cmd.Flags().GetBool("series")
+		if series && !load {
+			return fmt.Errorf("--series needs --load")
+		}
 		// A suggestion is sized from a week at p95 unless told otherwise
 		// (ADR-279 §5): the hour --window defaults to says nothing about a
 		// nightly job, and the server makes no suggestion under a day.
@@ -103,7 +114,7 @@ healthy if it also says that everything was looked at.`,
 			if percentile < 0 || percentile > 99 {
 				return fmt.Errorf("--percentile must be between 1 and 99")
 			}
-			query = client.LoadQuery{Window: window, Percentile: percentile, Suggest: suggestions}
+			query = client.LoadQuery{Window: window, Percentile: percentile, Suggest: suggestions, Series: series}
 		}
 
 		c := getClient()
@@ -610,6 +621,7 @@ func init() {
 	projectStatusCmd.Flags().String("window", "1h", "How far back --load measures (30m, 6h, 3d, 2w; 5m to 1y)")
 	projectStatusCmd.Flags().Int("percentile", 0, "Also show this percentile (1-99) of --load's samples")
 	projectStatusCmd.Flags().Bool("suggestions", false, "With --load, print the limit each reading argues for, as the command that sets it")
+	projectStatusCmd.Flags().Bool("series", false, "With --load, draw each reading over the window against the limit (every point in -o json)")
 }
 
 // runningImage is what the cluster actually reports, falling back to what the

@@ -58,10 +58,81 @@ func loadLines(l *client.Load, sizing string, suggestions bool, unchecked []clie
 	if note := loadNote(l); note != "" {
 		lines[0] += "   (" + note + ")"
 	}
+	if len(l.Series) > 0 {
+		lines = append(lines,
+			sparkLine("cpu    ", l.Series, l.SeriesStep, axisLimit(l.CPU), func(p client.LoadPoint) *client.LoadPointAxis { return p.CPU }, formatMillicores),
+			sparkLine("memory ", l.Series, l.SeriesStep, axisLimit(l.Memory), func(p client.LoadPoint) *client.LoadPointAxis { return p.Memory }, humanizeSize))
+	}
 	if suggestions {
 		lines = append(lines, suggestLine(l, sizing))
 	}
 	return lines
+}
+
+// sparkWidth is the most columns a sparkline takes: a week's series is 168
+// points, which a terminal line is not.
+const sparkWidth = 48
+
+var sparkBars = []rune("▁▂▃▄▅▆▇█")
+
+func axisLimit(a *client.LoadAxis) int64 {
+	if a == nil {
+		return 0
+	}
+	return a.Limit
+}
+
+// sparkLine draws one axis's peaks over the series against its limit: a column
+// per point, or per run of points as the run's highest when there are more than
+// sparkWidth, since a spike is what the line is for. A column the source held
+// nothing for is "·", never the lowest bar, which is a measured near-nothing
+// (docs/reading-a-zero.md). With no limit read, the scale is the series' own
+// highest peak.
+func sparkLine(label string, series []client.LoadPoint, step string, limit int64, axis func(client.LoadPoint) *client.LoadPointAxis, format func(int64) string) string {
+	run := (len(series) + sparkWidth - 1) / sparkWidth
+	type column struct {
+		covered bool
+		peak    int64
+	}
+	var cols []column
+	top := limit
+	for i := 0; i < len(series); i += run {
+		var c column
+		for _, p := range series[i:min(i+run, len(series))] {
+			if !p.Covered {
+				continue
+			}
+			c.covered = true
+			if a := axis(p); a != nil {
+				c.peak = max(c.peak, a.Peak)
+			}
+		}
+		if limit <= 0 {
+			top = max(top, c.peak)
+		}
+		cols = append(cols, c)
+	}
+	var b strings.Builder
+	for _, c := range cols {
+		switch {
+		case !c.covered:
+			b.WriteRune('·')
+		case top <= 0:
+			b.WriteRune(sparkBars[0])
+		default:
+			i := int(float64(c.peak) / float64(top) * float64(len(sparkBars)-1))
+			b.WriteRune(sparkBars[min(max(i, 0), len(sparkBars)-1)])
+		}
+	}
+	per := step
+	if run > 1 {
+		per = fmt.Sprintf("%d × %s", run, step)
+	}
+	against := "against its highest"
+	if limit > 0 {
+		against = "against the " + format(limit) + " limit"
+	}
+	return fmt.Sprintf("%s %s  peak per %s, %s", label, b.String(), per, against)
 }
 
 // suggestLine is the limit the reading argues for, as the command that sets
