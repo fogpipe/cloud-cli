@@ -163,18 +163,41 @@ type CapacityReport struct {
 // this axis and what is already counted against it, the two numbers a create
 // is refused by (ADR-184). Reserved and Used are the scope's, now: what
 // metering last billed on this axis and what was last measured, each from the
-// latest hour its source recorded. A value that is absent was not measured,
-// which is never the same as zero.
+// latest hour its source recorded.
+//
+// Every figure is always present, as a number or as null, and null is "no
+// reading", never zero (docs/reading-a-zero.md). Which reading is missing
+// depends on the field:
+//
+//   - Allowed is null only when the bound cannot be read; a malformed bound
+//     refuses every create on the axis.
+//   - Admitted is null when its source was not read: no cluster, or a measured
+//     axis that has never been measured.
+//   - Reserved is null on an axis where Reserves is false (nothing reserves it:
+//     its use is what counts against the bound), and otherwise until metering
+//     has recorded an hour.
+//   - Used is null on an axis where MeasuresUse is false, and otherwise until
+//     its source has recorded an hour.
+//
+// A zero is a measured zero.
 type CapacityAxis struct {
 	// Axis is the ceiling axis: cpu, memory, storage, object_storage,
 	// registry_storage, backup_storage, pods or objects.
 	Axis string `json:"axis"`
-	// Unit is "core", "byte" or "count".
-	Unit     string   `json:"unit"`
-	Allowed  *float64 `json:"allowed,omitempty"`
-	Admitted *float64 `json:"admitted,omitempty"`
-	Reserved *float64 `json:"reserved,omitempty"`
-	Used     *float64 `json:"used,omitempty"`
+	// Unit is "core", "byte" or "count". A count (pods, objects) has a bound
+	// and an admitted figure and nothing else.
+	Unit string `json:"unit"`
+	// Reserves says the axis has a reservation distinct from its use: limits,
+	// volume sizes, bucket quotas. False on registry and backup storage, where
+	// what is stored is what counts, and on the counts.
+	Reserves bool `json:"reserves"`
+	// MeasuresUse says the platform reads use on this axis for at least one
+	// kind of resource on it; Unmeasured names the kinds it does not.
+	MeasuresUse bool     `json:"measures_use"`
+	Allowed     *float64 `json:"allowed"`
+	Admitted    *float64 `json:"admitted"`
+	Reserved    *float64 `json:"reserved"`
+	Used        *float64 `json:"used"`
 	// Series is reserved and used over the window, one point per Step, each the
 	// average held over the hours of its step that its source recorded.
 	Series []CapacityPoint `json:"series"`
@@ -182,17 +205,17 @@ type CapacityAxis struct {
 	// that reserved or used anything on this axis in the window, each averaged
 	// over it, largest reservation first.
 	Rows []CapacityRow `json:"rows"`
-	// Unmeasured names the kinds of resource whose use this axis does not
-	// measure (runner, job, database, volume): their reservation is in
-	// Reserved and their use is in neither Used nor any row's.
+	// Unmeasured names the kinds of resource whose reservation is on this axis
+	// and whose use it does not read (runner, job, database, volume).
 	Unmeasured []string `json:"unmeasured,omitempty"`
 }
 
 // CapacityPoint is one step of an axis's series.
 type CapacityPoint struct {
-	Start    time.Time `json:"start"`
-	Reserved *float64  `json:"reserved,omitempty"`
-	Used     *float64  `json:"used,omitempty"`
+	Start time.Time `json:"start"`
+	// Null as on CapacityAxis: no reading for the step, never a zero.
+	Reserved *float64 `json:"reserved"`
+	Used     *float64 `json:"used"`
 }
 
 // CapacityRow is one project or resource on an axis, averaged over the window.
@@ -204,9 +227,10 @@ type CapacityRow struct {
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
 	// Deleted marks a project the record still holds whose project is gone.
-	Deleted  bool     `json:"deleted,omitempty"`
-	Reserved *float64 `json:"reserved,omitempty"`
-	Used     *float64 `json:"used,omitempty"`
+	Deleted bool `json:"deleted,omitempty"`
+	// Null as on CapacityAxis.
+	Reserved *float64 `json:"reserved"`
+	Used     *float64 `json:"used"`
 }
 
 // Price is what one unit of a metered resource costs.
