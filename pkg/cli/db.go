@@ -113,15 +113,8 @@ var dbCreateCmd = &cobra.Command{
 		if addr := dbAddress(db); addr != "" {
 			pairs = append(pairs, []string{"Address", addr})
 		}
-		if db.Password != "" {
-			// Issued once, at create, and it is the password Postgres has: the
-			// platform writes it where the cluster bootstraps from and keeps no
-			// copy (fogpipe/cloud-workspace#265). Later reads have it from
-			// `db connect`.
-			pairs = append(pairs, []string{"Username", db.Username})
-			pairs = append(pairs, []string{"Password", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(db.Password)})
-		}
 		fmt.Println(renderInfoBox("Database Created", pairs))
+		printDatabaseNextSteps(db)
 		return nil
 	},
 }
@@ -191,7 +184,6 @@ var dbGetCmd = &cobra.Command{
 			{"Address", addr},
 			{"Read address", orDash(dbReadAddress(db))},
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
-			{"Username", orDash(db.Username)},
 			{"Secret", orDash(db.Secret)},
 			{"Mounted by", orDash(strings.Join(db.MountedBy, ", "))},
 		}))
@@ -269,9 +261,10 @@ loses the database. The old password stops authenticating new
 connections the moment the new one is live; sessions already open keep
 running until they close.
 
-The new password is printed once. Anything outside the platform that holds
-the old one — a local psql, a Terraform state, another service — is what you
-update next; ` + "`fpcloud db connect`" + ` reads the live one whenever you need it again.`,
+Nothing prints the new password: an app has it through the mounted secret,
+and ` + "`fpcloud db connect`" + ` reads a live credential whenever you need one
+(ADR-281). Anything outside the platform that held the old one — a local
+psql, another service — has stopped working, which is the point.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
@@ -293,19 +286,19 @@ update next; ` + "`fpcloud db connect`" + ` reads the live one whenever you need
 		if err != nil {
 			return err
 		}
-		conn, err := c.RotateDatabasePassword(context.Background(), id)
+		db, err := c.RotateDatabasePassword(context.Background(), id)
 		if err != nil {
 			return err
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
-			return renderData(conn)
+			return renderData(db)
 		}
 		fmt.Println(renderInfoBox("Password Rotated", [][]string{
-			{"Database", args[0]},
-			{"Username", conn.Username},
-			{"Password", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(conn.Password)},
-			{"URL", conn.URL},
+			{"Database", db.Name},
+			{"Secret", orDash(db.Secret)},
+			{"Rolled", orDash(strings.Join(db.MountedBy, ", "))},
 		}))
+		printDatabaseNextSteps(db)
 		return nil
 	},
 }
@@ -798,7 +791,9 @@ var dbRestoreCmd = &cobra.Command{
 			{"ID", mutedStyle.Render(restored.ID)},
 			{"Name", restored.Name},
 			{"Status", renderStatus(restored.Status)},
+			{"Secret", orDash(restored.Secret)},
 		}))
+		printDatabaseNextSteps(restored)
 		return nil
 	},
 }
@@ -966,6 +961,18 @@ func flagBool(cmd *cobra.Command, name string) bool {
 // dbAddress renders a database's cluster-internal address. It is not reachable
 // from a workstation — `db connect` tunnels to it — but naming it is how an
 // operator or an in-cluster consumer wires anything up by hand.
+// printDatabaseNextSteps follows the box of a create, restore or rotate with
+// the two things a person can do with a database, since the box carries no
+// credential (ADR-281): hand it to an app by mounting the owner secret, or
+// connect to it through the tunnel, which mints a credential for the caller.
+func printDatabaseNextSteps(db *client.Database) {
+	fmt.Println()
+	if db.Secret != "" {
+		fmt.Println(mutedStyle.Render("  Hand it to an app:  fpcloud app update <app> --mount-secret /secrets/db=" + db.Secret))
+	}
+	fmt.Println(mutedStyle.Render("  Connect yourself:   fpcloud db connect " + db.Name))
+}
+
 func dbAddress(db *client.Database) string {
 	if db.Host == "" {
 		return ""

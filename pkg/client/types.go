@@ -744,11 +744,10 @@ type Database struct {
 	Version     string `json:"version"`
 	Plan        string `json:"plan"`
 	Status      string `json:"status"`
-	// Host/Port/Username are the database's address on the cluster network, as
-	// recorded at provisioning. Password is returned ONLY on create (and on
-	// restore) and is the password the database has — the platform provisions
-	// it and keeps no copy on the row (fogpipe/cloud-workspace#265); the live
-	// credential is the owner secret (Secret below) or `fpcloud db connect`.
+	// Host/Port are the database's address on the cluster network, as recorded
+	// at provisioning. No credential rides on this type: the owner credential
+	// lives in the project secret named by Secret below, which an app mounts,
+	// and a person reads a live one with `fpcloud db connect` (ADR-281).
 	Host string `json:"host"`
 	// ReadHost is the same database's REPLICA endpoint (CNPG's `-ro` Service),
 	// on the same Port and with the same credential — a replica is not a second
@@ -767,8 +766,6 @@ type Database struct {
 	// (fogpipe/cloud-workspace#862).
 	ReadHost string `json:"read_host,omitempty"`
 	Port     int32  `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
 	Pooler   bool   `json:"pooler"`
 	// BackupsDisabled records a deliberate opt-out from the default-on backup
 	// schedule every new database gets (fogpipe/cloud-workspace#82). Set by

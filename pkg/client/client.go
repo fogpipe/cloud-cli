@@ -1742,22 +1742,23 @@ func (c *Client) DatabaseAuditLog(ctx context.Context, id, since, until string, 
 	return out, nil
 }
 
-// RotateDatabasePassword issues the database a new password and returns the
-// live connection info carrying it — the one response that does
-// (fogpipe/cloud-workspace#297). The platform writes the new password where
-// Postgres reads it, waits for the role to carry it, and re-renders every app
-// in the project onto it before answering, so by the time this returns the
-// old password authenticates no new connection.
-func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*DatabaseConnection, error) {
+// RotateDatabasePassword issues the database a new password
+// (fogpipe/cloud-workspace#297). The platform writes it where Postgres reads
+// it, waits for the role to carry it, rewrites the owner secret and
+// re-renders every app in the project onto it before answering, so by the time
+// this returns the old password authenticates no new connection. The answer is
+// the database, not the credential: nothing hands a password out but an
+// explicit read, GetDatabaseConnection (ADR-281).
+func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*Database, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+id+"/rotate-password", nil)
 	if err != nil {
 		return nil, err
 	}
-	var conn DatabaseConnection
-	if err := c.do(httpReq, &conn); err != nil {
+	var db Database
+	if err := c.do(httpReq, &db); err != nil {
 		return nil, err
 	}
-	return &conn, nil
+	return &db, nil
 }
 
 // DialTunnel opens the server-side db-connect tunnel (ADR-045): a WebSocket
