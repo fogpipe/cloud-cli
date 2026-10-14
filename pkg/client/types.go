@@ -118,11 +118,17 @@ type CostRow struct {
 	// Set when grouped by project or by resource.
 	ProjectID   string `json:"project_id,omitempty"`
 	ProjectName string `json:"project_name,omitempty"`
+	// ProjectDeleted and ResourceDeleted say the row's project, or its
+	// resource, no longer exists. The record still prices what a deleted one
+	// used, under the name it last had, and a live one may have taken that
+	// name since; these are what tell the two apart.
+	ProjectDeleted bool `json:"project_deleted,omitempty"`
 	// Set when grouped by resource: the app, database, job, runner or bucket
 	// the usage was measured on, by its newest name. Empty for usage measured
 	// on no resource of the project.
-	ResourceID   string `json:"resource_id,omitempty"`
-	ResourceName string `json:"resource_name,omitempty"`
+	ResourceID      string `json:"resource_id,omitempty"`
+	ResourceName    string `json:"resource_name,omitempty"`
+	ResourceDeleted bool   `json:"resource_deleted,omitempty"`
 	// Set when grouped by resource_type. One row per type and rate, so a window
 	// spanning a price change shows each rate that applied rather than an
 	// average nobody was charged. Quantities only add within one type.
@@ -226,7 +232,8 @@ type CapacityRow struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
-	// Deleted marks a project the record still holds whose project is gone.
+	// Deleted marks a row whose project or resource no longer exists, while
+	// the record still holds what it used.
 	Deleted bool `json:"deleted,omitempty"`
 	// Null as on CapacityAxis.
 	Reserved *float64 `json:"reserved"`

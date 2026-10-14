@@ -49,7 +49,8 @@ func TestCostGroupByMapsAndBoundsTheAxes(t *testing.T) {
 
 // A row shows the keys asked for and the amount to the cent; usage measured
 // on no resource of its project is named rather than left blank, so the rows
-// visibly add up to the project.
+// visibly add up to the project; and a deleted project or resource is tagged,
+// since a live one may carry its name.
 func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 	day := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
 	r := &client.CostReport{
@@ -57,6 +58,8 @@ func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 		Rows: []client.CostRow{
 			{ProjectName: "shop", ResourceID: "a1", ResourceName: "api", PeriodStart: &day, Amount: "1.234999"},
 			{ProjectName: "shop", PeriodStart: &day, Amount: "0.005"},
+			{ProjectName: "shop", ResourceID: "a0", ResourceName: "api", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
+			{ProjectName: "old", ProjectDeleted: true, ResourceID: "d0", ResourceName: "db", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
 		},
 	}
 	headers, rows := costRows(r)
@@ -68,6 +71,12 @@ func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 	}
 	if want := []string{"2026-10-03", "shop", "(project)", "0.01"}; !reflect.DeepEqual(rows[1], want) {
 		t.Errorf("row 1 = %v, want %v", rows[1], want)
+	}
+	if want := []string{"2026-10-03", "shop", "api (deleted)", "1.00"}; !reflect.DeepEqual(rows[2], want) {
+		t.Errorf("row 2 = %v, want %v", rows[2], want)
+	}
+	if want := []string{"2026-10-03", "old (deleted)", "db (deleted)", "1.00"}; !reflect.DeepEqual(rows[3], want) {
+		t.Errorf("row 3 = %v, want %v", rows[3], want)
 	}
 
 	byType := &client.CostReport{
@@ -92,7 +101,7 @@ func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 	report := &client.CostReport{Currency: "EUR", Rows: []client.CostRow{
 		{ProjectName: "shop", ResourceID: "a1", ResourceName: "web", Amount: "1"},
 		{ProjectName: "shop", ResourceID: "d1", ResourceName: "db", Amount: "1.3904"},
-		{ProjectName: "shop", ResourceID: "d0", ResourceName: "db", Amount: "0.001"},
+		{ProjectName: "shop", ResourceID: "d0", ResourceName: "db", ResourceDeleted: true, Amount: "0.001"},
 		{ProjectName: "blog", ResourceID: "a2", ResourceName: "web", Amount: "1"},
 		{ProjectName: "shop", Amount: "1"},
 	}}
@@ -117,7 +126,7 @@ func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("a name one project holds twice resolved; want a refusal")
 	}
-	for _, want := range []string{"d1  db in shop, 1.39 EUR", "d0  db in shop, 0.00 EUR"} {
+	for _, want := range []string{"d1  db in shop, 1.39 EUR", "d0  db (deleted) in shop, 0.00 EUR"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}

@@ -184,7 +184,7 @@ func costResourceID(report *client.CostReport, name string) (string, error) {
 	projects := map[string]bool{}
 	for _, r := range found {
 		projects[r.ProjectName] = true
-		fmt.Fprintf(&b, "\n  %s  %s in %s, %s %s", r.ResourceID, r.ResourceName, r.ProjectName, formatAmount(r.Amount), report.Currency)
+		fmt.Fprintf(&b, "\n  %s  %s in %s, %s %s", r.ResourceID, deletedName(r.ResourceName, r.ResourceDeleted), r.ProjectName, formatAmount(r.Amount), report.Currency)
 	}
 	if len(projects) > 1 {
 		b.WriteString("\nor name its project with --project")
@@ -274,10 +274,10 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 			}
 		}
 		if has["project"] || has["resource"] {
-			cells = append(cells, row.ProjectName)
+			cells = append(cells, deletedName(row.ProjectName, row.ProjectDeleted))
 		}
 		if has["resource"] {
-			name := row.ResourceName
+			name := deletedName(row.ResourceName, row.ResourceDeleted)
 			if row.ResourceID == "" {
 				// Usage measured on the project and no resource of it. Named,
 				// so the rows still visibly add up to the project.
@@ -291,6 +291,15 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 		rows = append(rows, append(cells, formatAmount(row.Amount)))
 	}
 	return headers, rows
+}
+
+// deletedName tags a name the record still holds for a project or resource
+// that is gone, since a live one may carry the same name.
+func deletedName(name string, deleted bool) string {
+	if deleted {
+		return name + " (deleted)"
+	}
+	return name
 }
 
 // formatAmount shows an unrounded decimal amount to the cent.
