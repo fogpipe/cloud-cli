@@ -40,30 +40,6 @@ type AuditEntry struct {
 	Details      map[string]any `json:"details,omitempty"`
 }
 
-// UsageEntry is one aggregated slice of metered usage — a quantity of one
-// resource type over a period, along whichever axis was requested (#675).
-//
-// Identity is a name snapshot rather than a join: usage outlives the resource
-// that produced it, so a deleted app still reports what it consumed.
-type UsageEntry struct {
-	ProjectID   string `json:"project_id,omitempty"`
-	ProjectName string `json:"project_name,omitempty"`
-	// AppID names either an app or a database; ResourceType distinguishes them
-	// (compute.*/volume.* = app, database.* = database). Empty means the usage
-	// belongs to the project rather than to any one workload.
-	AppID   string     `json:"app_id,omitempty"`
-	AppName string     `json:"app_name,omitempty"`
-	Day     *time.Time `json:"day,omitempty"` // set only when grouped by day
-	// ResourceType is an opaque token (compute.cpu, database.storage, …). New
-	// ones appear as metering grows — never enumerate them.
-	ResourceType string `json:"resource_type"`
-	Unit         string `json:"unit"`
-	// Quantity is a decimal string, not a number: the underlying column is
-	// NUMERIC because a float sum over a month of hourly rows drifts. Parse it
-	// only to format it.
-	Quantity string `json:"quantity"`
-}
-
 // CostReport is what an org, or one of its projects, cost over a window,
 // grouped by up to one entity axis and one time axis (ADR-273).
 //

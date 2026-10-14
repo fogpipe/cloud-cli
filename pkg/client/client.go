@@ -777,42 +777,6 @@ func (c *Client) ListAudit(ctx context.Context, query string) ([]*AuditEntry, er
 	return entries, nil
 }
 
-// ListProjectUsage returns a project's metered usage, optionally filtered by
-// query params (from, to, group_by, app_id). Quantities only — no cost.
-func (c *Client) ListProjectUsage(ctx context.Context, projectID, query string) ([]*UsageEntry, error) {
-	path := "/api/v1/projects/" + projectID + "/usage"
-	if query != "" {
-		path += "?" + query
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-	var entries []*UsageEntry
-	if err := c.do(httpReq, &entries); err != nil {
-		return nil, err
-	}
-	return entries, nil
-}
-
-// ListOrgUsage returns an org-wide usage rollup across its projects, optionally
-// filtered by query params (from, to, group_by, app_id).
-func (c *Client) ListOrgUsage(ctx context.Context, orgID, query string) ([]*UsageEntry, error) {
-	path := "/api/v1/orgs/" + orgID + "/usage"
-	if query != "" {
-		path += "?" + query
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-	var entries []*UsageEntry
-	if err := c.do(httpReq, &entries); err != nil {
-		return nil, err
-	}
-	return entries, nil
-}
-
 // OrgCost reads what an org cost over a window (ADR-273). query takes from/to
 // (RFC3339) and group_by (comma-separated: up to one of project, resource,
 // resource_type and one of hour, day, month); empty means the month in
