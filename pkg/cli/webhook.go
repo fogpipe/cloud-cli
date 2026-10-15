@@ -139,7 +139,7 @@ var webhookStatusCmd = &cobra.Command{
 			enabledStr = renderStatus("stopped")
 		}
 
-		fmt.Println(renderInfoBox("Webhook Status", [][]string{
+		rows := [][]string{
 			{"Repo", wh.Repo},
 			{"Branch", wh.Branch},
 			{"Image Pattern", wh.ImagePattern},
@@ -147,7 +147,15 @@ var webhookStatusCmd = &cobra.Command{
 			{"Webhook URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(wh.WebhookURL)},
 			{"Last Deploy", lastDeploy},
 			{"Last SHA", lastSHA},
-		}))
+		}
+		if wh.LastError != "" {
+			when := ""
+			if wh.LastErrorAt != nil {
+				when = " (" + *wh.LastErrorAt + ")"
+			}
+			rows = append(rows, []string{"Last Refusal", wh.LastError + when})
+		}
+		fmt.Println(renderInfoBox("Webhook Status", rows))
 
 		return nil
 	},

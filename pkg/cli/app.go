@@ -174,7 +174,6 @@ var appCreateCmd = &cobra.Command{
 			}
 		}
 
-		serviceAccount, _ := cmd.Flags().GetString("service-account")
 		healthCheckPath, _ := cmd.Flags().GetString("health-check-path")
 		healthCheckTimeout, _ := cmd.Flags().GetInt("health-check-timeout")
 		healthCheckInterval, _ := cmd.Flags().GetInt("health-check-interval")
@@ -245,7 +244,6 @@ var appCreateCmd = &cobra.Command{
 				Routes:              routes,
 				Mode:                mode,
 				Type:                appType,
-				ServiceAccount:      serviceAccount,
 				HealthCheckPath:     healthCheckPath,
 				HealthCheckTimeout:  healthCheckTimeout,
 				HealthCheckInterval: healthCheckInterval,
@@ -550,10 +548,7 @@ var appGetCmd = &cobra.Command{
 		if domains == "" {
 			domains = mutedStyle.Render("none")
 		}
-		saDisplay := mutedStyle.Render("none")
-		if app.ServiceAccountID != "" {
-			saDisplay = app.ServiceAccountID
-		}
+		saDisplay := app.ServiceAccount
 
 		healthCheck := app.HealthCheckPath
 		if healthCheck == "" || healthCheck == "/" {
@@ -1591,7 +1586,7 @@ var appDeleteCmd = &cobra.Command{
 
 var appIdentityCmd = &cobra.Command{
 	Use:   "identity <name>",
-	Short: "Show workload identity for an app",
+	Short: "Show the identity an app runs as",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
@@ -1610,18 +1605,14 @@ var appIdentityCmd = &cobra.Command{
 				"app_id":             app.ID,
 				"app_name":           app.Name,
 				"service_account_id": app.ServiceAccountID,
+				"service_account":    app.ServiceAccount,
 			})
 		}
 
-		if app.ServiceAccountID == "" {
-			fmt.Println(mutedStyle.Render("No workload identity attached to this app."))
-			fmt.Println(mutedStyle.Render("Use --service-account when creating an app to attach one."))
-			return nil
-		}
-
-		fmt.Println(renderInfoBox("Workload Identity", [][]string{
+		fmt.Println(renderInfoBox("Identity", [][]string{
 			{"App", app.Name},
-			{"Service Account", app.ServiceAccountID},
+			{"Service Account", app.ServiceAccount},
+			{"Grants", "fpcloud iam list   (it holds nothing until granted)"},
 		}))
 		return nil
 	},
@@ -1941,7 +1932,6 @@ func init() {
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
 	appCreateCmd.Flags().String("mode", "always-on", "Hosting mode: 'always-on' (default) or 'serverless' (scale-to-zero)")
 	appCreateCmd.Flags().String("type", "web", "Process type: 'web' (default, serves HTTP) or 'worker' (long-running process with no port, URL or health checks). Frozen at create")
-	appCreateCmd.Flags().String("service-account", "", "Service account email for workload identity")
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
 	appCreateCmd.Flags().StringArray("env", nil, "Set a plain config value on the new app: KEY=VALUE (repeatable). Set before the release command runs, so a migration sees it")

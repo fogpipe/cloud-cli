@@ -428,43 +428,47 @@ type AppEvent struct {
 
 // App represents a deployed application.
 type App struct {
-	ID                  string            `json:"id"`
-	ProjectID           string            `json:"project_id"`
-	Name                string            `json:"name"`
-	DisplayName         string            `json:"display_name"`
-	URLSlug             string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
-	SecretMounts        map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
-	Image               string            `json:"image"`
-	Release             string            `json:"release,omitempty"`         // user-named release currently live (#471)
-	Template            string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
-	TemplateUpdate      string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
-	Command             []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
-	Args                []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
-	ReleaseCommand      []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
-	Status              string            `json:"status"`
-	URL                 string            `json:"url"`
-	Domains             []string          `json:"domains"`
-	Replicas            int               `json:"replicas"`
-	MinScale            int32             `json:"min_scale"`
-	MaxScale            int32             `json:"max_scale"`
-	CPULimit            string            `json:"cpu_limit"`
-	MemoryLimit         string            `json:"memory_limit"`
-	Ingress             string            `json:"ingress"`
-	Routes              []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode                string            `json:"mode"`
-	Type                string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port                int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
-	KubeServiceAccount  string            `json:"kube_service_account,omitempty"`
-	ServiceAccountID    string            `json:"service_account_id,omitempty"`
-	HealthCheckPath     string            `json:"health_check_path"`
-	HealthCheckTimeout  int               `json:"health_check_timeout"`
-	HealthCheckInterval int               `json:"health_check_interval"`
-	HealthCheckRetries  int               `json:"health_check_retries"`
-	Probes              *ProbeOverrides   `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
-	VolumeMounts        []VolumeMount     `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
-	SecurityContext     *SecurityContext  `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	ID                 string            `json:"id"`
+	ProjectID          string            `json:"project_id"`
+	Name               string            `json:"name"`
+	DisplayName        string            `json:"display_name"`
+	URLSlug            string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
+	SecretMounts       map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
+	Image              string            `json:"image"`
+	Release            string            `json:"release,omitempty"`         // user-named release currently live (#471)
+	Template           string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
+	TemplateUpdate     string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
+	Command            []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
+	Args               []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
+	ReleaseCommand     []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
+	Status             string            `json:"status"`
+	URL                string            `json:"url"`
+	Domains            []string          `json:"domains"`
+	Replicas           int               `json:"replicas"`
+	MinScale           int32             `json:"min_scale"`
+	MaxScale           int32             `json:"max_scale"`
+	CPULimit           string            `json:"cpu_limit"`
+	MemoryLimit        string            `json:"memory_limit"`
+	Ingress            string            `json:"ingress"`
+	Routes             []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode               string            `json:"mode"`
+	Type               string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port               int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
+	KubeServiceAccount string            `json:"kube_service_account,omitempty"`
+	// ServiceAccountID and ServiceAccount name the app's own identity (ADR-283):
+	// one account per app, created and deleted with it, keyed in every binding
+	// by its email. It holds nothing until granted.
+	ServiceAccountID    string           `json:"service_account_id"`
+	ServiceAccount      string           `json:"service_account"`
+	HealthCheckPath     string           `json:"health_check_path"`
+	HealthCheckTimeout  int              `json:"health_check_timeout"`
+	HealthCheckInterval int              `json:"health_check_interval"`
+	HealthCheckRetries  int              `json:"health_check_retries"`
+	Probes              *ProbeOverrides  `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
+	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at"`
 }
 
 // ProbeOverrides lets liveness, readiness, and startup diverge from the shared
@@ -545,7 +549,6 @@ type CreateAppRequest struct {
 	// there, written before the first rollout is gated on the release command,
 	// so a migration that reads one is created with it mounted (ADR-112).
 	SecretMounts        map[string]string `json:"secret_mounts,omitempty"`
-	ServiceAccount      string            `json:"service_account,omitempty"` // SA email or ID
 	HealthCheckPath     string            `json:"health_check_path,omitempty"`
 	HealthCheckTimeout  int               `json:"health_check_timeout,omitempty"`
 	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
@@ -1357,6 +1360,10 @@ type AppWebhook struct {
 	WebhookSecret string  `json:"webhook_secret,omitempty"`
 	LastDeployAt  *string `json:"last_deploy_at,omitempty"`
 	LastDeploySHA string  `json:"last_deploy_sha,omitempty"`
+	// LastError is why the most recent push did not deploy (ADR-283 §6),
+	// cleared by the next push that does.
+	LastError   string  `json:"last_error,omitempty"`
+	LastErrorAt *string `json:"last_error_at,omitempty"`
 }
 
 // DatabaseAuditEntry is one statement a person ran through a database tunnel,
@@ -1465,6 +1472,13 @@ type ServiceAccount struct {
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// Kind is "app" for the account an app is (ADR-283), named in App, or
+	// "standalone" for one created on its own, for CI or tooling.
+	Kind string `json:"kind"`
+	App  string `json:"app,omitempty"`
+	// CallerRole is the caller's own effective role on the account's scope,
+	// so a client offers only the grants the caller may make.
+	CallerRole string `json:"caller_role,omitempty"`
 }
 
 // CreateServiceAccountRequest is the request body for creating a service account.

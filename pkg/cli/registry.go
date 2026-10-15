@@ -25,8 +25,7 @@ const registryHost = "registry.cloud.fogpipe.com"
 // fetchRegistryCreds returns the (username, password) fpcloud hands to Docker for
 // the bearer registry. The password is the caller's fpcloud credential, which the
 // broker validates and exchanges for a scoped token: a service-account API key
-// (FPCLOUD_API_KEY — e.g. minted in CI by OIDC federation via `fogpipe/cloud-auth` —
-// or an app's mounted workload identity key through FPCLOUD_API_KEY_FILE)
+// (FPCLOUD_API_KEY, e.g. minted in CI by OIDC federation via `fogpipe/cloud-auth`)
 // when set, otherwise the ID token from `fpcloud login` (auto-refreshed).
 // The username is a Docker-side label the broker ignores — identity is the password.
 // registryPushWindow is how long the credential handed to docker must stay

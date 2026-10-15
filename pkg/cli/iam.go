@@ -47,6 +47,8 @@ var saCreateCmd = &cobra.Command{
 			{"Email", sa.Email},
 			{"Status", renderStatus(sa.Status)},
 		}))
+		fmt.Println(mutedStyle.Render("It holds nothing yet. Grant it a role with:"))
+		fmt.Println(mutedStyle.Render("  fpcloud iam set --member serviceAccount:" + sa.Email + " --role viewer"))
 		return nil
 	},
 }
@@ -69,13 +71,19 @@ var saListCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"ID", "NAME", "EMAIL", "STATUS", "CREATED"}
+		headers := []string{"ID", "NAME", "EMAIL", "KIND", "APP", "STATUS", "CREATED"}
 		var rows [][]string
 		for _, sa := range accounts {
+			app := sa.App
+			if app == "" {
+				app = mutedStyle.Render("-")
+			}
 			rows = append(rows, []string{
 				sa.ID,
 				sa.Name,
 				sa.Email,
+				sa.Kind,
+				app,
 				renderStatus(sa.Status),
 				sa.CreatedAt.Format("2006-01-02 15:04"),
 			})
@@ -123,6 +131,8 @@ var saCreateOrgCmd = &cobra.Command{
 			{"Scope", "organization"},
 			{"Status", renderStatus(sa.Status)},
 		}))
+		fmt.Println(mutedStyle.Render("It holds nothing yet. Grant it a role with:"))
+		fmt.Println(mutedStyle.Render("  fpcloud iam set --member serviceAccount:" + sa.Email + " --role viewer"))
 		return nil
 	},
 }
@@ -146,13 +156,19 @@ var saListOrgCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"ID", "NAME", "EMAIL", "STATUS", "CREATED"}
+		headers := []string{"ID", "NAME", "EMAIL", "KIND", "APP", "STATUS", "CREATED"}
 		var rows [][]string
 		for _, sa := range accounts {
+			app := sa.App
+			if app == "" {
+				app = mutedStyle.Render("-")
+			}
 			rows = append(rows, []string{
 				sa.ID,
 				sa.Name,
 				sa.Email,
+				sa.Kind,
+				app,
 				renderStatus(sa.Status),
 				sa.CreatedAt.Format("2006-01-02 15:04"),
 			})

@@ -148,8 +148,7 @@ func resolveAPIURL() string {
 // resolveAPIKey picks the credential every API call carries, in the same order
 // the Terraform provider uses so one variable means one thing whichever binary
 // reads it: an explicit --api-key, then the environment's key — FPCLOUD_API_KEY
-// (what OIDC federation mints in CI), else the file FPCLOUD_API_KEY_FILE names
-// (an app's mounted workload identity key) — then the key
+// (what OIDC federation mints in CI) — then the key
 // stored in config.yaml, then the OIDC token from `fpcloud login`, so
 // interactive use needs no separate key (gcloud-style). Returns "" when nothing authenticates the caller.
 func resolveAPIKey() string {
@@ -173,12 +172,7 @@ func resolveAPIKey() string {
 // cannot be read stops the command, rather than it quietly authenticating as
 // whoever else the chain finds.
 func envAPIKey() string {
-	key, err := client.EnvAPIKey()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
-	}
-	return key
+	return client.EnvAPIKey()
 }
 
 // newClient builds an API client that reports this binary's version. pkg/client
