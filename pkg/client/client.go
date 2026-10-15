@@ -2887,8 +2887,9 @@ func (c *Client) RemoveIAMBinding(ctx context.Context, projectID, bindingID stri
 // secret — held by a user or a service account, granted by whoever may read
 // the credential anywhere else, listed on the resource and revoked by id.
 
-func (c *Client) setAccess(ctx context.Context, path string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, path, req)
+// SetDatabaseAccess grants a member `user` on a database.
+func (c *Client) SetDatabaseAccess(ctx context.Context, databaseID string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+databaseID+"/access", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2899,8 +2900,9 @@ func (c *Client) setAccess(ctx context.Context, path string, req SetIAMBindingRe
 	return &binding, nil
 }
 
-func (c *Client) listAccess(ctx context.Context, path string) ([]*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+// ListDatabaseAccess lists the bindings held on a database.
+func (c *Client) ListDatabaseAccess(ctx context.Context, databaseID string) ([]*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/databases/"+databaseID+"/access", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2911,57 +2913,83 @@ func (c *Client) listAccess(ctx context.Context, path string) ([]*IAMBinding, er
 	return bindings, nil
 }
 
-func (c *Client) removeAccess(ctx context.Context, path string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, path, nil)
+// RemoveDatabaseAccess revokes one binding held on a database.
+func (c *Client) RemoveDatabaseAccess(ctx context.Context, databaseID, bindingID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/databases/"+databaseID+"/access/"+bindingID, nil)
 	if err != nil {
 		return err
 	}
 	return c.do(httpReq, nil)
 }
 
-// SetDatabaseAccess grants a member `user` on a database.
-func (c *Client) SetDatabaseAccess(ctx context.Context, databaseID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	return c.setAccess(ctx, "/api/v1/databases/"+databaseID+"/access", req)
-}
-
-// ListDatabaseAccess lists the bindings held on a database.
-func (c *Client) ListDatabaseAccess(ctx context.Context, databaseID string) ([]*IAMBinding, error) {
-	return c.listAccess(ctx, "/api/v1/databases/"+databaseID+"/access")
-}
-
-// RemoveDatabaseAccess revokes one binding held on a database.
-func (c *Client) RemoveDatabaseAccess(ctx context.Context, databaseID, bindingID string) error {
-	return c.removeAccess(ctx, "/api/v1/databases/"+databaseID+"/access/"+bindingID)
-}
-
 // SetBucketAccess grants a member `user` on a bucket.
 func (c *Client) SetBucketAccess(ctx context.Context, bucketID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	return c.setAccess(ctx, "/api/v1/buckets/"+bucketID+"/access", req)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/buckets/"+bucketID+"/access", req)
+	if err != nil {
+		return nil, err
+	}
+	var binding IAMBinding
+	if err := c.do(httpReq, &binding); err != nil {
+		return nil, err
+	}
+	return &binding, nil
 }
 
 // ListBucketAccess lists the bindings held on a bucket.
 func (c *Client) ListBucketAccess(ctx context.Context, bucketID string) ([]*IAMBinding, error) {
-	return c.listAccess(ctx, "/api/v1/buckets/"+bucketID+"/access")
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/buckets/"+bucketID+"/access", nil)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []*IAMBinding
+	if err := c.do(httpReq, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
 }
 
 // RemoveBucketAccess revokes one binding held on a bucket.
 func (c *Client) RemoveBucketAccess(ctx context.Context, bucketID, bindingID string) error {
-	return c.removeAccess(ctx, "/api/v1/buckets/"+bucketID+"/access/"+bindingID)
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/access/"+bindingID, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
 }
 
 // SetSecretAccess grants a member `reader` on a secret.
 func (c *Client) SetSecretAccess(ctx context.Context, secretID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	return c.setAccess(ctx, "/api/v1/secrets/"+secretID+"/access", req)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/secrets/"+secretID+"/access", req)
+	if err != nil {
+		return nil, err
+	}
+	var binding IAMBinding
+	if err := c.do(httpReq, &binding); err != nil {
+		return nil, err
+	}
+	return &binding, nil
 }
 
 // ListSecretAccess lists the bindings held on a secret.
 func (c *Client) ListSecretAccess(ctx context.Context, secretID string) ([]*IAMBinding, error) {
-	return c.listAccess(ctx, "/api/v1/secrets/"+secretID+"/access")
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/secrets/"+secretID+"/access", nil)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []*IAMBinding
+	if err := c.do(httpReq, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
 }
 
 // RemoveSecretAccess revokes one binding held on a secret.
 func (c *Client) RemoveSecretAccess(ctx context.Context, secretID, bindingID string) error {
-	return c.removeAccess(ctx, "/api/v1/secrets/"+secretID+"/access/"+bindingID)
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/secrets/"+secretID+"/access/"+bindingID, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
 }
 
 // GetServiceAccount reads one service account with everything it holds.
