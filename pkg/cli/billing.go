@@ -252,7 +252,7 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 		headers = append(headers, "PROJECT")
 	}
 	if has["resource"] {
-		headers = append(headers, "RESOURCE")
+		headers = append(headers, "RESOURCE", "KIND")
 	}
 	if has["resource_type"] {
 		headers = append(headers, "TYPE", "QUANTITY", "UNIT", "UNIT PRICE")
@@ -283,7 +283,11 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 				// so the rows still visibly add up to the project.
 				name = "(project)"
 			}
-			cells = append(cells, name)
+			kind := row.Kind
+			if kind == "" {
+				kind = "unattributed"
+			}
+			cells = append(cells, name, kind)
 		}
 		if has["resource_type"] {
 			cells = append(cells, row.ResourceType, formatQuantity(row.Quantity), row.Unit, row.UnitPrice)

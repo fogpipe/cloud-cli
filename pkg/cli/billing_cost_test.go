@@ -47,36 +47,41 @@ func TestCostGroupByMapsAndBoundsTheAxes(t *testing.T) {
 	}
 }
 
-// A row shows the keys asked for and the amount to the cent; usage measured
-// on no resource of its project is named rather than left blank, so the rows
-// visibly add up to the project; and a deleted project or resource is tagged,
-// since a live one may carry its name.
+// A row shows the keys asked for and the amount to the cent; a resource row
+// says what it was measured on; usage measured on no resource of its project
+// is named rather than left blank, so the rows visibly add up to the project;
+// and a deleted project or resource is tagged, since a live one may carry its
+// name.
 func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 	day := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
 	r := &client.CostReport{
 		GroupBy: []string{"resource", "day"},
 		Rows: []client.CostRow{
-			{ProjectName: "shop", ResourceID: "a1", ResourceName: "api", PeriodStart: &day, Amount: "1.234999"},
-			{ProjectName: "shop", PeriodStart: &day, Amount: "0.005"},
-			{ProjectName: "shop", ResourceID: "a0", ResourceName: "api", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
-			{ProjectName: "old", ProjectDeleted: true, ResourceID: "d0", ResourceName: "db", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
+			{ProjectName: "shop", ResourceID: "a1", ResourceName: "api", Kind: "app", PeriodStart: &day, Amount: "1.234999"},
+			{ProjectName: "shop", Kind: "registry", PeriodStart: &day, Amount: "0.005"},
+			{ProjectName: "shop", ResourceID: "a0", ResourceName: "api", Kind: "app", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
+			{ProjectName: "old", ProjectDeleted: true, ResourceID: "d0", ResourceName: "db", Kind: "database", ResourceDeleted: true, PeriodStart: &day, Amount: "1"},
+			{ProjectName: "shop", PeriodStart: &day, Amount: "0.5"},
 		},
 	}
 	headers, rows := costRows(r)
-	if want := []string{"DAY", "PROJECT", "RESOURCE", "AMOUNT"}; !reflect.DeepEqual(headers, want) {
+	if want := []string{"DAY", "PROJECT", "RESOURCE", "KIND", "AMOUNT"}; !reflect.DeepEqual(headers, want) {
 		t.Fatalf("headers = %v, want %v", headers, want)
 	}
-	if want := []string{"2026-10-03", "shop", "api", "1.23"}; !reflect.DeepEqual(rows[0], want) {
+	if want := []string{"2026-10-03", "shop", "api", "app", "1.23"}; !reflect.DeepEqual(rows[0], want) {
 		t.Errorf("row 0 = %v, want %v", rows[0], want)
 	}
-	if want := []string{"2026-10-03", "shop", "(project)", "0.01"}; !reflect.DeepEqual(rows[1], want) {
+	if want := []string{"2026-10-03", "shop", "(project)", "registry", "0.01"}; !reflect.DeepEqual(rows[1], want) {
 		t.Errorf("row 1 = %v, want %v", rows[1], want)
 	}
-	if want := []string{"2026-10-03", "shop", "api (deleted)", "1.00"}; !reflect.DeepEqual(rows[2], want) {
+	if want := []string{"2026-10-03", "shop", "api (deleted)", "app", "1.00"}; !reflect.DeepEqual(rows[2], want) {
 		t.Errorf("row 2 = %v, want %v", rows[2], want)
 	}
-	if want := []string{"2026-10-03", "old (deleted)", "db (deleted)", "1.00"}; !reflect.DeepEqual(rows[3], want) {
+	if want := []string{"2026-10-03", "old (deleted)", "db (deleted)", "database", "1.00"}; !reflect.DeepEqual(rows[3], want) {
 		t.Errorf("row 3 = %v, want %v", rows[3], want)
+	}
+	if want := []string{"2026-10-03", "shop", "(project)", "unattributed", "0.50"}; !reflect.DeepEqual(rows[4], want) {
+		t.Errorf("row 4 = %v, want %v", rows[4], want)
 	}
 
 	byType := &client.CostReport{

@@ -105,6 +105,11 @@ type CostRow struct {
 	ResourceID      string `json:"resource_id,omitempty"`
 	ResourceName    string `json:"resource_name,omitempty"`
 	ResourceDeleted bool   `json:"resource_deleted,omitempty"`
+	// Kind is set when grouped by resource: what the usage was measured on.
+	// app, database, job, runner or bucket for a row naming that resource;
+	// registry, backups or volume for what is measured on the project itself;
+	// empty for usage measured on nothing it could be attributed to.
+	Kind string `json:"kind,omitempty"`
 	// Set when grouped by resource_type. One row per type and rate, so a window
 	// spanning a price change shows each rate that applied rather than an
 	// average nobody was charged. Quantities only add within one type.
