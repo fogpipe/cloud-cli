@@ -2882,6 +2882,101 @@ func (c *Client) RemoveIAMBinding(ctx context.Context, projectID, bindingID stri
 	return c.do(httpReq, nil)
 }
 
+// --- Resource access (ADR-284): who is handed a database, a bucket or a
+// secret. One role per kind — `user` on a database or a bucket, `reader` on a
+// secret — held by a user or a service account, granted by whoever may read
+// the credential anywhere else, listed on the resource and revoked by id.
+
+func (c *Client) setAccess(ctx context.Context, path string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+	var binding IAMBinding
+	if err := c.do(httpReq, &binding); err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+func (c *Client) listAccess(ctx context.Context, path string) ([]*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []*IAMBinding
+	if err := c.do(httpReq, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
+func (c *Client) removeAccess(ctx context.Context, path string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
+// SetDatabaseAccess grants a member `user` on a database.
+func (c *Client) SetDatabaseAccess(ctx context.Context, databaseID string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	return c.setAccess(ctx, "/api/v1/databases/"+databaseID+"/access", req)
+}
+
+// ListDatabaseAccess lists the bindings held on a database.
+func (c *Client) ListDatabaseAccess(ctx context.Context, databaseID string) ([]*IAMBinding, error) {
+	return c.listAccess(ctx, "/api/v1/databases/"+databaseID+"/access")
+}
+
+// RemoveDatabaseAccess revokes one binding held on a database.
+func (c *Client) RemoveDatabaseAccess(ctx context.Context, databaseID, bindingID string) error {
+	return c.removeAccess(ctx, "/api/v1/databases/"+databaseID+"/access/"+bindingID)
+}
+
+// SetBucketAccess grants a member `user` on a bucket.
+func (c *Client) SetBucketAccess(ctx context.Context, bucketID string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	return c.setAccess(ctx, "/api/v1/buckets/"+bucketID+"/access", req)
+}
+
+// ListBucketAccess lists the bindings held on a bucket.
+func (c *Client) ListBucketAccess(ctx context.Context, bucketID string) ([]*IAMBinding, error) {
+	return c.listAccess(ctx, "/api/v1/buckets/"+bucketID+"/access")
+}
+
+// RemoveBucketAccess revokes one binding held on a bucket.
+func (c *Client) RemoveBucketAccess(ctx context.Context, bucketID, bindingID string) error {
+	return c.removeAccess(ctx, "/api/v1/buckets/"+bucketID+"/access/"+bindingID)
+}
+
+// SetSecretAccess grants a member `reader` on a secret.
+func (c *Client) SetSecretAccess(ctx context.Context, secretID string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	return c.setAccess(ctx, "/api/v1/secrets/"+secretID+"/access", req)
+}
+
+// ListSecretAccess lists the bindings held on a secret.
+func (c *Client) ListSecretAccess(ctx context.Context, secretID string) ([]*IAMBinding, error) {
+	return c.listAccess(ctx, "/api/v1/secrets/"+secretID+"/access")
+}
+
+// RemoveSecretAccess revokes one binding held on a secret.
+func (c *Client) RemoveSecretAccess(ctx context.Context, secretID, bindingID string) error {
+	return c.removeAccess(ctx, "/api/v1/secrets/"+secretID+"/access/"+bindingID)
+}
+
+// GetServiceAccount reads one service account with everything it holds.
+func (c *Client) GetServiceAccount(ctx context.Context, id string) (*ServiceAccount, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/service-accounts/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	var sa ServiceAccount
+	if err := c.do(httpReq, &sa); err != nil {
+		return nil, err
+	}
+	return &sa, nil
+}
+
 // ListOrgSecrets lists an org's Fogpipe Secrets Manager bundles (key names only).
 func (c *Client) ListOrgSecrets(ctx context.Context, orgID string) ([]*OrgSecret, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/secrets", nil)

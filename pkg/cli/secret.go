@@ -97,6 +97,47 @@ var secretListCmd = &cobra.Command{
 	},
 }
 
+var secretGetCmd = &cobra.Command{
+	Use:   "get <name>",
+	Short: "Show a secret: who manages it, who mounts it, who is handed it (never the value)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		found, err := resolveSecret(c, args[0])
+		if err != nil {
+			return err
+		}
+		sec, err := c.GetProjectSecret(context.Background(), found.ID)
+		if err != nil {
+			return err
+		}
+		outputFormat := rootCmd.Flag("output").Value.String()
+		if isStructured(outputFormat) {
+			return renderData(sec)
+		}
+		owner := mutedStyle.Render("—")
+		switch {
+		case sec.OwnerDatabaseID != "":
+			owner = "database"
+		case sec.OwnerBucketID != "":
+			owner = "bucket"
+		}
+		mounted := mutedStyle.Render("—")
+		if len(sec.MountedBy) > 0 {
+			mounted = strings.Join(sec.MountedBy, ", ")
+		}
+		fmt.Println(renderInfoBox("Secret", [][]string{
+			{"ID", mutedStyle.Render(sec.ID)},
+			{"Name", sec.Name},
+			{"Managed by", owner},
+			{"Mounted by", mounted},
+			{"Access", accessRows(sec.Access)},
+			{"Updated", sec.UpdatedAt.Format("2006-01-02 15:04")},
+		}))
+		return nil
+	},
+}
+
 var secretUpdateCmd = &cobra.Command{
 	Use:   "update <name> <value>",
 	Short: "Replace a secret's value and roll the apps mounting it",
@@ -173,6 +214,6 @@ func resolveSecret(c *client.Client, name string) (*client.ProjectSecret, error)
 }
 
 func init() {
-	secretCmd.AddCommand(secretCreateCmd, secretListCmd, secretUpdateCmd, secretDeleteCmd)
+	secretCmd.AddCommand(secretCreateCmd, secretGetCmd, secretListCmd, secretUpdateCmd, secretDeleteCmd)
 	rootCmd.AddCommand(secretCmd)
 }

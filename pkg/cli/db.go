@@ -186,6 +186,7 @@ var dbGetCmd = &cobra.Command{
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 			{"Secret", orDash(db.Secret)},
 			{"Mounted by", orDash(strings.Join(db.MountedBy, ", "))},
+			{"Access", accessRows(db.Access)},
 		}))
 		fmt.Println()
 		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))

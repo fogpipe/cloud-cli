@@ -787,6 +787,10 @@ type Database struct {
 	MountedBy []string  `json:"mounted_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Access is who may be handed this resource's credential: the bindings held
+	// on it (ADR-284), each a member and the one role the kind admits. Set on a
+	// single read, never on a list.
+	Access []*IAMBinding `json:"access,omitempty"`
 }
 
 // DatabaseConnection is a database's live connection info (GET
@@ -892,6 +896,10 @@ type Bucket struct {
 	// an AWS config file (#1101); mount it on an app to hand the app the bucket.
 	Secret    string   `json:"secret,omitempty"`
 	MountedBy []string `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
+	// Access is who may be handed this resource's credential: the bindings held
+	// on it (ADR-284), each a member and the one role the kind admits. Set on a
+	// single read, never on a list.
+	Access []*IAMBinding `json:"access,omitempty"`
 }
 
 // WebsiteVersion is one published version of a static site (#476). It exists
@@ -1223,6 +1231,9 @@ type ProjectSecret struct {
 	MountedBy       []string  `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	// Access is who may be handed the value: the `reader` bindings held on the
+	// secret (ADR-284). Set on a single read, never on a list.
+	Access []*IAMBinding `json:"access,omitempty"`
 }
 
 // CreateSecretRequest creates a named project secret.
@@ -1479,6 +1490,9 @@ type ServiceAccount struct {
 	// CallerRole is the caller's own effective role on the account's scope,
 	// so a client offers only the grants the caller may make.
 	CallerRole string `json:"caller_role,omitempty"`
+	// Bindings is everything the account holds: its project and organization
+	// roles and the resources handed to it (ADR-284). Set on a single read.
+	Bindings []*IAMBinding `json:"bindings,omitempty"`
 }
 
 // CreateServiceAccountRequest is the request body for creating a service account.
@@ -1503,10 +1517,12 @@ type ServiceAccountKey struct {
 	ExpiresAt        *string `json:"expires_at,omitempty"`
 }
 
-// IAMBinding represents an IAM role binding.
+// IAMBinding is a role held by a member on a resource. On an organization or
+// a project the role is owner, editor or viewer; on a database or a bucket it
+// is `user` and on a secret `reader`, the one role each kind admits (ADR-284).
 type IAMBinding struct {
 	ID           string `json:"id"`
-	ResourceType string `json:"resource_type"`
+	ResourceType string `json:"resource_type"` // organization, project, database, bucket, secret
 	ResourceID   string `json:"resource_id"`
 	Role         string `json:"role"`
 	MemberType   string `json:"member_type"`

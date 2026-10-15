@@ -284,6 +284,7 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"Access Key", accessKey},
 			{"Secret", dashIfEmpty(b.Secret)},
 			{"Mounted by", dashIfEmpty(strings.Join(b.MountedBy, ", "))},
+			{"Access", accessRows(b.Access)},
 		}))
 		return nil
 	},
