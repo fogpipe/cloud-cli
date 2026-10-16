@@ -1342,17 +1342,21 @@ func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, e
 // CreateProjectSecret creates a named secret in the project (#1069). The value
 // never comes back from any read.
 func (c *Client) CreateProjectSecret(ctx context.Context, projectID, name, value string) (*Secret, error) {
-	return c.createSecret(ctx, "/api/v1/projects/"+projectID+"/secrets", name, value)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", CreateSecretRequest{Name: name, Value: value})
+	if err != nil {
+		return nil, err
+	}
+	var sec Secret
+	if err := c.do(httpReq, &sec); err != nil {
+		return nil, err
+	}
+	return &sec, nil
 }
 
 // CreateOrgSecret creates a named secret in the organization (ADR-287),
 // referenced by an app in any of its projects as "org/<name>".
 func (c *Client) CreateOrgSecret(ctx context.Context, orgID, name, value string) (*Secret, error) {
-	return c.createSecret(ctx, "/api/v1/orgs/"+orgID+"/secrets", name, value)
-}
-
-func (c *Client) createSecret(ctx context.Context, path, name, value string) (*Secret, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, path, CreateSecretRequest{Name: name, Value: value})
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/secrets", CreateSecretRequest{Name: name, Value: value})
 	if err != nil {
 		return nil, err
 	}
@@ -1366,17 +1370,21 @@ func (c *Client) createSecret(ctx context.Context, path, name, value string) (*S
 // ListProjectSecrets lists the project's secrets: names and who references
 // them, never values.
 func (c *Client) ListProjectSecrets(ctx context.Context, projectID string) ([]*Secret, error) {
-	return c.listSecrets(ctx, "/api/v1/projects/"+projectID+"/secrets")
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/secrets", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []*Secret
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListOrgSecrets lists the organization's secrets: names and the
 // "<project>/<app>" references across its projects, never values.
 func (c *Client) ListOrgSecrets(ctx context.Context, orgID string) ([]*Secret, error) {
-	return c.listSecrets(ctx, "/api/v1/orgs/"+orgID+"/secrets")
-}
-
-func (c *Client) listSecrets(ctx context.Context, path string) ([]*Secret, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/secrets", nil)
 	if err != nil {
 		return nil, err
 	}
