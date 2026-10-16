@@ -507,7 +507,7 @@ With --resource, list who is handed one of the project's resources instead.`,
 				b.Role,
 				b.MemberType,
 				b.Member,
-				b.ResourceType,
+				bindingScope(b),
 				b.CreatedAt,
 			})
 		}
@@ -594,10 +594,10 @@ var saGetCmd = &cobra.Command{
 			return nil
 		}
 		fmt.Println()
-		headers := []string{"ID", "SCOPE", "RESOURCE", "ROLE", "CREATED"}
+		headers := []string{"ID", "SCOPE", "ROLE", "CREATED"}
 		var rows [][]string
 		for _, b := range sa.Bindings {
-			rows = append(rows, []string{b.ID, b.ResourceType, b.ResourceID, b.Role, b.CreatedAt})
+			rows = append(rows, []string{b.ID, bindingScope(b), b.Role, b.CreatedAt})
 		}
 		render(headers, rows, sa.Bindings)
 		return nil
@@ -652,4 +652,14 @@ func init() {
 	iamCmd.AddCommand(iamListCmd)
 	iamCmd.AddCommand(iamRemoveCmd)
 	rootCmd.AddCommand(iamCmd)
+}
+
+// bindingScope names what a binding is held on: the kind and the resource's
+// name, which the server reads with the row, falling back to the id for a
+// resource that is gone.
+func bindingScope(b *client.IAMBinding) string {
+	if b.ResourceName == "" {
+		return b.ResourceType + "/" + b.ResourceID
+	}
+	return b.ResourceType + "/" + b.ResourceName
 }

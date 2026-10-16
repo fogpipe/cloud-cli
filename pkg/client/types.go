@@ -10,15 +10,19 @@ import (
 
 // Project represents a Fogpipe project.
 type Project struct {
-	ID             string    `json:"id"`
-	OrganizationID string    `json:"organization_id"`
-	Name           string    `json:"name"`
-	DisplayName    string    `json:"display_name"`
-	Status         string    `json:"status"` // active, suspended, deleting
-	Namespace      string    `json:"namespace"`
-	Egress         string    `json:"egress"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	Name           string `json:"name"`
+	DisplayName    string `json:"display_name"`
+	Status         string `json:"status"` // active, suspended, deleting
+	Namespace      string `json:"namespace"`
+	Egress         string `json:"egress"`
+	// CallerRole is the caller's own effective role on the project, org
+	// inheritance included: what the caller may grant up to (ADR-283 §3).
+	// Omitted when the caller holds none.
+	CallerRole string    `json:"caller_role,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // CreateProjectRequest is the request body for creating a project.
@@ -1531,6 +1535,7 @@ type IAMBinding struct {
 	ID           string `json:"id"`
 	ResourceType string `json:"resource_type"` // organization, project, database, bucket, secret
 	ResourceID   string `json:"resource_id"`
+	ResourceName string `json:"resource_name"` // what the id names, filled by the server on every read; empty once the resource is gone
 	Role         string `json:"role"`
 	MemberType   string `json:"member_type"`
 	Member       string `json:"member"`
