@@ -283,7 +283,7 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"Status", renderStatus(b.Status)},
 			{"Access Key", accessKey},
 			{"Secret", dashIfEmpty(b.Secret)},
-			{"Mounted by", dashIfEmpty(strings.Join(b.MountedBy, ", "))},
+			{"Used by", dashIfEmpty(strings.Join(b.UsedBy, ", "))},
 			{"Access", accessRows(b.Access)},
 		}))
 		return nil

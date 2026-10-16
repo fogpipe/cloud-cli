@@ -185,7 +185,7 @@ var dbGetCmd = &cobra.Command{
 			{"Read address", orDash(dbReadAddress(db))},
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 			{"Secret", orDash(db.Secret)},
-			{"Mounted by", orDash(strings.Join(db.MountedBy, ", "))},
+			{"Used by", orDash(strings.Join(db.UsedBy, ", "))},
 			{"Access", accessRows(db.Access)},
 		}))
 		fmt.Println()
@@ -297,7 +297,7 @@ psql, another service — has stopped working, which is the point.`,
 		fmt.Println(renderInfoBox("Password Rotated", [][]string{
 			{"Database", db.Name},
 			{"Secret", orDash(db.Secret)},
-			{"Rolled", orDash(strings.Join(db.MountedBy, ", "))},
+			{"Rolled", orDash(strings.Join(db.UsedBy, ", "))},
 		}))
 		printDatabaseNextSteps(db)
 		return nil
@@ -969,7 +969,7 @@ func flagBool(cmd *cobra.Command, name string) bool {
 func printDatabaseNextSteps(db *client.Database) {
 	fmt.Println()
 	if db.Secret != "" {
-		fmt.Println(mutedStyle.Render("  Hand it to an app:  fpcloud app update <app> --mount-secret /secrets/db=" + db.Secret))
+		fmt.Println(mutedStyle.Render("  Hand it to an app:  fpcloud app env set <app> DATABASE_URL --from-secret " + db.Secret))
 	}
 	fmt.Println(mutedStyle.Render("  Connect yourself:   fpcloud db connect " + db.Name))
 }

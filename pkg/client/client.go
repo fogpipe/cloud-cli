@@ -1339,25 +1339,6 @@ func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, e
 	return &app, nil
 }
 
-// SetSecretMounts replaces the whole map of an app's secret mounts: container
-// file path -> project secret name (#1069). An empty map unmounts everything.
-// The mount is the bind — mounting a database's or a bucket's secret is how an app is
-// pointed at that database.
-func (c *Client) SetSecretMounts(ctx context.Context, id string, mounts map[string]string) (*App, error) {
-	if mounts == nil {
-		mounts = map[string]string{}
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/secret-mounts", UpdateSecretMountsRequest{SecretMounts: mounts})
-	if err != nil {
-		return nil, err
-	}
-	var app App
-	if err := c.do(httpReq, &app); err != nil {
-		return nil, err
-	}
-	return &app, nil
-}
-
 // CreateProjectSecret creates a named secret in the project (#1069). The value
 // never comes back from any read.
 func (c *Client) CreateProjectSecret(ctx context.Context, projectID, name, value string) (*ProjectSecret, error) {
@@ -2522,12 +2503,22 @@ func (c *Client) RemoveDomain(ctx context.Context, appID string, domain string) 
 	return c.do(httpReq, nil)
 }
 
-// SetConfig sets a config value for an app.
+// SetConfig sets a literal env value for an app.
 func (c *Client) SetConfig(ctx context.Context, appID, key, value string) (*AppConfig, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+appID+"/config", SetConfigRequest{
-		Key:   key,
-		Value: value,
-	})
+	return c.setConfig(ctx, appID, SetConfigRequest{Key: key, Value: value})
+}
+
+// SetSecretEnv sets an env entry that references a project secret (ADR-284
+// §7): delivered as the variable, or, with path, as a file at that path the
+// variable then names. Referencing a secret hands the app's identity the
+// resource behind it; the platform writes that grant when the caller may
+// make it and refuses the entry naming the grant when the caller may not.
+func (c *Client) SetSecretEnv(ctx context.Context, appID, key, secret, path string) (*AppConfig, error) {
+	return c.setConfig(ctx, appID, SetConfigRequest{Key: key, SecretRef: &SecretRef{Secret: secret, Path: path}})
+}
+
+func (c *Client) setConfig(ctx context.Context, appID string, req SetConfigRequest) (*AppConfig, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+appID+"/config", req)
 	if err != nil {
 		return nil, err
 	}

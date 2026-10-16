@@ -437,7 +437,6 @@ type App struct {
 	Name           string            `json:"name"`
 	DisplayName    string            `json:"display_name"`
 	URLSlug        string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
-	SecretMounts   map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
 	Image          string            `json:"image"`
 	Release        string            `json:"release,omitempty"`         // user-named release currently live (#471)
 	Template       string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
@@ -553,14 +552,16 @@ type CreateAppRequest struct {
 	// at create — no update path changes it.
 	Type string `json:"type,omitempty"`
 	// EnvVars seeds the app's config store — shorthand for a SetConfig per key.
-	// Env is plain by definition (#1069): a secret is a project secret, mounted
-	// as a file through SecretMounts.
+	// Env is plain by definition (#1069); a secret reaches the app through a
+	// SecretEnv entry.
 	EnvVars map[string]string `json:"env_vars,omitempty"`
-	// SecretMounts maps a container file path to a project secret mounted
-	// there, written before the first rollout is gated on the release command,
-	// so a migration that reads one is created with it mounted (ADR-112).
-	SecretMounts        map[string]string `json:"secret_mounts,omitempty"`
-	HealthCheckPath     string            `json:"health_check_path,omitempty"`
+	// SecretEnv are env entries referencing a project secret, by variable
+	// (ADR-284 §7): delivered as the variable, or as a file at Path the
+	// variable then names. Written before the first rollout is gated on the
+	// release command, so a migration that reads one is created with it
+	// (ADR-112).
+	SecretEnv           map[string]SecretRef `json:"secret_env,omitempty"`
+	HealthCheckPath     string               `json:"health_check_path,omitempty"`
 	HealthCheckTimeout  int               `json:"health_check_timeout,omitempty"`
 	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
 	HealthCheckRetries  int               `json:"health_check_retries,omitempty"`
@@ -793,9 +794,9 @@ type Database struct {
 	// URL (#1069): created with the database, rewritten by rotate-password,
 	// deleted with it. Mount it on an app to hand the app the credential.
 	Secret string `json:"secret,omitempty"`
-	// MountedBy is the apps mounting that secret — the mount is the bind, so
-	// this is "which apps use this database".
-	MountedBy []string  `json:"mounted_by,omitempty"`
+	// UsedBy is the apps whose env references that secret — the reference is
+	// the bind, so this is "which apps use this database".
+	UsedBy    []string  `json:"used_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	// Access is who may be handed this resource's credential: the bindings held
@@ -905,8 +906,8 @@ type Bucket struct {
 
 	// Secret names the project secret holding this bucket's read+write key as
 	// an AWS config file (#1101); mount it on an app to hand the app the bucket.
-	Secret    string   `json:"secret,omitempty"`
-	MountedBy []string `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
+	Secret string   `json:"secret,omitempty"`
+	UsedBy []string `json:"used_by,omitempty"` // apps whose env references it; the reference is the bind
 	// Access is who may be handed this resource's credential: the bindings held
 	// on it (ADR-284), each a member and the one role the kind admits. Set on a
 	// single read, never on a list.
@@ -1214,23 +1215,37 @@ type DomainVerification struct {
 // AppConfig represents one of an application's environment variables. Env is
 // plain by definition (#1069); secret material is a mounted project secret.
 type AppConfig struct {
-	ID        string    `json:"id"`
-	AppID     string    `json:"app_id"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID    string `json:"id"`
+	AppID string `json:"app_id"`
+	Key   string `json:"key"`
+	// Value is the literal the variable holds; empty on a reference, whose
+	// value is the secret's and never read back.
+	Value string `json:"value"`
+	// SecretRef is set when the entry references a secret (ADR-284 §7).
+	SecretRef *SecretRef `json:"secret_ref,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// SecretRef names the project secret an env entry delivers and how: as the
+// variable's value, or, with Path, as a file at that path the variable names.
+type SecretRef struct {
+	Secret string `json:"secret"`
+	Path   string `json:"path,omitempty"`
 }
 
 // SetConfigRequest is the request body for setting a config value.
 type SetConfigRequest struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+	// SecretRef makes the entry a reference (ADR-284 §7); Value is then empty.
+	SecretRef *SecretRef `json:"secret_ref,omitempty"`
 }
 
 // ProjectSecret is a named secret value scoped to a project (#1069). The value
-// is write-only: it goes in through create/update and reaches an app only as a
-// mounted file (App.SecretMounts). One owned by a database holds that
+// is write-only: it goes in through create/update and reaches an app through
+// an env entry referencing it (AppConfig.SecretRef), as the variable or as a
+// file (ADR-284 §7). One owned by a database holds that
 // database's owner connection URL and is rotated with `db rotate-password`;
 // one owned by a bucket holds its read+write key as an AWS config file.
 type ProjectSecret struct {
@@ -1239,7 +1254,7 @@ type ProjectSecret struct {
 	Name            string    `json:"name"`
 	OwnerDatabaseID string    `json:"owner_database_id,omitempty"`
 	OwnerBucketID   string    `json:"owner_bucket_id,omitempty"`
-	MountedBy       []string  `json:"mounted_by,omitempty"` // apps mounting it; the mount is the bind
+	UsedBy          []string  `json:"used_by,omitempty"` // apps whose env references it; the reference is the bind
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	// Access is who may be handed the value: the `reader` bindings held on the
@@ -1256,12 +1271,6 @@ type CreateSecretRequest struct {
 // UpdateSecretRequest replaces a secret's value; the name is fixed.
 type UpdateSecretRequest struct {
 	Value string `json:"value"`
-}
-
-// UpdateSecretMountsRequest replaces the whole map of an app's secret mounts:
-// container file path -> project secret name. An empty map unmounts everything.
-type UpdateSecretMountsRequest struct {
-	SecretMounts map[string]string `json:"secret_mounts"`
 }
 
 // Revision represents a Knative revision for an application.

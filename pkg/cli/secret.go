@@ -12,30 +12,30 @@ import (
 )
 
 // secretCmd is the project secret store (#1069): named values that reach an
-// app only as mounted files. Distinct from `fpcloud secrets`, the org-wide
+// app through a variable in its env. Distinct from `fpcloud secrets`, the org-wide
 // bundle store.
 var secretCmd = &cobra.Command{
 	Use:   "secret",
-	Short: "Manage the project's secrets, mounted into apps as files",
+	Short: "Manage the project's secrets, referenced from an app's env",
 	Long: `A secret is a named value in the project. Its value goes in here and never
-comes back out: an app reads it as a file, mounted at a path the app names.
+comes back out: an app reaches it through a variable that references it, as
+the variable's value or as a file the variable names (` + "`app env set --from-secret`" + `).
 
   fpcloud secret create stripe-key sk_live_...
-  fpcloud app update web --mount-secret /secrets/stripe=stripe-key
+  fpcloud app env set web STRIPE_KEY --from-secret stripe-key
   fpcloud secret list
 
 A database's owner credential is a secret too — <db>-owner, created with the
-database — so mounting it is how an app is handed the database:
+database — so referencing it is how an app is handed the database:
 
-  fpcloud app update web --mount-secret /secrets/db=mydb-owner
+  fpcloud app env set web DATABASE_URL --from-secret mydb-owner
 
 A bucket's key is one as well — <bucket>-key, an AWS config file holding the
 key, region and endpoint, read by any AWS SDK through AWS_CONFIG_FILE:
 
-  fpcloud app update web --mount-secret /secrets/s3=media-key
-  fpcloud app env set web AWS_CONFIG_FILE=/secrets/s3
+  fpcloud app env set web AWS_CONFIG_FILE --from-secret media-key --path /secrets/s3
 
-Env stays plain (` + "`fpcloud app env`" + `); org-wide bundles are ` + "`fpcloud secrets`" + `.`,
+Org-wide bundles are ` + "`fpcloud secrets`" + `.`,
 }
 
 var secretCreateCmd = &cobra.Command{
@@ -59,7 +59,7 @@ var secretCreateCmd = &cobra.Command{
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Secret %q created — mount it with `fpcloud app update <app> --mount-secret /path=%s`", sec.Name, sec.Name),
+				fmt.Sprintf(" Secret %q created — reference it with `fpcloud app env set <app> KEY --from-secret %s`", sec.Name, sec.Name),
 		))
 		return nil
 	},
@@ -86,11 +86,11 @@ var secretListCmd = &cobra.Command{
 			if sec.OwnerDatabaseID != "" {
 				owner = "database"
 			}
-			mounted := mutedStyle.Render("—")
-			if len(sec.MountedBy) > 0 {
-				mounted = strings.Join(sec.MountedBy, ", ")
+			used := mutedStyle.Render("—")
+			if len(sec.UsedBy) > 0 {
+				used = strings.Join(sec.UsedBy, ", ")
 			}
-			rows[i] = []string{sec.Name, owner, mounted}
+			rows[i] = []string{sec.Name, owner, used}
 		}
 		render([]string{"NAME", "MANAGED BY", "MOUNTED BY"}, rows, secrets)
 		return nil
@@ -122,15 +122,15 @@ var secretGetCmd = &cobra.Command{
 		case sec.OwnerBucketID != "":
 			owner = "bucket"
 		}
-		mounted := mutedStyle.Render("—")
-		if len(sec.MountedBy) > 0 {
-			mounted = strings.Join(sec.MountedBy, ", ")
+		used := mutedStyle.Render("—")
+		if len(sec.UsedBy) > 0 {
+			used = strings.Join(sec.UsedBy, ", ")
 		}
 		fmt.Println(renderInfoBox("Secret", [][]string{
 			{"ID", mutedStyle.Render(sec.ID)},
 			{"Name", sec.Name},
 			{"Managed by", owner},
-			{"Mounted by", mounted},
+			{"Used by", used},
 			{"Access", accessRows(sec.Access)},
 			{"Updated", sec.UpdatedAt.Format("2006-01-02 15:04")},
 		}))
@@ -158,8 +158,8 @@ var secretUpdateCmd = &cobra.Command{
 			return renderData(updated)
 		}
 		note := ""
-		if len(updated.MountedBy) > 0 {
-			note = fmt.Sprintf(" — %s rolled onto it", strings.Join(updated.MountedBy, ", "))
+		if len(updated.UsedBy) > 0 {
+			note = fmt.Sprintf(" — %s rolled onto it", strings.Join(updated.UsedBy, ", "))
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +

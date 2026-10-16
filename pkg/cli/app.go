@@ -197,12 +197,12 @@ var appCreateCmd = &cobra.Command{
 		}
 		secCtx := securityContextFromFlags(cmd)
 		envFlags, _ := cmd.Flags().GetStringArray("env")
-		secretMountFlags, _ := cmd.Flags().GetStringArray("mount-secret")
+		secretEnvFlags, _ := cmd.Flags().GetStringArray("secret-env")
 		envVars, err := parseKeyValues(envFlags, "--env")
 		if err != nil {
 			return err
 		}
-		secretMounts, err := parseKeyValues(secretMountFlags, "--mount-secret")
+		secretEnv, err := parseSecretEnv(secretEnvFlags)
 		if err != nil {
 			return err
 		}
@@ -250,7 +250,7 @@ var appCreateCmd = &cobra.Command{
 				HealthCheckRetries:  healthCheckRetries,
 				Probes:              probes,
 				EnvVars:             envVars,
-				SecretMounts:        secretMounts,
+				SecretEnv:           secretEnv,
 			})
 		}
 
@@ -1153,9 +1153,6 @@ var appUpdateCmd = &cobra.Command{
 		slug, _ := cmd.Flags().GetString("slug")
 		// --database is set-if-changed too, so `--database ""` clears the binding
 		// back to the default rather than being indistinguishable from omitting it.
-		mountFlags, _ := cmd.Flags().GetStringArray("mount-secret")
-		unmountFlags, _ := cmd.Flags().GetStringArray("unmount-secret")
-		mountsChanged := len(mountFlags) > 0 || len(unmountFlags) > 0
 		// instead of being indistinguishable from omitting the flag.
 		var command, cmdArgs, releaseCommand *[]string
 		if cmd.Flags().Changed("command") {
@@ -1177,8 +1174,8 @@ var appUpdateCmd = &cobra.Command{
 		}
 		securityContextChanged := clearSecurityContext || securityContext != nil
 
-		if mode == "" && displayName == "" && !slugChanged && !mountsChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
-			return fmt.Errorf("nothing to update: pass --display-name, --slug, --mount-secret, --unmount-secret, --mode, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
+		if mode == "" && displayName == "" && !slugChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
+			return fmt.Errorf("nothing to update: pass --display-name, --slug, --mode, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -1199,32 +1196,6 @@ var appUpdateCmd = &cobra.Command{
 			}
 			if slugChanged {
 				app, updErr = c.UpdateAppURLSlug(context.Background(), appID, slug)
-				if updErr != nil {
-					return
-				}
-			}
-			if mountsChanged {
-				current, getErr := c.GetApp(context.Background(), appID)
-				if getErr != nil {
-					updErr = getErr
-					return
-				}
-				mounts := map[string]string{}
-				for path, name := range current.SecretMounts {
-					mounts[path] = name
-				}
-				added, parseErr := parseKeyValues(mountFlags, "--mount-secret")
-				if parseErr != nil {
-					updErr = parseErr
-					return
-				}
-				for path, name := range added {
-					mounts[path] = name
-				}
-				for _, path := range unmountFlags {
-					delete(mounts, path)
-				}
-				app, updErr = c.SetSecretMounts(context.Background(), appID, mounts)
 				if updErr != nil {
 					return
 				}
@@ -1938,7 +1909,7 @@ func init() {
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
 	appCreateCmd.Flags().StringArray("env", nil, "Set a plain config value on the new app: KEY=VALUE (repeatable). Set before the release command runs, so a migration sees it")
-	appCreateCmd.Flags().StringArray("mount-secret", nil, "Mount a project secret as a file: /path/in/container=SECRET_NAME (repeatable). The only way a secret reaches the app; env is plain. `app env list`")
+	appCreateCmd.Flags().StringArray("secret-env", nil, "Reference a project secret from a variable: KEY=SECRET_NAME delivers the value as the variable, KEY=SECRET_NAME:/path/in/container as a file the variable names (repeatable). Set before the release command runs, so a migration sees it")
 	appCreateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; repeat for exec form)")
 	appCreateCmd.Flags().String("display-name", "", "Cosmetic display name (defaults to the app name); mutable later via `app update --display-name`")
 	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.<tenant-domain> instead of the derived host (always-on apps; globally unique)")
@@ -1999,8 +1970,6 @@ func init() {
 
 	appUpdateCmd.Flags().String("display-name", "", "New cosmetic display name (the frozen app name is unchanged)")
 	appUpdateCmd.Flags().String("slug", "", "Set the vanity URL slug (<slug>.<tenant-domain>); pass --slug \"\" to clear it back to the derived host (always-on apps)")
-	appUpdateCmd.Flags().StringArray("mount-secret", nil, "Mount a project secret as a file: /path/in/container=SECRET_NAME (repeatable). Mounting a database's owner secret is how the app gets that database")
-	appUpdateCmd.Flags().StringArray("unmount-secret", nil, "Remove the mount at a path (repeatable)")
 	appUpdateCmd.Flags().String("mode", "", "New hosting mode: 'always-on' or 'serverless'")
 	appUpdateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; pass with no value to clear back to the image ENTRYPOINT)")
 	appUpdateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; pass with no value to clear back to the image CMD)")
@@ -2017,4 +1986,25 @@ func init() {
 	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
 	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)
+}
+
+// parseSecretEnv reads --secret-env entries: KEY=SECRET delivers the secret
+// as the variable, KEY=SECRET:/path as a file at that path the variable names.
+func parseSecretEnv(flags []string) (map[string]client.SecretRef, error) {
+	if len(flags) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]client.SecretRef, len(flags))
+	for _, f := range flags {
+		key, rest, ok := strings.Cut(f, "=")
+		if !ok || key == "" || rest == "" {
+			return nil, fmt.Errorf("--secret-env %q: use KEY=SECRET or KEY=SECRET:/path", f)
+		}
+		secret, path, _ := strings.Cut(rest, ":")
+		if secret == "" {
+			return nil, fmt.Errorf("--secret-env %q: names no secret", f)
+		}
+		out[key] = client.SecretRef{Secret: secret, Path: path}
+	}
+	return out, nil
 }
