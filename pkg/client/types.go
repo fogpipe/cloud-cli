@@ -1503,10 +1503,9 @@ type ServiceAccount struct {
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
-	// Kind is "app" for the account an app is (ADR-283), named in App, or
-	// "standalone" for one created on its own, for CI or tooling.
-	Kind string `json:"kind"`
-	App  string `json:"app,omitempty"`
+	// App is the app this account is the identity of (ADR-283); empty for an
+	// account created on its own, for CI or tooling.
+	App string `json:"app,omitempty"`
 	// CallerRole is the caller's own effective role on the account's scope,
 	// so a client offers only the grants the caller may make.
 	CallerRole string `json:"caller_role,omitempty"`

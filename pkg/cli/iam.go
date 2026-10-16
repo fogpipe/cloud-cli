@@ -72,7 +72,7 @@ var saListCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"ID", "NAME", "EMAIL", "KIND", "APP", "STATUS", "CREATED"}
+		headers := []string{"ID", "NAME", "EMAIL", "APP", "STATUS", "CREATED"}
 		var rows [][]string
 		for _, sa := range accounts {
 			app := sa.App
@@ -83,7 +83,6 @@ var saListCmd = &cobra.Command{
 				sa.ID,
 				sa.Name,
 				sa.Email,
-				sa.Kind,
 				app,
 				renderStatus(sa.Status),
 				sa.CreatedAt.Format("2006-01-02 15:04"),
@@ -157,7 +156,7 @@ var saListOrgCmd = &cobra.Command{
 			return err
 		}
 
-		headers := []string{"ID", "NAME", "EMAIL", "KIND", "APP", "STATUS", "CREATED"}
+		headers := []string{"ID", "NAME", "EMAIL", "APP", "STATUS", "CREATED"}
 		var rows [][]string
 		for _, sa := range accounts {
 			app := sa.App
@@ -168,7 +167,6 @@ var saListOrgCmd = &cobra.Command{
 				sa.ID,
 				sa.Name,
 				sa.Email,
-				sa.Kind,
 				app,
 				renderStatus(sa.Status),
 				sa.CreatedAt.Format("2006-01-02 15:04"),
@@ -584,7 +582,6 @@ var saGetCmd = &cobra.Command{
 			{"ID", mutedStyle.Render(sa.ID)},
 			{"Name", sa.Name},
 			{"Email", sa.Email},
-			{"Kind", sa.Kind},
 			{"App", app},
 			{"Status", renderStatus(sa.Status)},
 		}))
