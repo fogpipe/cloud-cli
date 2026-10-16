@@ -109,7 +109,13 @@ or {identity} appears in --format, so prompt use stays fast.`,
 // the credential itself. A provider the platform cannot ask answers "", shown
 // as nothing rather than read as no second factor.
 func currentCredential() (credential, signIn string) {
-	if flag := rootCmd.Flag("api-key"); flag.Changed || envAPIKey() != "" || flag.Value.String() != "" {
+	if flag := rootCmd.Flag("api-key"); flag.Changed || envAPIKey() != "" {
+		return "API key", ""
+	}
+	if podIdentityFile() != "" {
+		return "pod identity token", ""
+	}
+	if rootCmd.Flag("api-key").Value.String() != "" {
 		return "API key", ""
 	}
 	credential = "browser login"

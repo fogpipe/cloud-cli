@@ -122,7 +122,22 @@ func saveConfig(cfg *Config) error {
 
 // getClient builds an API client from the resolved API URL and credential.
 func getClient() *client.Client {
-	return newClient(resolveAPIURL(), resolveAPIKey())
+	apiURL := resolveAPIURL()
+	c := newClient(apiURL, resolveAPIKey())
+	if c.APIKey == "" {
+		if path := podIdentityFile(); path != "" {
+			c.TokenSource = client.NewPodIdentity(apiURL, path)
+		}
+	}
+	return c
+}
+
+// podIdentityFile is the identity token file an app's pod is given (ADR-285),
+// or "" outside one. It stands below an explicit key and above the login
+// state: a pod has no config.yaml and no browser, and a key set on purpose
+// still wins.
+func podIdentityFile() string {
+	return client.IdentityTokenFile()
 }
 
 // resolveAPIURL picks the control plane every command talks to: an explicit
@@ -145,12 +160,14 @@ func resolveAPIURL() string {
 	return flag.Value.String()
 }
 
-// resolveAPIKey picks the credential every API call carries, in the same order
-// the Terraform provider uses so one variable means one thing whichever binary
-// reads it: an explicit --api-key, then the environment's key — FPCLOUD_API_KEY
-// (what OIDC federation mints in CI) — then the key
-// stored in config.yaml, then the OIDC token from `fpcloud login`, so
-// interactive use needs no separate key (gcloud-style). Returns "" when nothing authenticates the caller.
+// resolveAPIKey picks the static credential every API call carries, in the
+// same order the Terraform provider uses so one variable means one thing
+// whichever binary reads it: an explicit --api-key, then the environment's key
+// — FPCLOUD_API_KEY (what OIDC federation mints in CI) — then, unless the
+// process is in an app's pod (podIdentityFile, exchanged per request rather
+// than stored), the key in config.yaml, then the OIDC token from `fpcloud
+// login`, so interactive use needs no separate key (gcloud-style). Returns ""
+// when nothing static authenticates the caller.
 func resolveAPIKey() string {
 	flag := rootCmd.Flag("api-key")
 	if flag.Changed {
@@ -158,6 +175,9 @@ func resolveAPIKey() string {
 	}
 	if key := envAPIKey(); key != "" {
 		return key
+	}
+	if podIdentityFile() != "" {
+		return ""
 	}
 	if key := flag.Value.String(); key != "" {
 		return key

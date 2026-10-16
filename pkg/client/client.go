@@ -27,9 +27,13 @@ const ClientVersionHeader = "X-Fpcloud-Client-Version"
 
 // Client is the Fogpipe API client.
 type Client struct {
-	BaseURL    string
-	APIKey     string
-	HTTPClient *http.Client
+	BaseURL string
+	APIKey  string
+	// TokenSource supplies the bearer credential when APIKey is empty: a
+	// process in an app's pod exchanges its projected identity token through
+	// one (ADR-285). With neither, requests go out unauthenticated.
+	TokenSource TokenSource
+	HTTPClient  *http.Client
 	// Version is what this caller reports as its client-library version. It
 	// defaults to the version of this module recorded in the caller's build
 	// info, which is right for anything importing pkg/client as a dependency.
@@ -117,8 +121,15 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any) 
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if c.APIKey != "" {
+	switch {
+	case c.APIKey != "":
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	case c.TokenSource != nil:
+		token, err := c.TokenSource.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if c.Version != "" {
 		req.Header.Set(ClientVersionHeader, c.Version)

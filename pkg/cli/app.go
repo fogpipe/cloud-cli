@@ -1602,10 +1602,11 @@ var appIdentityCmd = &cobra.Command{
 		outputFormat := rootCmd.Flag("output").Value.String()
 		if isStructured(outputFormat) {
 			return renderData(map[string]string{
-				"app_id":             app.ID,
-				"app_name":           app.Name,
-				"service_account_id": app.ServiceAccountID,
-				"service_account":    app.ServiceAccount,
+				"app_id":              app.ID,
+				"app_name":            app.Name,
+				"service_account_id":  app.ServiceAccountID,
+				"service_account":     app.ServiceAccount,
+				"identity_token_file": app.IdentityTokenFile,
 			})
 		}
 
@@ -1613,6 +1614,8 @@ var appIdentityCmd = &cobra.Command{
 			{"App", app.Name},
 			{"Service Account", app.ServiceAccount},
 			{"Grants", "fpcloud iam list   (it holds nothing until granted)"},
+			{"In the pod", app.IdentityTokenFile + "  (FPCLOUD_IDENTITY_TOKEN_FILE)"},
+			{"Authenticates", "the token is exchanged at POST /auth/token; pkg/client and fpcloud do it on their own"},
 		}))
 		return nil
 	},

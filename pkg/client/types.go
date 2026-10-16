@@ -428,38 +428,45 @@ type AppEvent struct {
 
 // App represents a deployed application.
 type App struct {
-	ID                 string            `json:"id"`
-	ProjectID          string            `json:"project_id"`
-	Name               string            `json:"name"`
-	DisplayName        string            `json:"display_name"`
-	URLSlug            string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
-	SecretMounts       map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
-	Image              string            `json:"image"`
-	Release            string            `json:"release,omitempty"`         // user-named release currently live (#471)
-	Template           string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
-	TemplateUpdate     string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
-	Command            []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
-	Args               []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
-	ReleaseCommand     []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
-	Status             string            `json:"status"`
-	URL                string            `json:"url"`
-	Domains            []string          `json:"domains"`
-	Replicas           int               `json:"replicas"`
-	MinScale           int32             `json:"min_scale"`
-	MaxScale           int32             `json:"max_scale"`
-	CPULimit           string            `json:"cpu_limit"`
-	MemoryLimit        string            `json:"memory_limit"`
-	Ingress            string            `json:"ingress"`
-	Routes             []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode               string            `json:"mode"`
-	Type               string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port               int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
-	KubeServiceAccount string            `json:"kube_service_account,omitempty"`
+	ID             string            `json:"id"`
+	ProjectID      string            `json:"project_id"`
+	Name           string            `json:"name"`
+	DisplayName    string            `json:"display_name"`
+	URLSlug        string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
+	SecretMounts   map[string]string `json:"secret_mounts,omitempty"` // file path -> project secret mounted there (#1069); the only way a secret reaches the app
+	Image          string            `json:"image"`
+	Release        string            `json:"release,omitempty"`         // user-named release currently live (#471)
+	Template       string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
+	TemplateUpdate string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
+	Command        []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
+	Args           []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
+	ReleaseCommand []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
+	Status         string            `json:"status"`
+	URL            string            `json:"url"`
+	Domains        []string          `json:"domains"`
+	Replicas       int               `json:"replicas"`
+	MinScale       int32             `json:"min_scale"`
+	MaxScale       int32             `json:"max_scale"`
+	CPULimit       string            `json:"cpu_limit"`
+	MemoryLimit    string            `json:"memory_limit"`
+	Ingress        string            `json:"ingress"`
+	Routes         []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode           string            `json:"mode"`
+	Type           string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port           int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
 	// ServiceAccountID and ServiceAccount name the app's own identity (ADR-283):
 	// one account per app, created and deleted with it, keyed in every binding
-	// by its email. It holds nothing until granted.
-	ServiceAccountID    string           `json:"service_account_id"`
-	ServiceAccount      string           `json:"service_account"`
+	// by its email. It holds nothing until granted. IdentityTokenFile is where
+	// each of the app's pods finds the token that proves it is that account,
+	// exchanged at POST /auth/token for a short-lived credential (ADR-285);
+	// pkg/client does the exchange on its own when the file is named by
+	// FPCLOUD_IDENTITY_TOKEN_FILE.
+	ServiceAccountID  string `json:"service_account_id"`
+	ServiceAccount    string `json:"service_account"`
+	IdentityTokenFile string `json:"identity_token_file"`
+	// ClusterToken is operator-set: the pods also carry their ServiceAccount's
+	// token for the cluster's own API, for the one dashboard the platform runs.
+	ClusterToken        bool             `json:"cluster_token,omitempty"`
 	HealthCheckPath     string           `json:"health_check_path"`
 	HealthCheckTimeout  int              `json:"health_check_timeout"`
 	HealthCheckInterval int              `json:"health_check_interval"`
