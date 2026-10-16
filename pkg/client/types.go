@@ -432,31 +432,31 @@ type AppEvent struct {
 
 // App represents a deployed application.
 type App struct {
-	ID             string            `json:"id"`
-	ProjectID      string            `json:"project_id"`
-	Name           string            `json:"name"`
-	DisplayName    string            `json:"display_name"`
-	URLSlug        string            `json:"url_slug"`                // optional vanity host override (ADR-040); empty = derived host
-	Image          string            `json:"image"`
-	Release        string            `json:"release,omitempty"`         // user-named release currently live (#471)
-	Template       string            `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
-	TemplateUpdate string            `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
-	Command        []string          `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
-	Args           []string          `json:"args,omitempty"`            // container arguments (empty = image CMD)
-	ReleaseCommand []string          `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
-	Status         string            `json:"status"`
-	URL            string            `json:"url"`
-	Domains        []string          `json:"domains"`
-	Replicas       int               `json:"replicas"`
-	MinScale       int32             `json:"min_scale"`
-	MaxScale       int32             `json:"max_scale"`
-	CPULimit       string            `json:"cpu_limit"`
-	MemoryLimit    string            `json:"memory_limit"`
-	Ingress        string            `json:"ingress"`
-	Routes         []Route           `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode           string            `json:"mode"`
-	Type           string            `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port           int               `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
+	ID             string   `json:"id"`
+	ProjectID      string   `json:"project_id"`
+	Name           string   `json:"name"`
+	DisplayName    string   `json:"display_name"`
+	URLSlug        string   `json:"url_slug"` // optional vanity host override (ADR-040); empty = derived host
+	Image          string   `json:"image"`
+	Release        string   `json:"release,omitempty"`         // user-named release currently live (#471)
+	Template       string   `json:"template,omitempty"`        // catalog entry the app was deployed from (ADR-235); empty = the tenant's own image
+	TemplateUpdate string   `json:"template_update,omitempty"` // the catalog's current version when newer than Release; empty = up to date, or no template
+	Command        []string `json:"command,omitempty"`         // container entrypoint override (empty = image ENTRYPOINT)
+	Args           []string `json:"args,omitempty"`            // container arguments (empty = image CMD)
+	ReleaseCommand []string `json:"release_command,omitempty"` // run once per deploy, before the new version goes live
+	Status         string   `json:"status"`
+	URL            string   `json:"url"`
+	Domains        []string `json:"domains"`
+	Replicas       int      `json:"replicas"`
+	MinScale       int32    `json:"min_scale"`
+	MaxScale       int32    `json:"max_scale"`
+	CPULimit       string   `json:"cpu_limit"`
+	MemoryLimit    string   `json:"memory_limit"`
+	Ingress        string   `json:"ingress"`
+	Routes         []Route  `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Mode           string   `json:"mode"`
+	Type           string   `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port           int      `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
 	// ServiceAccountID and ServiceAccount name the app's own identity (ADR-283):
 	// one account per app, created and deleted with it, keyed in every binding
 	// by its email. It holds nothing until granted. IdentityTokenFile is where
@@ -562,10 +562,10 @@ type CreateAppRequest struct {
 	// (ADR-112).
 	SecretEnv           map[string]SecretRef `json:"secret_env,omitempty"`
 	HealthCheckPath     string               `json:"health_check_path,omitempty"`
-	HealthCheckTimeout  int               `json:"health_check_timeout,omitempty"`
-	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
-	HealthCheckRetries  int               `json:"health_check_retries,omitempty"`
-	Probes              *ProbeOverrides   `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	HealthCheckTimeout  int                  `json:"health_check_timeout,omitempty"`
+	HealthCheckInterval int                  `json:"health_check_interval,omitempty"`
+	HealthCheckRetries  int                  `json:"health_check_retries,omitempty"`
+	Probes              *ProbeOverrides      `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
 }
 
 // UpdateProbesRequest replaces an app's per-probe liveness/readiness/startup
