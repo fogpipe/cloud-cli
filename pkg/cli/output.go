@@ -104,3 +104,11 @@ func render(headers []string, rows [][]string, data any) {
 	}
 	renderTable(headers, rows)
 }
+
+// dashIfEmpty renders an absent value as a dash in a table cell.
+func dashIfEmpty(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}

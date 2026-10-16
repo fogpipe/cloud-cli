@@ -27,12 +27,11 @@ change rolls the app onto it.
   fpcloud app env list web
   fpcloud app env unset web LOG_LEVEL
 
-A literal reads back in full. A credential belongs in a project secret
+A literal reads back in full. A credential belongs in a secret
 (` + "`fpcloud secret`" + `), referenced from a variable: the variable holds the
 secret's value, or, with --path, the file at that path holds it and the
 variable holds the path. Referencing a secret hands the app's identity the
-resource behind it. Org-wide secret bundles mirrored into projects are
-` + "`fpcloud secrets`" + `, a different thing.`,
+resource behind it. An organization secret is referenced as org/<name>.`,
 }
 
 var appEnvSetCmd = &cobra.Command{
@@ -176,7 +175,7 @@ var appEnvUnsetCmd = &cobra.Command{
 }
 
 func init() {
-	appEnvSetCmd.Flags().String("from-secret", "", "Make the variable hold a project secret's value (a database's <db>-owner, a bucket's <bucket>-key, or one you created)")
+	appEnvSetCmd.Flags().String("from-secret", "", "Make the variable hold a secret's value: a database's <db>-owner, a bucket's <bucket>-key, one you created, or org/<name> for an organization secret")
 	appEnvSetCmd.Flags().String("path", "", "With --from-secret: deliver the value as a file at this path, and make the variable hold the path")
 	appEnvCmd.AddCommand(appEnvSetCmd, appEnvListCmd, appEnvUnsetCmd)
 	appCmd.AddCommand(appEnvCmd)

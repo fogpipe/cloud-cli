@@ -1341,62 +1341,82 @@ func (c *Client) UpdateAppURLSlug(ctx context.Context, id, slug string) (*App, e
 
 // CreateProjectSecret creates a named secret in the project (#1069). The value
 // never comes back from any read.
-func (c *Client) CreateProjectSecret(ctx context.Context, projectID, name, value string) (*ProjectSecret, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", CreateSecretRequest{Name: name, Value: value})
+func (c *Client) CreateProjectSecret(ctx context.Context, projectID, name, value string) (*Secret, error) {
+	return c.createSecret(ctx, "/api/v1/projects/"+projectID+"/secrets", name, value)
+}
+
+// CreateOrgSecret creates a named secret in the organization (ADR-287),
+// referenced by an app in any of its projects as "org/<name>".
+func (c *Client) CreateOrgSecret(ctx context.Context, orgID, name, value string) (*Secret, error) {
+	return c.createSecret(ctx, "/api/v1/orgs/"+orgID+"/secrets", name, value)
+}
+
+func (c *Client) createSecret(ctx context.Context, path, name, value string) (*Secret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, path, CreateSecretRequest{Name: name, Value: value})
 	if err != nil {
 		return nil, err
 	}
-	var sec ProjectSecret
+	var sec Secret
 	if err := c.do(httpReq, &sec); err != nil {
 		return nil, err
 	}
 	return &sec, nil
 }
 
-// ListProjectSecrets lists the project's secrets — names and who mounts them,
-// never values.
-func (c *Client) ListProjectSecrets(ctx context.Context, projectID string) ([]*ProjectSecret, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/secrets", nil)
+// ListProjectSecrets lists the project's secrets: names and who references
+// them, never values.
+func (c *Client) ListProjectSecrets(ctx context.Context, projectID string) ([]*Secret, error) {
+	return c.listSecrets(ctx, "/api/v1/projects/"+projectID+"/secrets")
+}
+
+// ListOrgSecrets lists the organization's secrets: names and the
+// "<project>/<app>" references across its projects, never values.
+func (c *Client) ListOrgSecrets(ctx context.Context, orgID string) ([]*Secret, error) {
+	return c.listSecrets(ctx, "/api/v1/orgs/"+orgID+"/secrets")
+}
+
+func (c *Client) listSecrets(ctx context.Context, path string) ([]*Secret, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
-	var out []*ProjectSecret
+	var out []*Secret
 	if err := c.do(httpReq, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// GetProjectSecret reads one secret's metadata by id.
-func (c *Client) GetProjectSecret(ctx context.Context, id string) (*ProjectSecret, error) {
+// GetSecret reads one secret's metadata by id, whichever scope it is in.
+func (c *Client) GetSecret(ctx context.Context, id string) (*Secret, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/secrets/"+id, nil)
 	if err != nil {
 		return nil, err
 	}
-	var sec ProjectSecret
+	var sec Secret
 	if err := c.do(httpReq, &sec); err != nil {
 		return nil, err
 	}
 	return &sec, nil
 }
 
-// UpdateProjectSecret replaces a secret's value and rolls every app mounting
-// it onto the new one. A database's owner secret refuses this; rotate the
+// UpdateSecret replaces a secret's value and rolls every app referencing it
+// onto the new one. A database's owner secret refuses this; rotate the
 // database instead.
-func (c *Client) UpdateProjectSecret(ctx context.Context, id, value string) (*ProjectSecret, error) {
+func (c *Client) UpdateSecret(ctx context.Context, id, value string) (*Secret, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/secrets/"+id, UpdateSecretRequest{Value: value})
 	if err != nil {
 		return nil, err
 	}
-	var sec ProjectSecret
+	var sec Secret
 	if err := c.do(httpReq, &sec); err != nil {
 		return nil, err
 	}
 	return &sec, nil
 }
 
-// DeleteProjectSecret removes a secret nothing mounts.
-func (c *Client) DeleteProjectSecret(ctx context.Context, id string) error {
+// DeleteSecret removes a secret nothing references.
+func (c *Client) DeleteSecret(ctx context.Context, id string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/secrets/"+id, nil)
 	if err != nil {
 		return err
@@ -3005,76 +3025,6 @@ func (c *Client) GetServiceAccount(ctx context.Context, id string) (*ServiceAcco
 		return nil, err
 	}
 	return &sa, nil
-}
-
-// ListOrgSecrets lists an org's Fogpipe Secrets Manager bundles (key names only).
-func (c *Client) ListOrgSecrets(ctx context.Context, orgID string) ([]*OrgSecret, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/secrets", nil)
-	if err != nil {
-		return nil, err
-	}
-	var secrets []*OrgSecret
-	if err := c.do(httpReq, &secrets); err != nil {
-		return nil, err
-	}
-	return secrets, nil
-}
-
-// GetOrgSecret retrieves a single bundle. When reveal is true, the decrypted
-// values are returned in Data (requires org write permission).
-func (c *Client) GetOrgSecret(ctx context.Context, orgID, name string, reveal bool) (*OrgSecret, error) {
-	path := "/api/v1/orgs/" + orgID + "/secrets/" + name
-	if reveal {
-		path += "?reveal=true"
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-	var secret OrgSecret
-	if err := c.do(httpReq, &secret); err != nil {
-		return nil, err
-	}
-	return &secret, nil
-}
-
-// CreateOrgSecret creates a new bundle with the given key/value data, mirrored
-// into the given target project ids.
-func (c *Client) CreateOrgSecret(ctx context.Context, orgID, name string, data map[string]string, targets []string) (*OrgSecret, error) {
-	body := map[string]any{"name": name, "data": data, "targets": targets}
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/secrets", body)
-	if err != nil {
-		return nil, err
-	}
-	var secret OrgSecret
-	if err := c.do(httpReq, &secret); err != nil {
-		return nil, err
-	}
-	return &secret, nil
-}
-
-// UpdateOrgSecret replaces an existing bundle's data and target projects
-// (full-desired-state replace).
-func (c *Client) UpdateOrgSecret(ctx context.Context, orgID, name string, data map[string]string, targets []string) (*OrgSecret, error) {
-	body := map[string]any{"data": data, "targets": targets}
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/orgs/"+orgID+"/secrets/"+name, body)
-	if err != nil {
-		return nil, err
-	}
-	var secret OrgSecret
-	if err := c.do(httpReq, &secret); err != nil {
-		return nil, err
-	}
-	return &secret, nil
-}
-
-// DeleteOrgSecret removes a bundle.
-func (c *Client) DeleteOrgSecret(ctx context.Context, orgID, name string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/secrets/"+name, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
 }
 
 // --- Scheduled jobs (#166) ---

@@ -336,8 +336,8 @@ func resolveAccessResource(c *client.Client, ref string) (*accessResource, error
 	case "bucket":
 		r.ID, err = resolveBucketID(c, name)
 	case "secret":
-		var sec *client.ProjectSecret
-		if sec, err = resolveSecret(c, name); err == nil {
+		var sec *client.Secret
+		if sec, err = resolveSecret(context.Background(), c, name); err == nil {
 			r.ID = sec.ID
 		}
 	default:
@@ -642,9 +642,9 @@ func init() {
 	// IAM commands
 	iamSetCmd.Flags().String("role", "", "Role to grant (owner, editor, viewer; user on a database or a bucket, reader on a secret)")
 	iamSetCmd.Flags().String("member", "", "Member in format type:email (user:a@b.com or serviceAccount:sa@proj.cloud.fogpipe.com)")
-	iamSetCmd.Flags().String("resource", "", "Hand a resource to the member instead of granting a project role: database/<name>, bucket/<name> or secret/<name>")
-	iamListCmd.Flags().String("resource", "", "List who is handed a resource: database/<name>, bucket/<name> or secret/<name>")
-	iamRemoveCmd.Flags().String("resource", "", "The resource the binding is held on: database/<name>, bucket/<name> or secret/<name>")
+	iamSetCmd.Flags().String("resource", "", "Hand a resource to the member instead of granting a project role: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
+	iamListCmd.Flags().String("resource", "", "List who is handed a resource: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
+	iamRemoveCmd.Flags().String("resource", "", "The resource the binding is held on: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
 	iamCmd.AddCommand(iamSetCmd)
 	iamCmd.AddCommand(iamListCmd)
 	iamCmd.AddCommand(iamRemoveCmd)

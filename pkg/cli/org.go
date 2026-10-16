@@ -223,10 +223,16 @@ var orgRemoveCmd = &cobra.Command{
 // caller's only organization, and refuses when there are several: picking the
 // first would act on an arbitrary org rather than the one meant.
 func resolveOrgID(cmd *cobra.Command) (string, error) {
+	return resolveCurrentOrgID(cmd.Context())
+}
+
+// resolveCurrentOrgID is resolveOrgID for a caller holding a context rather
+// than the command.
+func resolveCurrentOrgID(ctx context.Context) (string, error) {
 	if org := rootCmd.Flag("org").Value.String(); org != "" {
-		return resolveOrgRef(cmd.Context(), org)
+		return resolveOrgRef(ctx, org)
 	}
-	orgs, err := getClient().ListOrgs(cmd.Context())
+	orgs, err := getClient().ListOrgs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("could not determine org: %w", err)
 	}

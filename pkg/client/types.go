@@ -1227,8 +1227,10 @@ type AppConfig struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
-// SecretRef names the project secret an env entry delivers and how: as the
-// variable's value, or, with Path, as a file at that path the variable names.
+// SecretRef names the secret an env entry delivers and how: as the variable's
+// value, or, with Path, as a file at that path the variable names. Secret is a
+// project secret's name, or "org/<name>" for one of the organization's
+// (ADR-287).
 type SecretRef struct {
 	Secret string `json:"secret"`
 	Path   string `json:"path,omitempty"`
@@ -1242,27 +1244,35 @@ type SetConfigRequest struct {
 	SecretRef *SecretRef `json:"secret_ref,omitempty"`
 }
 
-// ProjectSecret is a named secret value scoped to a project (#1069). The value
-// is write-only: it goes in through create/update and reaches an app through
-// an env entry referencing it (AppConfig.SecretRef), as the variable or as a
-// file (ADR-284 §7). One owned by a database holds that
-// database's owner connection URL and is rotated with `db rotate-password`;
-// one owned by a bucket holds its read+write key as an AWS config file.
-type ProjectSecret struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	Name            string    `json:"name"`
-	OwnerDatabaseID string    `json:"owner_database_id,omitempty"`
-	OwnerBucketID   string    `json:"owner_bucket_id,omitempty"`
-	UsedBy          []string  `json:"used_by,omitempty"` // apps whose env references it; the reference is the bind
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+// Secret is a named secret value in a project or in an organization
+// (ADR-243, ADR-287). The value is write-only: it goes in through
+// create/update and reaches an app through an env entry referencing it
+// (AppConfig.SecretRef), as the variable or as a file (ADR-284 §7). A project
+// secret owned by a database holds that database's owner connection URL and
+// is rotated with `db rotate-password`; one owned by a bucket holds its
+// read+write key as an AWS config file. An organization secret is referenced
+// as "org/<name>" by an app in any of the organization's projects.
+type Secret struct {
+	ID string `json:"id"`
+	// Scope is "project" or "organization"; exactly one of ProjectID and
+	// OrganizationID is set.
+	Scope           string `json:"scope"`
+	ProjectID       string `json:"project_id,omitempty"`
+	OrganizationID  string `json:"organization_id,omitempty"`
+	Name            string `json:"name"`
+	OwnerDatabaseID string `json:"owner_database_id,omitempty"`
+	OwnerBucketID   string `json:"owner_bucket_id,omitempty"`
+	// UsedBy is the apps whose env references the secret; the reference is the
+	// bind. An organization secret's are "<project>/<app>".
+	UsedBy    []string  `json:"used_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Access is who may be handed the value: the `reader` bindings held on the
 	// secret (ADR-284). Set on a single read, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
 }
 
-// CreateSecretRequest creates a named project secret.
+// CreateSecretRequest creates a named secret in a project or an organization.
 type CreateSecretRequest struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -1356,19 +1366,6 @@ type Organization struct {
 // DisplayName changes the mutable cosmetic label.
 type UpdateOrgRequest struct {
 	DisplayName string `json:"display_name,omitempty"`
-}
-
-// OrgSecret is a Fogpipe Secrets Manager bundle (ADR-028): an org-scoped named
-// set of key/value entries. Data is populated only on an explicit reveal.
-type OrgSecret struct {
-	ID        string            `json:"id"`
-	OrgID     string            `json:"org_id"`
-	Name      string            `json:"name"`
-	Keys      []string          `json:"keys"`
-	Data      map[string]string `json:"data,omitempty"`
-	Targets   []string          `json:"targets"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // SetupWebhookRequest is the request body for setting up a webhook.
