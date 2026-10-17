@@ -1408,6 +1408,20 @@ func (c *Client) GetSecret(ctx context.Context, id string) (*Secret, error) {
 	return &sec, nil
 }
 
+// AccessSecret reads a secret's value: the one read that returns it, audited,
+// and allowed to whoever may hand the secret to an app or holds it (ADR-289).
+func (c *Client) AccessSecret(ctx context.Context, id string) (*SecretValue, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/secrets/"+id+"/value", nil)
+	if err != nil {
+		return nil, err
+	}
+	var v SecretValue
+	if err := c.do(httpReq, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
 // UpdateSecret replaces a secret's value and rolls every app referencing it
 // onto the new one. A database's owner secret refuses this; rotate the
 // database instead.

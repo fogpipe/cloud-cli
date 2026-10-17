@@ -20,14 +20,15 @@ const orgSecretPrefix = "org/"
 var secretCmd = &cobra.Command{
 	Use:   "secret",
 	Short: "Manage secrets, referenced from an app's env",
-	Long: `A secret is a named value in the project, or in the organization. Its value
-goes in here and never comes back out: an app reaches it through a variable
-that references it, as the variable's value or as a file the variable names
-(` + "`app env set --from-secret`" + `).
+	Long: `A secret is a named value in the project, or in the organization. An app
+reaches it through a variable that references it, as the variable's value or
+as a file the variable names (` + "`app env set --from-secret`" + `). Its value
+is read back only by asking for it, and every such read is audited.
 
   fpcloud secret create stripe-key sk_live_...
   fpcloud app env set web STRIPE_KEY --from-secret stripe-key
   fpcloud secret list
+  fpcloud secret access stripe-key
 
 A database's owner credential is a secret too, <db>-owner, created with the
 database, so referencing it is how an app is handed the database:
@@ -121,7 +122,7 @@ var secretListCmd = &cobra.Command{
 
 var secretGetCmd = &cobra.Command{
 	Use:   "get <name>",
-	Short: "Show a secret: who manages it, who references it, who is handed it (never the value)",
+	Short: "Show a secret: who manages it, who references it, who is handed it; --reveal adds its value",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
@@ -133,11 +134,21 @@ var secretGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		reveal, _ := cmd.Flags().GetBool("reveal")
+		var value *client.SecretValue
+		if reveal {
+			if value, err = c.AccessSecret(context.Background(), sec.ID); err != nil {
+				return err
+			}
+		}
 		outputFormat := rootCmd.Flag("output").Value.String()
 		if isStructured(outputFormat) {
+			if value != nil {
+				return renderData(revealedSecret{Secret: sec, Value: value.Value})
+			}
 			return renderData(sec)
 		}
-		fmt.Println(renderInfoBox("Secret", [][]string{
+		rows := [][]string{
 			{"ID", mutedStyle.Render(sec.ID)},
 			{"Name", secretDisplayName(sec)},
 			{"Scope", sec.Scope},
@@ -145,7 +156,42 @@ var secretGetCmd = &cobra.Command{
 			{"Used by", secretUsers(sec)},
 			{"Access", accessRows(sec.Access)},
 			{"Updated", sec.UpdatedAt.Format("2006-01-02 15:04")},
-		}))
+		}
+		if value != nil {
+			rows = append(rows, []string{"Value", value.Value})
+		}
+		fmt.Println(renderInfoBox("Secret", rows))
+		return nil
+	},
+}
+
+// revealedSecret is a secret's metadata with the value `--reveal` asked for.
+type revealedSecret struct {
+	*client.Secret
+	Value string `json:"value"`
+}
+
+var secretAccessCmd = &cobra.Command{
+	Use:   "access <name>",
+	Short: "Print a secret's value, and nothing else",
+	Long: `Print a secret's value exactly as it is held, with nothing around it, so
+$(fpcloud secret access stripe-key) is the value. Allowed to whoever may hand
+the secret to an app, or holds it; every read is audited.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		sec, err := resolveSecret(cmd.Context(), c, args[0])
+		if err != nil {
+			return err
+		}
+		value, err := c.AccessSecret(context.Background(), sec.ID)
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(value)
+		}
+		fmt.Print(value.Value)
 		return nil
 	},
 }
@@ -271,6 +317,7 @@ func secretUsers(sec *client.Secret) string {
 
 func init() {
 	secretListCmd.Flags().Bool("org", false, "List the organization's secrets instead of the project's")
-	secretCmd.AddCommand(secretCreateCmd, secretGetCmd, secretListCmd, secretUpdateCmd, secretDeleteCmd)
+	secretGetCmd.Flags().Bool("reveal", false, "Include the secret's value (audited)")
+	secretCmd.AddCommand(secretCreateCmd, secretGetCmd, secretAccessCmd, secretListCmd, secretUpdateCmd, secretDeleteCmd)
 	rootCmd.AddCommand(secretCmd)
 }

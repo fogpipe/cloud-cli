@@ -1272,6 +1272,12 @@ type Secret struct {
 	Access []*IAMBinding `json:"access,omitempty"`
 }
 
+// SecretValue is a secret's value, carried by the value read alone and by no
+// other response (ADR-289).
+type SecretValue struct {
+	Value string `json:"value"`
+}
+
 // CreateSecretRequest creates a named secret in a project or an organization.
 type CreateSecretRequest struct {
 	Name  string `json:"name"`
