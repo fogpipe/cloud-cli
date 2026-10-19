@@ -105,10 +105,10 @@ var dbCreateCmd = &cobra.Command{
 		if len(db.Extensions) > 0 {
 			pairs = append(pairs, []string{"Extensions", strings.Join(db.Extensions, ", ")})
 		}
-		if db.Secret != "" {
-			// The owner credential's home: mount it on an app to hand the app
-			// this database (#1069).
-			pairs = append(pairs, []string{"Secret", db.Secret})
+		if len(db.Secrets) > 0 {
+			// The credential's home, one secret per value (ADR-296):
+			// referencing one from an app's env hands the app this database.
+			pairs = append(pairs, []string{"Secrets", ownedSecretsRow(db.Secrets)})
 		}
 		if addr := dbAddress(db); addr != "" {
 			pairs = append(pairs, []string{"Address", addr})
@@ -184,7 +184,7 @@ var dbGetCmd = &cobra.Command{
 			{"Address", addr},
 			{"Read address", orDash(dbReadAddress(db))},
 			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
-			{"Secret", orDash(db.Secret)},
+			{"Secrets", orDash(ownedSecretsRow(db.Secrets))},
 			{"Used by", orDash(strings.Join(db.UsedBy, ", "))},
 			{"Access", accessRows(db.Access)},
 		}))
@@ -296,7 +296,7 @@ psql, another service — has stopped working, which is the point.`,
 		}
 		fmt.Println(renderInfoBox("Password Rotated", [][]string{
 			{"Database", db.Name},
-			{"Secret", orDash(db.Secret)},
+			{"Secrets", orDash(ownedSecretsRow(db.Secrets))},
 			{"Rolled", orDash(strings.Join(db.UsedBy, ", "))},
 		}))
 		printDatabaseNextSteps(db)
@@ -792,7 +792,7 @@ var dbRestoreCmd = &cobra.Command{
 			{"ID", mutedStyle.Render(restored.ID)},
 			{"Name", restored.Name},
 			{"Status", renderStatus(restored.Status)},
-			{"Secret", orDash(restored.Secret)},
+			{"Secrets", orDash(ownedSecretsRow(restored.Secrets))},
 		}))
 		printDatabaseNextSteps(restored)
 		return nil
@@ -968,8 +968,8 @@ func flagBool(cmd *cobra.Command, name string) bool {
 // connect to it through the tunnel, which mints a credential for the caller.
 func printDatabaseNextSteps(db *client.Database) {
 	fmt.Println()
-	if db.Secret != "" {
-		fmt.Println(mutedStyle.Render("  Hand it to an app:  fpcloud app env set <app> DATABASE_URL --from-secret " + db.Secret))
+	if url := db.Secrets["url"]; url != "" {
+		fmt.Println(mutedStyle.Render("  Hand it to an app:  fpcloud app env set <app> DATABASE_URL --from-secret " + url))
 	}
 	fmt.Println(mutedStyle.Render("  Connect yourself:   fpcloud db connect " + db.Name))
 }

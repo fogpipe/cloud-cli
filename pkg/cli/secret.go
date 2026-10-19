@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -298,14 +299,51 @@ func secretDisplayName(sec *client.Secret) string {
 	return sec.Name
 }
 
+// secretOwner is who manages the secret and which value of theirs it holds
+// (ADR-296): "database (password)", "bucket (access_key_id)".
 func secretOwner(sec *client.Secret) string {
+	var owner string
 	switch {
 	case sec.OwnerDatabaseID != "":
-		return "database"
+		owner = "database"
 	case sec.OwnerBucketID != "":
-		return "bucket"
+		owner = "bucket"
+	default:
+		return mutedStyle.Render("-")
 	}
-	return mutedStyle.Render("-")
+	if sec.Part != "" {
+		return owner + " (" + sec.Part + ")"
+	}
+	return owner
+}
+
+// ownedSecretsRow renders a resource's owned secrets, part by part, in a
+// fixed order so two reads print alike: "url: maindb-owner, password:
+// maindb-owner-password".
+func ownedSecretsRow(secrets map[string]string) string {
+	if len(secrets) == 0 {
+		return ""
+	}
+	order := []string{"url", "password", "access_key_id", "secret_access_key"}
+	var parts []string
+	seen := map[string]bool{}
+	for _, part := range order {
+		if name, ok := secrets[part]; ok {
+			parts = append(parts, part+": "+name)
+			seen[part] = true
+		}
+	}
+	var rest []string
+	for part := range secrets {
+		if !seen[part] {
+			rest = append(rest, part)
+		}
+	}
+	sort.Strings(rest)
+	for _, part := range rest {
+		parts = append(parts, part+": "+secrets[part])
+	}
+	return strings.Join(parts, ", ")
 }
 
 func secretUsers(sec *client.Secret) string {

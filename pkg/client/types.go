@@ -790,11 +790,13 @@ type Database struct {
 	// is a replica that is caught up, and a platform that cannot measure must
 	// not render as one that measured nothing wrong.
 	ReplicationLagSeconds *float64 `json:"replication_lag_seconds,omitempty"`
-	// Secret names the project secret holding this database's owner connection
-	// URL (#1069): created with the database, rewritten by rotate-password,
-	// deleted with it. Mount it on an app to hand the app the credential.
-	Secret string `json:"secret,omitempty"`
-	// UsedBy is the apps whose env references that secret — the reference is
+	// Secrets names the project secrets holding this database's credential, by
+	// part (ADR-296): "url" is <name>-owner, the owner role's connection URL;
+	// "password" is <name>-owner-password. Created with the database,
+	// rewritten together by rotate-password, deleted with it. Reference one
+	// from an app's env to hand the app the database.
+	Secrets map[string]string `json:"secrets,omitempty"`
+	// UsedBy is the apps whose env references one of them — the reference is
 	// the bind, so this is "which apps use this database".
 	UsedBy    []string  `json:"used_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -904,10 +906,13 @@ type Bucket struct {
 	URL            string `json:"url,omitempty"`
 	WebsiteVersion int    `json:"website_version"`
 
-	// Secret names the project secret holding this bucket's read+write key as
-	// an AWS config file (#1101); mount it on an app to hand the app the bucket.
-	Secret string   `json:"secret,omitempty"`
-	UsedBy []string `json:"used_by,omitempty"` // apps whose env references it; the reference is the bind
+	// Secrets names the project secrets holding this bucket's read+write key,
+	// by part (ADR-296): "access_key_id" is <name>-access-key-id and
+	// "secret_access_key" is <name>-secret-access-key. Reference them from an
+	// app's env as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to hand the app
+	// the bucket; the endpoint and the region are plain facts on the bucket.
+	Secrets map[string]string `json:"secrets,omitempty"`
+	UsedBy  []string          `json:"used_by,omitempty"` // apps whose env references one; the reference is the bind
 	// Access is who may be handed this resource's credential: the bindings held
 	// on it (ADR-284), each a member and the one role the kind admits. Set on a
 	// single read, never on a list.
@@ -1245,13 +1250,14 @@ type SetConfigRequest struct {
 }
 
 // Secret is a named secret value in a project or in an organization
-// (ADR-243, ADR-287). The value is write-only: it goes in through
-// create/update and reaches an app through an env entry referencing it
+// (ADR-243, ADR-287). The value is carried by the value read alone (ADR-289)
+// and reaches an app through an env entry referencing it
 // (AppConfig.SecretRef), as the variable or as a file (ADR-284 §7). A project
-// secret owned by a database holds that database's owner connection URL and
-// is rotated with `db rotate-password`; one owned by a bucket holds its
-// read+write key as an AWS config file. An organization secret is referenced
-// as "org/<name>" by an app in any of the organization's projects.
+// secret owned by a database holds one part of that database's credential
+// (its URL or its password), rotated with `db rotate-password`; one owned by
+// a bucket holds its key id or its secret key (ADR-296). An organization
+// secret is referenced as "org/<name>" by an app in any of the
+// organization's projects.
 type Secret struct {
 	ID string `json:"id"`
 	// Scope is "project" or "organization"; exactly one of ProjectID and
@@ -1262,6 +1268,10 @@ type Secret struct {
 	Name            string `json:"name"`
 	OwnerDatabaseID string `json:"owner_database_id,omitempty"`
 	OwnerBucketID   string `json:"owner_bucket_id,omitempty"`
+	// Part is which of its owner's credential values an owned secret holds
+	// (ADR-296): "url" or "password" for a database, "access_key_id" or
+	// "secret_access_key" for a bucket. Empty on a tenant's own secret.
+	Part string `json:"part,omitempty"`
 	// UsedBy is the apps whose env references the secret; the reference is the
 	// bind. An organization secret's are "<project>/<app>".
 	UsedBy    []string  `json:"used_by,omitempty"`

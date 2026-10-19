@@ -208,10 +208,10 @@ var storageBucketCreateCmd = &cobra.Command{
 		if b.AccessKeyID != "" {
 			pairs = append(pairs, []string{"Access Key", b.AccessKeyID})
 		}
-		if b.Secret != "" {
-			// The key's home: mount it on an app to hand the app this bucket
-			// (#1101).
-			pairs = append(pairs, []string{"Secret", b.Secret})
+		if len(b.Secrets) > 0 {
+			// The key's home, one secret per value (ADR-296): referencing them
+			// from an app's env hands the app this bucket.
+			pairs = append(pairs, []string{"Secrets", ownedSecretsRow(b.Secrets)})
 		}
 		if b.SecretAccessKey != "" {
 			pairs = append(pairs,
@@ -282,7 +282,7 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
 			{"Status", renderStatus(b.Status)},
 			{"Access Key", accessKey},
-			{"Secret", dashIfEmpty(b.Secret)},
+			{"Secrets", dashIfEmpty(ownedSecretsRow(b.Secrets))},
 			{"Used by", dashIfEmpty(strings.Join(b.UsedBy, ", "))},
 			{"Access", accessRows(b.Access)},
 		}))
