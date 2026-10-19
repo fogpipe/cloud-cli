@@ -38,7 +38,7 @@ database, so referencing it is how an app is handed the database:
 
 A bucket's key is two, <bucket>-access-key-id and <bucket>-secret-access-key,
 which every S3 client reads from the two AWS variables; the endpoint and the
-region are plain config, read off `storage bucket get`:
+region are plain config, read off storage bucket get:
 
   fpcloud app env set web AWS_ACCESS_KEY_ID --from-secret media-access-key-id
   fpcloud app env set web AWS_SECRET_ACCESS_KEY --from-secret media-secret-access-key
