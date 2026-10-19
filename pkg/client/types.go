@@ -1268,6 +1268,10 @@ type Secret struct {
 	Name            string `json:"name"`
 	OwnerDatabaseID string `json:"owner_database_id,omitempty"`
 	OwnerBucketID   string `json:"owner_bucket_id,omitempty"`
+	// OwnerAppID is set on a secret a template generated for the app
+	// (ADR-297): it is deleted with the app, and the tenant still reads and
+	// rotates it.
+	OwnerAppID string `json:"owner_app_id,omitempty"`
 	// Part is which of its owner's credential values an owned secret holds
 	// (ADR-296): "url" or "password" for a database, "access_key_id" or
 	// "secret_access_key" for a bucket. Empty on a tenant's own secret.

@@ -308,6 +308,8 @@ func secretOwner(sec *client.Secret) string {
 		owner = "database"
 	case sec.OwnerBucketID != "":
 		owner = "bucket"
+	case sec.OwnerAppID != "":
+		owner = "app"
 	default:
 		return mutedStyle.Render("-")
 	}
