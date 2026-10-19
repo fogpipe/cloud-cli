@@ -246,7 +246,7 @@ var appEnvUnsetCmd = &cobra.Command{
 }
 
 func init() {
-	appEnvSetCmd.Flags().String("from-secret", "", "Make the variable hold a secret's value: a database's <db>-owner, a bucket's <bucket>-key, one you created, or org/<name> for an organization secret")
+	appEnvSetCmd.Flags().String("from-secret", "", "Make the variable hold a secret's value: a database's <db>-owner or <db>-owner-password, a bucket's <bucket>-access-key-id or <bucket>-secret-access-key, one you created, or org/<name> for an organization secret")
 	appEnvSetCmd.Flags().String("path", "", "With --from-secret: deliver the value as a file at this path, and make the variable hold the path")
 	appEnvListCmd.Flags().Bool("reveal", false, "Print each referenced secret's value instead of its name (audited)")
 	appEnvCmd.AddCommand(appEnvSetCmd, appEnvListCmd, appEnvUnsetCmd)

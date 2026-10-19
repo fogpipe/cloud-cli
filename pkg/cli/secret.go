@@ -36,10 +36,12 @@ database, so referencing it is how an app is handed the database:
 
   fpcloud app env set web DATABASE_URL --from-secret mydb-owner
 
-A bucket's key is one as well, <bucket>-key, an AWS config file holding the
-key, region and endpoint, read by any AWS SDK through AWS_CONFIG_FILE:
+A bucket's key is two, <bucket>-access-key-id and <bucket>-secret-access-key,
+which every S3 client reads from the two AWS variables; the endpoint and the
+region are plain config, read off `storage bucket get`:
 
-  fpcloud app env set web AWS_CONFIG_FILE --from-secret media-key --path /secrets/s3
+  fpcloud app env set web AWS_ACCESS_KEY_ID --from-secret media-access-key-id
+  fpcloud app env set web AWS_SECRET_ACCESS_KEY --from-secret media-secret-access-key
 
 An organization secret is written once and referenced by an app in any of the
 organization's projects; it is named org/<name> everywhere:
