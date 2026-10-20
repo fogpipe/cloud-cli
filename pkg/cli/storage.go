@@ -205,19 +205,11 @@ var storageBucketCreateCmd = &cobra.Command{
 			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
 			{"Status", renderStatus(b.Status)},
 		}
-		if b.AccessKeyID != "" {
-			pairs = append(pairs, []string{"Access Key", b.AccessKeyID})
-		}
 		if len(b.Secrets) > 0 {
 			// The key's home, one secret per value (ADR-296): referencing them
-			// from an app's env hands the app this bucket.
+			// from an app's env hands the app this bucket, and `bucket access`
+			// reads a value on purpose. Nothing here prints the key.
 			pairs = append(pairs, []string{"Secrets", ownedSecretsRow(b.Secrets)})
-		}
-		if b.SecretAccessKey != "" {
-			pairs = append(pairs,
-				[]string{"Secret Key", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(b.SecretAccessKey)},
-				[]string{"", mutedStyle.Render("Shown once — store it now; it is not retrievable later.")},
-			)
 		}
 		fmt.Println(renderInfoBox("Bucket Created", pairs))
 		return nil
@@ -269,10 +261,6 @@ var storageBucketDescribeCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(b)
 		}
-		accessKey := b.AccessKeyID
-		if accessKey == "" {
-			accessKey = mutedStyle.Render("—")
-		}
 		fmt.Println(renderInfoBox("Bucket Details", [][]string{
 			{"ID", mutedStyle.Render(b.ID)},
 			{"Name", b.Name},
@@ -281,7 +269,6 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"Region", b.Region},
 			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
 			{"Status", renderStatus(b.Status)},
-			{"Access Key", accessKey},
 			{"Secrets", dashIfEmpty(ownedSecretsRow(b.Secrets))},
 			{"Used by", dashIfEmpty(strings.Join(b.UsedBy, ", "))},
 			{"Access", accessRows(b.Access)},

@@ -875,14 +875,14 @@ type UpdateDatabaseRequest struct {
 }
 
 // Bucket is a managed S3 object-storage bucket on the Garage store (ADR-039).
-// SecretAccessKey is only populated on creation.
+// Nothing on it carries its key: the key's two values are the project secrets
+// Secrets names (ADR-296), referenced from an app's env or read on purpose
+// through the audited value read (ADR-281, ADR-303).
 type Bucket struct {
 	ID              string    `json:"id"`
 	ProjectID       string    `json:"project_id"`
 	Name            string    `json:"name"`
 	GarageBucketID  string    `json:"garage_bucket_id,omitempty"`
-	AccessKeyID     string    `json:"access_key_id,omitempty"`
-	SecretAccessKey string    `json:"secret_access_key,omitempty"`
 	GlobalAlias     string    `json:"global_alias,omitempty"`
 	Region          string    `json:"region,omitempty"`
 	Endpoint        string    `json:"endpoint,omitempty"`

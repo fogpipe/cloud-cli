@@ -1408,9 +1408,6 @@ var storageMbCmd = &cobra.Command{
 			return renderData(b)
 		}
 		fmt.Printf("make_bucket: %s\n", b.Name)
-		if b.SecretAccessKey != "" {
-			fmt.Println(mutedStyle.Render("Secret key (shown once): " + b.SecretAccessKey))
-		}
 		return nil
 	},
 }
