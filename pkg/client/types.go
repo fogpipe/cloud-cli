@@ -2451,15 +2451,15 @@ type HTTPLoad struct {
 // failing.
 type HTTPStatusCounts struct {
 	Total int64 `json:"total"`
-	C1xx  int64 `json:"1xx"`
-	C2xx  int64 `json:"2xx"`
-	C3xx  int64 `json:"3xx"`
-	C4xx  int64 `json:"4xx"`
-	C5xx  int64 `json:"5xx"`
-	S500  int64 `json:"500"`
-	S502  int64 `json:"502"`
-	S503  int64 `json:"503"`
-	S504  int64 `json:"504"`
+	C1xx  int64 `json:"class_1xx"`
+	C2xx  int64 `json:"class_2xx"`
+	C3xx  int64 `json:"class_3xx"`
+	C4xx  int64 `json:"class_4xx"`
+	C5xx  int64 `json:"class_5xx"`
+	S500  int64 `json:"status_500"`
+	S502  int64 `json:"status_502"`
+	S503  int64 `json:"status_503"`
+	S504  int64 `json:"status_504"`
 }
 
 // HTTPLatency is a latency's percentiles.
