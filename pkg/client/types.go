@@ -172,12 +172,17 @@ type CapacityReport struct {
 //
 // A zero is a measured zero.
 type CapacityAxis struct {
-	// Axis is the ceiling axis: cpu, memory, storage, object_storage,
-	// registry_storage, backup_storage, pods or objects.
+	// Axis is the dimension: cpu, memory, storage, object_storage,
+	// registry_storage, backup_storage, http_requests, pods or objects.
 	Axis string `json:"axis"`
-	// Unit is "core", "byte" or "count". A count (pods, objects) has a bound
-	// and an admitted figure and nothing else.
+	// Unit is "core", "byte", "count" or "request_per_hour". A count (pods,
+	// objects) has a bound and an admitted figure and nothing else; HTTP
+	// requests are used only, an hour's requests averaged over the hours the
+	// platform read.
 	Unit string `json:"unit"`
+	// Bounded says the organization has a bound on the axis, so Allowed and
+	// Admitted exist; false on HTTP requests, which have none yet.
+	Bounded bool `json:"bounded"`
 	// Reserves says the axis has a reservation distinct from its use: limits,
 	// volume sizes, bucket quotas. False on registry and backup storage, where
 	// what is stored is what counts, and on the counts.
@@ -2405,8 +2410,88 @@ type AppStatus struct {
 	// asked for, beside the limit each pod is held to. Present only when the
 	// document was read with a load window; absent otherwise, and absent with
 	// "load" among Unchecked when the store could not answer.
-	Load     *Load           `json:"load,omitempty"`
+	Load *Load `json:"load,omitempty"`
+	// HTTP is what the edge served the app over the same window, present with
+	// Load; absent with "http" among Unchecked when no source answered.
+	HTTP     *HTTPLoad       `json:"http,omitempty"`
 	Problems []StatusProblem `json:"problems,omitempty"`
+}
+
+// HTTPLoad is what the edge served an app or a website over a load window:
+// requests by status, how long the app and the edge took at p50, p95 and p99,
+// and bytes each way. Window and Step are the load read's; Covered is how
+// much of the window this source holds.
+//
+// Unmeasured names why the edge cannot see the resource: "serverless" (served
+// through another gateway) or "worker" (it serves nothing). The figures are
+// then absent, never zero.
+type HTTPLoad struct {
+	Window     string `json:"window"`
+	Step       string `json:"step"`
+	Covered    string `json:"covered,omitempty"`
+	Unmeasured string `json:"unmeasured,omitempty"`
+	// Requests is present whenever the resource is measured, a zero total
+	// included: over a covered window that is no request served.
+	Requests *HTTPStatusCounts `json:"requests,omitempty"`
+	// AppTime is how long the app took to answer; EdgeTime is the whole
+	// request at the edge. Absent when no request was timed; a WebSocket
+	// upgrade is never timed.
+	AppTime  *HTTPLatency `json:"app_time,omitempty"`
+	EdgeTime *HTTPLatency `json:"edge_time,omitempty"`
+	Bytes    *HTTPBytes   `json:"bytes,omitempty"`
+	// Series is the reading over the window, oldest first, one point per
+	// SeriesStep, at the load series' steps, present only when asked for
+	// (LoadQuery.Series).
+	SeriesStep string      `json:"series_step,omitempty"`
+	Series     []HTTPPoint `json:"series,omitempty"`
+}
+
+// HTTPStatusCounts is requests by status class, with 500 apart from 502, 503
+// and 504, which can be the edge failing to reach the app rather than the app
+// failing.
+type HTTPStatusCounts struct {
+	Total int64 `json:"total"`
+	C1xx  int64 `json:"1xx"`
+	C2xx  int64 `json:"2xx"`
+	C3xx  int64 `json:"3xx"`
+	C4xx  int64 `json:"4xx"`
+	C5xx  int64 `json:"5xx"`
+	S500  int64 `json:"500"`
+	S502  int64 `json:"502"`
+	S503  int64 `json:"503"`
+	S504  int64 `json:"504"`
+}
+
+// HTTPLatency is a latency's percentiles.
+type HTTPLatency struct {
+	P50 HTTPQuantile `json:"p50"`
+	P95 HTTPQuantile `json:"p95"`
+	P99 HTTPQuantile `json:"p99"`
+}
+
+// HTTPQuantile is one percentile in milliseconds. Above says it is past the
+// edge's top bucket: Ms is then that bound, and the latency is only known to
+// be above it, so it is never shown as the latency itself.
+type HTTPQuantile struct {
+	Ms    float64 `json:"ms"`
+	Above bool    `json:"above,omitempty"`
+}
+
+// HTTPBytes is what came in and went out, headers included.
+type HTTPBytes struct {
+	Request  int64 `json:"request"`
+	Response int64 `json:"response"`
+}
+
+// HTTPPoint is one step of an HTTP series. Over an uncovered step every
+// figure is absent.
+type HTTPPoint struct {
+	Start    time.Time         `json:"start"`
+	Covered  bool              `json:"covered"`
+	Requests *HTTPStatusCounts `json:"requests,omitempty"`
+	AppTime  *HTTPLatency      `json:"app_time,omitempty"`
+	EdgeTime *HTTPLatency      `json:"edge_time,omitempty"`
+	Bytes    *HTTPBytes        `json:"bytes,omitempty"`
 }
 
 // ConfigCount is how many config values an app holds, and how many are secret.
@@ -2590,6 +2675,9 @@ type BucketStatus struct {
 	UsedBytes      *int64 `json:"used_bytes,omitempty"`
 	ObjectCount    *int64 `json:"object_count,omitempty"`
 	QuotaMaxSize   int64  `json:"quota_max_size,omitempty"`
+	// HTTP is what the edge served the website over a load window, on a
+	// bucket serving one.
+	HTTP *HTTPLoad `json:"http,omitempty"`
 }
 
 // RunnerStatus is the project's CI runner and how many runners are alive in it.

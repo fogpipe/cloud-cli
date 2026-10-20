@@ -66,6 +66,14 @@ sized to the window (a minute up to an hour, then 5m, 15m, 1h, 6h and a day);
 -o json carries every point, each with its average and peak, and a step the
 record holds nothing for reads "·", never idle.
 
+--load also prints, under each app and each website, the HTTP requests the
+edge served it over the same window: the count by status class with the 5xx
+codes apart (502, 503 and 504 can be the edge failing to reach the app), bytes
+in and out, and p50, p95 and p99 of the app's time and the whole request's.
+A latency past the edge's top bucket prints as above it (">10s"). A serverless
+app and a worker are not served through the edge and say so; --series draws
+the requests of each step.
+
 Checks that could not run are listed rather than dropped: a report is only
 healthy if it also says that everything was looked at.`,
 	Args: cobra.MaximumNArgs(1),
@@ -335,7 +343,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		}
 		appRows = append(appRows, statusRow{
 			cells:   []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
-			details: loadLines(a.Load, "app scale "+a.Name, suggestions, s.Unchecked),
+			details: append(loadLines(a.Load, "app scale "+a.Name, suggestions, s.Unchecked), httpLines(a.HTTP, unreadHTTP(s, a.Load != nil || a.HTTP != nil))...),
 			notes:   problemNotes(a.Problems),
 			hints:   hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
@@ -408,7 +416,8 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			}
 		}
 		bucketRows = append(bucketRows, statusRow{
-			cells: []string{bk.Name, usageAgainstQuota(bk.UsedBytes, bk.QuotaMaxSize), renderStatus(bk.Status), website},
+			cells:   []string{bk.Name, usageAgainstQuota(bk.UsedBytes, bk.QuotaMaxSize), renderStatus(bk.Status), website},
+			details: httpLines(bk.HTTP, unreadHTTP(s, bk.WebsiteEnabled && loadAsked(s))),
 		})
 	}
 	b.WriteString(renderStatusSection("BUCKETS", []string{"USED", "STATUS", "WEBSITE"}, bucketRows))
@@ -617,11 +626,43 @@ func humanAge(t time.Time) string {
 func init() {
 	projectStatusCmd.Flags().BoolP("watch", "w", false, "Redraw the view as the project changes")
 	projectStatusCmd.Flags().Duration("interval", 2*time.Second, "How often --watch polls (minimum 1s)")
-	projectStatusCmd.Flags().Bool("load", false, "Show each app's measured cpu and memory against its limit")
+	projectStatusCmd.Flags().Bool("load", false, "Show each app's measured cpu and memory against its limit, and the HTTP requests each app and website served")
 	projectStatusCmd.Flags().String("window", "1h", "How far back --load measures (30m, 6h, 3d, 2w; 5m to 1y)")
 	projectStatusCmd.Flags().Int("percentile", 0, "Also show this percentile (1-99) of --load's samples")
 	projectStatusCmd.Flags().Bool("suggestions", false, "With --load, print the limit each reading argues for, as the command that sets it")
 	projectStatusCmd.Flags().Bool("series", false, "With --load, draw each reading over the window against the limit (every point in -o json)")
+}
+
+// loadAsked says the document was read with a load window: some app or
+// database carries a load block, or the load or http check is named as not
+// run.
+func loadAsked(s *client.ProjectStatus) bool {
+	for _, a := range s.Apps {
+		if a.Load != nil || a.HTTP != nil {
+			return true
+		}
+	}
+	for _, d := range s.Databases {
+		if d.Load != nil {
+			return true
+		}
+	}
+	for _, u := range s.Unchecked {
+		if u.Check == "load" || u.Check == "http" {
+			return true
+		}
+	}
+	return false
+}
+
+// unreadHTTP is the unchecked list a resource's http lines may report from:
+// only when the resource would have carried a block, so a document read
+// without a load window, or a bucket serving no website, prints nothing.
+func unreadHTTP(s *client.ProjectStatus, expected bool) []client.UncheckedStatus {
+	if !expected {
+		return nil
+	}
+	return s.Unchecked
 }
 
 // runningImage is what the cluster actually reports, falling back to what the

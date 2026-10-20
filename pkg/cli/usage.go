@@ -16,20 +16,23 @@ import (
 var usageCmd = &cobra.Command{
 	Use:   "usage",
 	Short: "Show what the project or organization holds against what it may hold",
-	Long: `Show, for each dimension the organization is bounded on, what it may
+	Long: `Show, for each dimension of what the organization holds, what it may
 hold, what is reserved and what is actually used.
 
 Each dimension in its own unit, never added together: CPU in cores, memory and
-storage in bytes, instances and objects as counts. ALLOWED is the
-organization's bound and ADMITTED what that bound counts now, the number a
-create is refused by. RESERVED is what the scope holds booked (limits and
+storage in bytes, instances and objects as counts, HTTP requests per hour.
+ALLOWED is the organization's bound and ADMITTED what that bound counts now,
+the number a create is refused by. RESERVED is what the scope holds booked (limits and
 quotas) and USED what it measurably uses, both now. A project shows its own
 reserved and used beside its organization's bound.
 
 "no reading" is a figure the platform could not read, 0 is a measured zero,
-and "-" is a figure the dimension does not have: backups reserve nothing ahead,
-and a count has no use over time. NOT MEASURED names what a dimension reserves
-whose use is not read. A database's storage use is its data size.
+and "-" is a figure the dimension does not have: backups reserve nothing
+ahead, a count has no use over time, and HTTP requests have no bound yet.
+NOT MEASURED names what a dimension reserves whose use is not read. A
+database's storage use is its data size. HTTP requests are what the edge
+served the scope's apps and websites, an hour's worth averaged over the hours
+the platform read.
 
   fpcloud usage                     this project
   fpcloud usage --org-wide          the whole organization
@@ -104,7 +107,15 @@ whose use is not read. A database's storage use is its data size.
 // axis not named here prints as the API spells it.
 var capacityAxisLabels = map[string]string{
 	"cpu": "CPU", "memory": "Memory", "storage": "Storage", "object_storage": "Object storage",
-	"registry_storage": "Registry", "backup_storage": "Backups", "pods": "Instances", "objects": "Objects",
+	"registry_storage": "Registry", "backup_storage": "Backups", "http_requests": "HTTP requests",
+	"pods": "Instances", "objects": "Objects",
+}
+
+// capacityUnmeasuredWords are what NOT MEASURED calls each kind; a kind not
+// named prints as the API spells it.
+var capacityUnmeasuredWords = map[string]string{
+	"job": "jobs", "runner": "runners", "volume": "volumes",
+	"serverless": "serverless apps", "s3_api": "the S3 API",
 }
 
 func capacityAxisLabel(axis string) string {
@@ -127,6 +138,8 @@ func capacityFigure(v *float64, unit string) string {
 		return humanizeSize(int64(math.Round(*v)))
 	case "count":
 		return strconv.FormatInt(int64(math.Round(*v)), 10)
+	case "request_per_hour":
+		return strconv.FormatFloat(*v, 'f', requestRateDigits(*v), 64) + "/h"
 	}
 	return strconv.FormatFloat(*v, 'g', 4, 64)
 }
@@ -138,7 +151,10 @@ func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
 	headers := []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "NOT MEASURED"}
 	rows := make([][]string, 0, len(r.Axes))
 	for _, a := range r.Axes {
-		reserved, used := "-", "-"
+		allowed, admitted, reserved, used := "-", "-", "-", "-"
+		if a.Bounded {
+			allowed, admitted = capacityFigure(a.Allowed, a.Unit), capacityFigure(a.Admitted, a.Unit)
+		}
 		if a.Reserves {
 			reserved = capacityFigure(a.Reserved, a.Unit)
 		}
@@ -147,9 +163,12 @@ func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
 		}
 		unmeasured := make([]string, len(a.Unmeasured))
 		for i, k := range a.Unmeasured {
-			unmeasured[i] = k + "s"
+			unmeasured[i] = k
+			if w, ok := capacityUnmeasuredWords[k]; ok {
+				unmeasured[i] = w
+			}
 		}
-		rows = append(rows, []string{capacityAxisLabel(a.Axis), capacityFigure(a.Allowed, a.Unit), capacityFigure(a.Admitted, a.Unit),
+		rows = append(rows, []string{capacityAxisLabel(a.Axis), allowed, admitted,
 			reserved, used, strings.Join(unmeasured, ", ")})
 	}
 	return headers, rows
@@ -180,6 +199,15 @@ func capacityShareRows(a client.CapacityAxis) ([]string, [][]string) {
 		rows = append(rows, []string{r.Kind, deletedName(name, r.Deleted), reserved, used})
 	}
 	return headers, rows
+}
+
+// requestRateDigits keeps a rate under ten requests an hour readable (0.4/h)
+// and every larger one whole.
+func requestRateDigits(v float64) int {
+	if v < 10 {
+		return 1
+	}
+	return 0
 }
 
 // formatQuantity renders a decimal quantity for a human. The wire value stays
