@@ -616,6 +616,18 @@ type LogsRequest struct {
 	// tenant tells which of them printed what.
 	Prefix bool
 	Pod    string
+	// A web app's request lines are read beside its own (ADR-300 §7):
+	// Source narrows to one kind ("app" or "requests"; empty is both), and
+	// Status to the request lines carrying a code ("500") or a class ("5xx"),
+	// which is refused with Source "app". A website has request lines only,
+	// so GetWebsiteLogs takes no Source.
+	Source string
+	Status string
+	// JSON asks for one JSON record per line (application/x-ndjson) in
+	// place of text: an app line carries at, source, pod and line; a request
+	// line its fields; and the last record, source "summary", how many
+	// requests the edge served against how many lines the store holds.
+	JSON bool
 }
 
 // TrafficTarget represents a traffic routing target.

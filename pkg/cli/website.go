@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -609,6 +611,62 @@ func requireWebsite(c *client.Client, name string) (*client.Bucket, error) {
 	return b, nil
 }
 
+var websiteLogsCmd = &cobra.Command{
+	Use:   "logs <name>",
+	Short: "Read the requests a website was served",
+	Long: `Read the requests a website was served, one line per request.
+
+A website prints nothing of its own, so its log is its requests as the
+platform answered them: method, host and path, status, how long the file
+took to serve and what went out, and the request id with --timestamps. Every
+read comes from the platform's log store, following included, which keeps
+14 days. The platform keeps no client address and no query string, so a line
+never holds either.
+
+  fpcloud website logs mysite --since 24h
+  fpcloud website logs mysite --status 404 --since 1h
+  fpcloud website logs mysite --follow
+
+--follow replays the window, then keeps printing. --until has no meaning while
+following and is refused. A site logging fewer lines than it serves is said
+in a last line, "N of M requests over the range were logged". With -o json
+every line is one JSON record, and the last one, source "summary", carries
+those two counts.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		follow, _ := cmd.Flags().GetBool("follow")
+		tail, _ := cmd.Flags().GetInt("tail")
+		since, _ := cmd.Flags().GetString("since")
+		until, _ := cmd.Flags().GetString("until")
+		timestamps, _ := cmd.Flags().GetBool("timestamps")
+		status, _ := cmd.Flags().GetString("status")
+
+		if follow && until != "" {
+			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
+		}
+		asJSON, err := logsAsJSON()
+		if err != nil {
+			return err
+		}
+
+		c := getClient()
+		b, err := requireWebsite(c, args[0])
+		if err != nil {
+			return err
+		}
+		body, err := c.GetWebsiteLogs(context.Background(), b.ID, client.LogsRequest{
+			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
+			Status: status, JSON: asJSON,
+		})
+		if err != nil {
+			return err
+		}
+		defer body.Close()
+		_, err = io.Copy(os.Stdout, body)
+		return err
+	},
+}
+
 var websiteDomainAddCmd = &cobra.Command{
 	Use:   "add <website> <domain>",
 	Short: "Attach a custom domain to a website",
@@ -766,10 +824,17 @@ func init() {
 		cmd.SetContext(context.WithValue(cmd.Context(), filterCtxKey, deployFilters))
 	}
 
+	websiteLogsCmd.Flags().BoolP("follow", "f", false, "Keep printing new lines as they arrive")
+	websiteLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
+	websiteLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
+	websiteLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now). Not valid with --follow")
+	websiteLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when the request arrived, and end it with the request id")
+	websiteLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (404) or a class (4xx)")
+
 	websiteDeleteCmd.Flags().Bool("force", false, "Delete all site content first")
 	websiteDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	websiteDomainCmd.AddCommand(websiteDomainAddCmd, websiteDomainListCmd, websiteDomainStatusCmd, websiteDomainRemoveCmd)
-	websiteCmd.AddCommand(websiteCreateCmd, websiteDeployCmd, websiteListCmd, websiteShowCmd, websiteUpdateCmd, websiteRollbackCmd, websiteVersionsCmd, websiteDeleteCmd, websiteDomainCmd)
+	websiteCmd.AddCommand(websiteCreateCmd, websiteDeployCmd, websiteListCmd, websiteShowCmd, websiteUpdateCmd, websiteRollbackCmd, websiteVersionsCmd, websiteLogsCmd, websiteDeleteCmd, websiteDomainCmd)
 	rootCmd.AddCommand(websiteCmd)
 }

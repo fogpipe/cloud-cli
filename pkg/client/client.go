@@ -1560,9 +1560,22 @@ func (c *Client) DeleteApp(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// GetAppLogs retrieves logs for an app. If req.Follow is true, the returned
-// ReadCloser streams logs until closed.
+// GetAppLogs retrieves logs for an app: its own lines and its request lines
+// merged by time. If req.Follow is true, the returned ReadCloser streams logs
+// until closed.
 func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsRequest) (io.ReadCloser, error) {
+	return c.readLogs(ctx, "/api/v1/apps/"+id+"/logs", req)
+}
+
+// GetWebsiteLogs retrieves a website's request lines, under the bucket's
+// read (ADR-300 §7). req.Source, Prefix and Pod do not apply and are refused
+// by the API.
+func (c *Client) GetWebsiteLogs(ctx context.Context, bucketID string, req LogsRequest) (io.ReadCloser, error) {
+	return c.readLogs(ctx, "/api/v1/buckets/"+bucketID+"/website/logs", req)
+}
+
+// readLogs is one log read, history or follow, as a stream of lines.
+func (c *Client) readLogs(ctx context.Context, path string, req LogsRequest) (io.ReadCloser, error) {
 	q := url.Values{}
 	if req.Follow {
 		q.Set("follow", "true")
@@ -1585,7 +1598,15 @@ func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsRequest) (io
 	if req.Pod != "" {
 		q.Set("pod", req.Pod)
 	}
-	path := "/api/v1/apps/" + id + "/logs"
+	if req.Source != "" {
+		q.Set("source", req.Source)
+	}
+	if req.Status != "" {
+		q.Set("status", req.Status)
+	}
+	if req.JSON {
+		q.Set("format", "json")
+	}
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}

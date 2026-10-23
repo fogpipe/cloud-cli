@@ -1711,7 +1711,7 @@ func renderDeploymentStatus(status string) string {
 var appLogsCmd = &cobra.Command{
 	Use:   "logs <name>",
 	Short: "Read app logs",
-	Long: `Read an app's logs.
+	Long: `Read an app's logs: what it printed, and the requests it was served.
 
 Every read comes from the platform's log store, following included, so the
 lines reach past the pod that printed them — a restart, a redeploy or a
@@ -1723,6 +1723,16 @@ timeline.
   fpcloud app logs web --follow --since 10m
   fpcloud app logs web --prefix
   fpcloud app logs web --pod web-7c9d8b6f5-x2k4q
+  fpcloud app logs web --status 5xx --since 1h
+  fpcloud app logs web --source app
+
+A web app's requests are printed among its own lines, one per request as the
+platform answered it: method, host and path, status, how long the app took
+and what went out, and the request id with --timestamps. A request that never
+reached the app has no app time, printed as "-". --source reads one kind
+alone, and --status reads the requests answered with a code (500) or a class
+(5xx). The platform keeps no client address and no query string, so a line
+never holds either. A worker and a serverless app have no request lines.
 
 --follow replays the window, then keeps printing. A restart is a gap in the
 output rather than the end of it. --until has no meaning while following and is
@@ -1730,7 +1740,12 @@ refused.
 
 Replicas are merged, so --prefix names the replica in front of each line and
 --pod reads one replica alone — the way to tell which of several is the one
-misbehaving. The names to pass --pod are what --prefix prints.`,
+misbehaving. The names to pass --pod are what --prefix prints; a request line
+is prefixed [request].
+
+A site logging fewer lines than it serves is said in a last line, "N of M
+requests over the range were logged". With -o json every line is one JSON
+record, and the last one, source "summary", carries those two counts.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
@@ -1740,9 +1755,15 @@ misbehaving. The names to pass --pod are what --prefix prints.`,
 		timestamps, _ := cmd.Flags().GetBool("timestamps")
 		prefix, _ := cmd.Flags().GetBool("prefix")
 		pod, _ := cmd.Flags().GetString("pod")
+		source, _ := cmd.Flags().GetString("source")
+		status, _ := cmd.Flags().GetString("status")
 
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
+		}
+		asJSON, err := logsAsJSON()
+		if err != nil {
+			return err
 		}
 
 		c := getClient()
@@ -1752,7 +1773,7 @@ misbehaving. The names to pass --pod are what --prefix prints.`,
 		}
 		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Prefix: prefix, Pod: pod,
+			Prefix: prefix, Pod: pod, Source: source, Status: status, JSON: asJSON,
 		})
 		if err != nil {
 			return err
@@ -1765,6 +1786,19 @@ misbehaving. The names to pass --pod are what --prefix prints.`,
 		}
 		return err
 	},
+}
+
+// logsAsJSON is whether -o asks for one JSON record per line. A stream has no
+// document to render as YAML, so that format is refused rather than answered
+// with JSON under another name.
+func logsAsJSON() (bool, error) {
+	switch format := rootCmd.Flag("output").Value.String(); format {
+	case "json":
+		return true, nil
+	case "yaml", "yml":
+		return false, fmt.Errorf("logs are a stream of lines, printed as text or as JSON records (-o json); there is no YAML form")
+	}
+	return false, nil
 }
 
 // printEmptyLogsHint explains an empty log window when the app has warning
@@ -1959,6 +1993,8 @@ func init() {
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 	appLogsCmd.Flags().Bool("prefix", false, "Prefix each line with the replica that printed it")
 	appLogsCmd.Flags().String("pod", "", "Read one replica's lines only, by the name --prefix prints")
+	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed) or requests (what it was served)")
+	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
 	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
 	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas (serverless mode)")

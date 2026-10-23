@@ -339,6 +339,8 @@ func TestClientGetAppLogs_Query(t *testing.T) {
 		{"absolute window", LogsRequest{Since: "2026-08-20T00:00:00Z"}, "since=2026-08-20T00%3A00%3A00Z"},
 		{"timestamps", LogsRequest{Timestamps: true}, "timestamps=true"},
 		{"one replica, named", LogsRequest{Pod: "web-7c9-abc", Prefix: true}, "pod=web-7c9-abc&prefix=true"},
+		{"the requests answered 5xx", LogsRequest{Source: "requests", Status: "5xx"}, "source=requests&status=5xx"},
+		{"json records", LogsRequest{JSON: true}, "format=json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -357,6 +359,23 @@ func TestClientGetAppLogs_Query(t *testing.T) {
 			assert.Equal(t, "line\n", string(out))
 		})
 	}
+}
+
+// A website's lines are read under its bucket, with the same window.
+func TestClientGetWebsiteLogs_Path(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/buckets/b-1/website/logs", r.URL.Path)
+		assert.Equal(t, "since=1h&status=404", r.URL.RawQuery)
+		_, _ = w.Write([]byte("GET example.com/missing 404 - 512B\n"))
+	}))
+	defer server.Close()
+
+	body, err := New(server.URL, "test-key").GetWebsiteLogs(context.Background(), "b-1", LogsRequest{Since: "1h", Status: "404"})
+	require.NoError(t, err)
+	defer body.Close()
+	out, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Equal(t, "GET example.com/missing 404 - 512B\n", string(out))
 }
 
 // A streamed response must outlive the bound that used to cut it. `app logs
