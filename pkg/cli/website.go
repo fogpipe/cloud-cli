@@ -826,8 +826,8 @@ func init() {
 
 	websiteLogsCmd.Flags().BoolP("follow", "f", false, "Keep printing new lines as they arrive")
 	websiteLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
-	websiteLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
-	websiteLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now). Not valid with --follow")
+	websiteLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h, 7d) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
+	websiteLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h, 2d) or an RFC3339 timestamp (default: now). Not valid with --follow")
 	websiteLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when the request arrived, and end it with the request id")
 	websiteLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (404) or a class (4xx)")
 

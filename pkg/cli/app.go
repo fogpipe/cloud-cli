@@ -1988,8 +1988,8 @@ func init() {
 
 	appLogsCmd.Flags().BoolP("follow", "f", false, "Keep printing new lines as they arrive")
 	appLogsCmd.Flags().Int("tail", 0, "Number of most recent lines to show (default 100, server-bounded)")
-	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
-	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h) or an RFC3339 timestamp (default: now). Not valid with --follow")
+	appLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h, 7d) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
+	appLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h, 2d) or an RFC3339 timestamp (default: now). Not valid with --follow")
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 	appLogsCmd.Flags().Bool("prefix", false, "Prefix each line with the replica that printed it")
 	appLogsCmd.Flags().String("pod", "", "Read one replica's lines only, by the name --prefix prints")
