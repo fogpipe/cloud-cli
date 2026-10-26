@@ -452,15 +452,16 @@ type App struct {
 	Status         string   `json:"status"`
 	URL            string   `json:"url"`
 	Domains        []string `json:"domains"`
-	Replicas       int      `json:"replicas"`
-	MinScale       int32    `json:"min_scale"`
-	MaxScale       int32    `json:"max_scale"`
-	CPULimit       string   `json:"cpu_limit"`
-	MemoryLimit    string   `json:"memory_limit"`
-	Ingress        string   `json:"ingress"`
-	Routes         []Route  `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Type           string   `json:"type"`             // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port           int      `json:"port"`             // the API decides it — 8080 on a web app, 0 on a worker
+	// MinScale and MaxScale bound how many instances the app runs:
+	// equal is a fixed size, a wider range autoscales on CPU between them.
+	MinScale    int32   `json:"min_scale"`
+	MaxScale    int32   `json:"max_scale"`
+	CPULimit    string  `json:"cpu_limit"`
+	MemoryLimit string  `json:"memory_limit"`
+	Ingress     string  `json:"ingress"`
+	Routes      []Route `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	Type        string  `json:"type"`             // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port        int     `json:"port"`             // the API decides it — 8080 on a web app, 0 on a worker
 	// ServiceAccountID and ServiceAccount name the app's own identity (ADR-283):
 	// one account per app, created and deleted with it, keyed in every binding
 	// by its email. It holds nothing until granted. IdentityTokenFile is where
@@ -547,9 +548,13 @@ type CreateAppRequest struct {
 	VolumeMounts    []VolumeMount    `json:"volume_mounts,omitempty"`
 	SecurityContext *SecurityContext `json:"security_context,omitempty"`
 	Port            int              `json:"port,omitempty"`
-	Replicas        int              `json:"replicas,omitempty"`
-	Ingress         string           `json:"ingress,omitempty"`
-	Routes          []Route          `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	// MinScale and MaxScale bound the instance count; nil takes the
+	// platform default of one. Equal is a fixed size, a wider range autoscales
+	// on CPU between them.
+	MinScale *int32  `json:"min_scale,omitempty"`
+	MaxScale *int32  `json:"max_scale,omitempty"`
+	Ingress  string  `json:"ingress,omitempty"`
+	Routes   []Route `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
 	// Type is the process type: "web" (default) serves HTTP behind a Service;
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.
@@ -627,11 +632,11 @@ type LogsRequest struct {
 	JSON bool
 }
 
-// ScaleRequest is the request body for scaling an app.
+// ScaleRequest is the request body for scaling an app. A nil bound keeps the
+// app's current one.
 type ScaleRequest struct {
 	MinScale    *int32 `json:"min_scale,omitempty"`
 	MaxScale    *int32 `json:"max_scale,omitempty"`
-	Replicas    *int32 `json:"replicas,omitempty"`
 	CPULimit    string `json:"cpu_limit,omitempty"`
 	MemoryLimit string `json:"memory_limit,omitempty"`
 }
@@ -2370,8 +2375,13 @@ type AppStatus struct {
 	Release string `json:"release,omitempty"`
 	URL     string `json:"url,omitempty"`
 	Status  string `json:"status"`
-	Desired int32  `json:"desired"`
-	Ready   int32  `json:"ready"`
+	// Desired is the count the cluster is converging on right now (the
+	// autoscaler's when the bounds differ), Ready what it reports serving;
+	// MinScale and MaxScale are the bounds it moves between.
+	Desired  int32 `json:"desired"`
+	Ready    int32 `json:"ready"`
+	MinScale int32 `json:"min_scale"`
+	MaxScale int32 `json:"max_scale"`
 	// RunningImage and RunningRelease are what the cluster's workload declares,
 	// which differs from Image/Release above exactly while a deploy is in flight.
 	RunningImage   string `json:"running_image,omitempty"`

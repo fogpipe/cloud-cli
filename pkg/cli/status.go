@@ -528,11 +528,22 @@ func appReadiness(a client.AppStatus) string {
 	}
 	switch {
 	case a.Desired > 0 && a.Ready < a.Desired:
-		return label + lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired))
+		return label + lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired)) + scaleBounds(a)
 	case a.Desired > 0:
-		return label + mutedStyle.Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired))
+		return label + mutedStyle.Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired)) + scaleBounds(a)
 	}
 	return label
+}
+
+// scaleBounds names the range an autoscaled app moves in beside its counts, so
+// "2/2 of 1-5" says the two are the autoscaler's choice and not the tenant's
+// fixed size; a fixed-size app's bounds equal its desired count and add
+// nothing.
+func scaleBounds(a client.AppStatus) string {
+	if a.MinScale == a.MaxScale {
+		return ""
+	}
+	return mutedStyle.Render(fmt.Sprintf(" of %d-%d", a.MinScale, a.MaxScale))
 }
 
 // shortImage drops the registry host and the digest, which are the same for

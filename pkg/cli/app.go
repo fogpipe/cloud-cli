@@ -141,7 +141,6 @@ var appCreateCmd = &cobra.Command{
 		}
 		image, _ := cmd.Flags().GetString("image")
 		port, _ := cmd.Flags().GetInt("port")
-		replicas, _ := cmd.Flags().GetInt("replicas")
 		ingress, _ := cmd.Flags().GetString("ingress")
 		appType, _ := cmd.Flags().GetString("type")
 
@@ -238,7 +237,8 @@ var appCreateCmd = &cobra.Command{
 				VolumeMounts:        mounts,
 				SecurityContext:     secCtx,
 				Port:                port,
-				Replicas:            replicas,
+				MinScale:            changedInt32(cmd, "min-scale"),
+				MaxScale:            changedInt32(cmd, "max-scale"),
 				Ingress:             ingress,
 				Routes:              routes,
 				Type:                appType,
@@ -582,7 +582,7 @@ var appGetCmd = &cobra.Command{
 			{"Image", app.Image},
 			{"Type", app.Type},
 			{"Status", renderStatus(app.Status)},
-			{"Replicas", fmt.Sprintf("%d", app.Replicas)},
+			{"Scale", scaleDisplay(app.MinScale, app.MaxScale)},
 			{"Release Command", releaseDisplay},
 			{"Service Account", saDisplay},
 		}
@@ -1015,18 +1015,9 @@ var appScaleCmd = &cobra.Command{
 			return err
 		}
 
-		req := client.ScaleRequest{}
-		if cmd.Flags().Changed("min") {
-			v, _ := cmd.Flags().GetInt32("min")
-			req.MinScale = &v
-		}
-		if cmd.Flags().Changed("max") {
-			v, _ := cmd.Flags().GetInt32("max")
-			req.MaxScale = &v
-		}
-		if cmd.Flags().Changed("replicas") {
-			v, _ := cmd.Flags().GetInt32("replicas")
-			req.Replicas = &v
+		req := client.ScaleRequest{
+			MinScale: changedInt32(cmd, "min-scale"),
+			MaxScale: changedInt32(cmd, "max-scale"),
 		}
 		if cmd.Flags().Changed("cpu") {
 			req.CPULimit, _ = cmd.Flags().GetString("cpu")
@@ -1057,13 +1048,11 @@ var appScaleCmd = &cobra.Command{
 		rows := [][]string{
 			{"ID", mutedStyle.Render(app.ID)},
 			{"Name", app.Name},
+			{"Scale", scaleDisplay(app.MinScale, app.MaxScale)},
+			{"CPU Limit", app.CPULimit},
+			{"Memory Limit", app.MemoryLimit},
+			{"Status", renderStatus(app.Status)},
 		}
-		rows = append(rows,
-			[]string{"Replicas", fmt.Sprintf("%d", app.Replicas)},
-			[]string{"CPU Limit", app.CPULimit},
-			[]string{"Memory Limit", app.MemoryLimit},
-			[]string{"Status", renderStatus(app.Status)},
-		)
 		fmt.Println(renderInfoBox("App Scaled", rows))
 		return nil
 	},
@@ -1776,7 +1765,8 @@ event is the only record.
 func init() {
 	appCreateCmd.Flags().String("image", "", "Container image")
 	appCreateCmd.Flags().Int("port", 8080, "Container port (default 8080, use 80 for nginx)")
-	appCreateCmd.Flags().Int("replicas", 1, "Number of replicas")
+	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1)")
+	appCreateCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load (default 1: a fixed size; equal to --min-scale is fixed, above it autoscales)")
 	appCreateCmd.Flags().String("ingress", "internal", "Ingress setting: 'all' (public) or 'internal' (default)")
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
 	appCreateCmd.Flags().String("type", "web", "Process type: 'web' (default, serves HTTP) or 'worker' (long-running process with no port, URL or health checks). Frozen at create")
@@ -1831,9 +1821,8 @@ func init() {
 	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed) or requests (what it was served)")
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
-	appScaleCmd.Flags().Int32("min", 0, "Minimum number of replicas")
-	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas")
-	appScaleCmd.Flags().Int32("replicas", 1, "Fixed replica count")
+	appScaleCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs")
+	appScaleCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load; equal to --min-scale is a fixed size, above it autoscales between them")
 	appScaleCmd.Flags().String("cpu", "500m", "CPU limit (e.g. 500m, 1)")
 	appScaleCmd.Flags().String("memory", "512Mi", "Memory limit (e.g. 512Mi, 1Gi)")
 
@@ -1877,4 +1866,24 @@ func parseSecretEnv(flags []string) (map[string]client.SecretRef, error) {
 		out[key] = client.SecretRef{Secret: secret, Path: path}
 	}
 	return out, nil
+}
+
+// changedInt32 is the flag's value when the caller set it, nil when not: a
+// request field left nil keeps what the app has, where the flag's default
+// would silently rewrite it.
+func changedInt32(cmd *cobra.Command, name string) *int32 {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	v, _ := cmd.Flags().GetInt32(name)
+	return &v
+}
+
+// scaleDisplay is an app's instance bounds as one cell: a fixed size is its
+// number, a range is both ends, since between them the platform decides.
+func scaleDisplay(minScale, maxScale int32) string {
+	if minScale == maxScale {
+		return fmt.Sprintf("%d", minScale)
+	}
+	return fmt.Sprintf("%d to %d (CPU)", minScale, maxScale)
 }
