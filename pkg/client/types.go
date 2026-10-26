@@ -894,7 +894,6 @@ type Bucket struct {
 	ID              string    `json:"id"`
 	ProjectID       string    `json:"project_id"`
 	Name            string    `json:"name"`
-	GarageBucketID  string    `json:"garage_bucket_id,omitempty"`
 	GlobalAlias     string    `json:"global_alias,omitempty"`
 	Region          string    `json:"region,omitempty"`
 	Endpoint        string    `json:"endpoint,omitempty"`
