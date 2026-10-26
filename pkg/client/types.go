@@ -459,9 +459,8 @@ type App struct {
 	MemoryLimit    string   `json:"memory_limit"`
 	Ingress        string   `json:"ingress"`
 	Routes         []Route  `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode           string   `json:"mode"`
-	Type           string   `json:"type"` // "web" (HTTP service) or "worker" (no port, Service or hostname)
-	Port           int      `json:"port"` // the API decides it — 8080 on a web app, 0 on a worker
+	Type           string   `json:"type"`             // "web" (HTTP service) or "worker" (no port, Service or hostname)
+	Port           int      `json:"port"`             // the API decides it — 8080 on a web app, 0 on a worker
 	// ServiceAccountID and ServiceAccount name the app's own identity (ADR-283):
 	// one account per app, created and deleted with it, keyed in every binding
 	// by its email. It holds nothing until granted. IdentityTokenFile is where
@@ -551,7 +550,6 @@ type CreateAppRequest struct {
 	Replicas        int              `json:"replicas,omitempty"`
 	Ingress         string           `json:"ingress,omitempty"`
 	Routes          []Route          `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
-	Mode            string           `json:"mode,omitempty"`   // "always-on" (default) or "serverless"
 	// Type is the process type: "web" (default) serves HTTP behind a Service;
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.
@@ -584,8 +582,7 @@ type UpdateProbesRequest struct {
 type DeployRequest struct {
 	Image string `json:"image"`
 	// Release names the version this deploy publishes (#471). Optional.
-	Release   string `json:"release,omitempty"`
-	NoTraffic bool   `json:"no_traffic,omitempty"`
+	Release string `json:"release,omitempty"`
 	// ReleaseCommand is the release command this deploy is deployed with
 	// (ADR-110). Nil leaves the app's stored command alone; non-nil sets it as
 	// part of the deploy, so the deploy that introduces a migration is the
@@ -630,23 +627,6 @@ type LogsRequest struct {
 	JSON bool
 }
 
-// TrafficTarget represents a traffic routing target.
-type TrafficTarget struct {
-	Revision string `json:"revision"`
-	Percent  int64  `json:"percent"`
-	URL      string `json:"url,omitempty"`
-}
-
-// SetTrafficRequest is the request body for setting traffic split.
-type SetTrafficRequest struct {
-	Targets []TrafficTarget `json:"targets"`
-}
-
-// TrafficResponse is the response for traffic operations.
-type TrafficResponse struct {
-	Targets []TrafficTarget `json:"targets"`
-}
-
 // ScaleRequest is the request body for scaling an app.
 type ScaleRequest struct {
 	MinScale    *int32 `json:"min_scale,omitempty"`
@@ -654,11 +634,6 @@ type ScaleRequest struct {
 	Replicas    *int32 `json:"replicas,omitempty"`
 	CPULimit    string `json:"cpu_limit,omitempty"`
 	MemoryLimit string `json:"memory_limit,omitempty"`
-}
-
-// SwitchModeRequest is the request body for switching an app's hosting mode.
-type SwitchModeRequest struct {
-	Mode string `json:"mode"`
 }
 
 // UpdateAppRequest is the request body for PATCH /api/v1/apps/{appID}. Both fields
@@ -1317,14 +1292,6 @@ type CreateSecretRequest struct {
 // UpdateSecretRequest replaces a secret's value; the name is fixed.
 type UpdateSecretRequest struct {
 	Value string `json:"value"`
-}
-
-// Revision represents a Knative revision for an application.
-type Revision struct {
-	Name      string `json:"name"`
-	Ready     bool   `json:"ready"`
-	Image     string `json:"image"`
-	CreatedAt string `json:"created_at"`
 }
 
 // User represents a registered platform user.
@@ -2399,7 +2366,6 @@ type UncheckedStatus struct {
 type AppStatus struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
-	Mode    string `json:"mode"`
 	Image   string `json:"image,omitempty"`
 	Release string `json:"release,omitempty"`
 	URL     string `json:"url,omitempty"`
@@ -2433,9 +2399,8 @@ type AppStatus struct {
 // and bytes each way. Window and Step are the load read's; Covered is how
 // much of the window this source holds.
 //
-// Unmeasured names why the edge cannot see the resource: "serverless" (served
-// through another gateway) or "worker" (it serves nothing). The figures are
-// then absent, never zero.
+// Unmeasured names why the edge cannot see the resource: "worker" (it serves
+// nothing). The figures are then absent, never zero.
 type HTTPLoad struct {
 	Window     string `json:"window"`
 	Step       string `json:"step"`
@@ -2523,7 +2488,7 @@ type ConfigCount struct {
 // never reads as a week.
 //
 // A nil axis is a measured nothing: no pod of the app produced a sample in the
-// window, which is what a serverless app scaled to zero looks like. It is not
+// window, which is what an app with no running pod looks like. It is not
 // the store failing to answer — that is reported as an unchecked "load", and
 // the whole Load is absent.
 type Load struct {

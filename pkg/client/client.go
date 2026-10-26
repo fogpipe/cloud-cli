@@ -1211,7 +1211,7 @@ func (c *Client) ReconcileApp(ctx context.Context, id string) (*App, error) {
 
 // RestartApp rolls an always-on app's pods under the spec they already run.
 // Not a deploy and not a reconcile: nothing is re-rendered, the image is
-// unchanged and the release command does not run. A serverless app is refused.
+// unchanged and the release command does not run.
 func (c *Client) RestartApp(ctx context.Context, id string) (*App, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+id+"/restart", nil)
 	if err != nil {
@@ -1446,19 +1446,6 @@ func (c *Client) DeleteSecret(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// SwitchMode migrates an app between hosting modes ("always-on"/"serverless").
-func (c *Client) SwitchMode(ctx context.Context, id, mode string) (*App, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/mode", SwitchModeRequest{Mode: mode})
-	if err != nil {
-		return nil, err
-	}
-	var app App
-	if err := c.do(httpReq, &app); err != nil {
-		return nil, err
-	}
-	return &app, nil
-}
-
 // UpdateAppCommand changes an app's container entrypoint override (command),
 // arguments (args), and/or release command. Each is optional: a nil pointer
 // leaves the value untouched, a non-nil pointer (including an empty slice)
@@ -1631,45 +1618,6 @@ func (c *Client) readLogs(ctx context.Context, path string, req LogsRequest) (io
 	}
 
 	return resp.Body, nil
-}
-
-// GetTraffic retrieves the current traffic split for an app.
-func (c *Client) GetTraffic(ctx context.Context, appID string) ([]TrafficTarget, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+appID+"/traffic", nil)
-	if err != nil {
-		return nil, err
-	}
-	var resp TrafficResponse
-	if err := c.do(httpReq, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Targets, nil
-}
-
-// SetTraffic sets the traffic split for an app.
-func (c *Client) SetTraffic(ctx context.Context, appID string, targets []TrafficTarget) ([]TrafficTarget, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+appID+"/traffic", SetTrafficRequest{Targets: targets})
-	if err != nil {
-		return nil, err
-	}
-	var resp TrafficResponse
-	if err := c.do(httpReq, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Targets, nil
-}
-
-// ListRevisions lists all revisions for an app.
-func (c *Client) ListRevisions(ctx context.Context, appID string) ([]Revision, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/apps/"+appID+"/revisions", nil)
-	if err != nil {
-		return nil, err
-	}
-	var revisions []Revision
-	if err := c.do(httpReq, &revisions); err != nil {
-		return nil, err
-	}
-	return revisions, nil
 }
 
 // CreateDatabase creates a new database in a project.

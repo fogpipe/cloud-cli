@@ -270,7 +270,7 @@ func registerCompletions() {
 	// projects for the second — read from args[0] rather than the current
 	// context, so the pair completes before either half is saved.
 	switchCmd.ValidArgsFunction = completeSwitchArgs
-	for _, c := range []*cobra.Command{appGetCmd, appDeleteCmd, appLogsCmd, appRevisionsCmd, appScaleCmd, appRollbackCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd} {
+	for _, c := range []*cobra.Command{appGetCmd, appDeleteCmd, appLogsCmd, appScaleCmd, appRollbackCmd, appIdentityCmd, appDeploymentsCmd} {
 		c.ValidArgsFunction = completeApps
 	}
 	for _, c := range []*cobra.Command{dbGetCmd, dbUpdateCmd, dbDeleteCmd, dbBackupCreateCmd, dbBackupListCmd,

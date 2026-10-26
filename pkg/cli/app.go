@@ -143,7 +143,6 @@ var appCreateCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		replicas, _ := cmd.Flags().GetInt("replicas")
 		ingress, _ := cmd.Flags().GetString("ingress")
-		mode, _ := cmd.Flags().GetString("mode")
 		appType, _ := cmd.Flags().GetString("type")
 
 		// Prompt for missing required fields.
@@ -242,7 +241,6 @@ var appCreateCmd = &cobra.Command{
 				Replicas:            replicas,
 				Ingress:             ingress,
 				Routes:              routes,
-				Mode:                mode,
 				Type:                appType,
 				HealthCheckPath:     healthCheckPath,
 				HealthCheckTimeout:  healthCheckTimeout,
@@ -273,7 +271,6 @@ var appCreateCmd = &cobra.Command{
 			{"Display Name", app.DisplayName},
 			{"Image", app.Image},
 			{"Type", app.Type},
-			{"Mode", app.Mode},
 			{"Status", renderStatus(app.Status)},
 		}
 		// A worker has no slug, ingress or URL. Printing those rows empty would
@@ -509,13 +506,13 @@ var appListCmd = &cobra.Command{
 		showID, _ := cmd.Flags().GetBool("show-id")
 		rows := make([][]string, len(apps))
 		for i, a := range apps {
-			row := []string{a.Name, a.Image, a.Type, a.Mode, ingressDisplay(a), renderStatus(a.Status), a.URL}
+			row := []string{a.Name, a.Image, a.Type, ingressDisplay(a), renderStatus(a.Status), a.URL}
 			if showID {
 				row = append([]string{a.ID}, row...)
 			}
 			rows[i] = row
 		}
-		headers := []string{"NAME", "IMAGE", "TYPE", "MODE", "INGRESS", "STATUS", "URL"}
+		headers := []string{"NAME", "IMAGE", "TYPE", "INGRESS", "STATUS", "URL"}
 		if showID {
 			headers = append([]string{"ID"}, headers...)
 		}
@@ -584,7 +581,6 @@ var appGetCmd = &cobra.Command{
 			{"Display Name", app.DisplayName},
 			{"Image", app.Image},
 			{"Type", app.Type},
-			{"Mode", app.Mode},
 			{"Status", renderStatus(app.Status)},
 			{"Replicas", fmt.Sprintf("%d", app.Replicas)},
 			{"Release Command", releaseDisplay},
@@ -634,7 +630,6 @@ var appDeployCmd = &cobra.Command{
 		if image == "" {
 			return fmt.Errorf("--image is required")
 		}
-		noTraffic, _ := cmd.Flags().GetBool("no-traffic")
 		release, _ := cmd.Flags().GetString("release")
 		// Set-if-changed, so this deploy states its own release command and the
 		// gate reads it — omitting the flag keeps whatever the app carries, and
@@ -658,7 +653,6 @@ var appDeployCmd = &cobra.Command{
 			app, deployErr = c.DeployApp(context.Background(), appID, client.DeployRequest{
 				Image:          image,
 				Release:        release,
-				NoTraffic:      noTraffic,
 				ReleaseCommand: releaseCommand,
 			})
 		}
@@ -898,7 +892,7 @@ func probeSummaries(app *client.App) []string {
 var appReconcileCmd = &cobra.Command{
 	Use:   "reconcile [name]",
 	Short: "Re-apply an app's runtime from control-plane state",
-	Long: "Republishes the app's config and re-applies its Deployment or Knative Service, " +
+	Long: "Republishes the app's config and re-applies its Deployment, " +
 		"rolling the pods only if the rendered spec differs from what is running.\n\n" +
 		"Repairs an app whose cluster state has drifted. Unlike `app deploy` it changes no " +
 		"image, records no deployment, and does not run the release command — so `--all` is " +
@@ -1009,34 +1003,6 @@ func waitForRelease(c *client.Client, appID string) (*client.Deployment, error) 
 	}
 }
 
-var appRevisionsCmd = &cobra.Command{
-	Use:   "revisions <name>",
-	Short: "List revisions for an app",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		appID, err := appIDFrom(c, cmd, args)
-		if err != nil {
-			return err
-		}
-		revisions, err := c.ListRevisions(context.Background(), appID)
-		if err != nil {
-			return err
-		}
-
-		rows := make([][]string, len(revisions))
-		for i, r := range revisions {
-			ready := renderStatus("stopped")
-			if r.Ready {
-				ready = renderStatus("running")
-			}
-			rows[i] = []string{r.Name, ready, r.Image, r.CreatedAt}
-		}
-		render([]string{"NAME", "READY", "IMAGE", "CREATED"}, rows, revisions)
-		return nil
-	},
-}
-
 var appScaleCmd = &cobra.Command{
 	Use:   "scale <name>",
 	Short: "Update scaling configuration for an app",
@@ -1092,15 +1058,8 @@ var appScaleCmd = &cobra.Command{
 			{"ID", mutedStyle.Render(app.ID)},
 			{"Name", app.Name},
 		}
-		if app.Mode == "always-on" {
-			rows = append(rows, []string{"Replicas", fmt.Sprintf("%d", app.Replicas)})
-		} else {
-			rows = append(rows,
-				[]string{"Min Scale", fmt.Sprintf("%d", app.MinScale)},
-				[]string{"Max Scale", fmt.Sprintf("%d", app.MaxScale)},
-			)
-		}
 		rows = append(rows,
+			[]string{"Replicas", fmt.Sprintf("%d", app.Replicas)},
 			[]string{"CPU Limit", app.CPULimit},
 			[]string{"Memory Limit", app.MemoryLimit},
 			[]string{"Status", renderStatus(app.Status)},
@@ -1112,7 +1071,7 @@ var appScaleCmd = &cobra.Command{
 
 var appUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update an app's display name, vanity slug, hosting mode, or container command",
+	Short: "Update an app's display name, vanity slug, or container command",
 	Long: `Update an app in place.
 
   --display-name  Change the app's cosmetic display name. The frozen name (which
@@ -1120,9 +1079,6 @@ var appUpdateCmd = &cobra.Command{
   --slug          Set the vanity URL slug so the app is reachable at
                   <slug>.<tenant-domain>. Pass --slug "" to clear it back to
                   the derived host. Reconciles the Ingress; always-on apps only.
-  --mode          Switch between hosting modes. 'always-on' is an always-on
-                  Deployment; 'serverless' is a scale-to-zero Knative Service. The
-                  switch recreates the runtime, preserving image, env, and secrets.
   --command       Override the container entrypoint (repeatable). Passing the flag
                   with no value clears the override back to the image ENTRYPOINT.
                   Triggers a redeploy so the running pod picks up the new entrypoint.
@@ -1145,7 +1101,6 @@ var appUpdateCmd = &cobra.Command{
 `,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mode, _ := cmd.Flags().GetString("mode")
 		displayName, _ := cmd.Flags().GetString("display-name")
 		// --slug is set-if-changed so `--slug ""` explicitly clears the override
 		// (reverting to the derived host), distinct from omitting the flag.
@@ -1174,8 +1129,8 @@ var appUpdateCmd = &cobra.Command{
 		}
 		securityContextChanged := clearSecurityContext || securityContext != nil
 
-		if mode == "" && displayName == "" && !slugChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
-			return fmt.Errorf("nothing to update: pass --display-name, --slug, --mode, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
+		if displayName == "" && !slugChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
+			return fmt.Errorf("nothing to update: pass --display-name, --slug, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -1210,12 +1165,6 @@ var appUpdateCmd = &cobra.Command{
 			}
 			if command != nil || cmdArgs != nil || releaseCommand != nil {
 				app, updErr = c.UpdateAppCommand(context.Background(), appID, command, cmdArgs, releaseCommand)
-				if updErr != nil {
-					return
-				}
-			}
-			if mode != "" {
-				app, updErr = c.SwitchMode(context.Background(), appID, mode)
 			}
 		}
 
@@ -1237,7 +1186,6 @@ var appUpdateCmd = &cobra.Command{
 			{"Name", app.Name},
 			{"Display Name", app.DisplayName},
 			{"URL Slug", slugDisplay(app.URLSlug)},
-			{"Mode", app.Mode},
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
@@ -1413,110 +1361,6 @@ func splitRollbackArgs(cmd *cobra.Command, args []string) ([]string, string) {
 func crossesMigrations(err error) bool {
 	var apiErr *client.APIError
 	return errors.As(err, &apiErr) && apiErr.Code == "MIGRATION_CONFIRMATION_REQUIRED"
-}
-
-var appTrafficCmd = &cobra.Command{
-	Use:   "traffic <name>",
-	Short: "Show current traffic split for an app",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c := getClient()
-		appID, err := appIDFrom(c, cmd, args)
-		if err != nil {
-			return err
-		}
-		targets, err := c.GetTraffic(context.Background(), appID)
-		if err != nil {
-			return err
-		}
-
-		outputFormat := rootCmd.Flag("output").Value.String()
-		if isStructured(outputFormat) {
-			return renderData(targets)
-		}
-
-		rows := make([][]string, len(targets))
-		for i, t := range targets {
-			rows[i] = []string{t.Revision, fmt.Sprintf("%d%%", t.Percent), t.URL}
-		}
-		render([]string{"REVISION", "PERCENT", "URL"}, rows, targets)
-		return nil
-	},
-}
-
-var appTrafficSetCmd = &cobra.Command{
-	Use:   "set <name>",
-	Short: "Set traffic split for an app",
-	Long: `Set traffic split for an app. Specify revision=percent pairs with --revision flags,
-or use --to-latest to route 100% traffic to the latest revision.
-
-Examples:
-  fpcloud app traffic set <name> --revision rev1=90 --revision rev2=10
-  fpcloud app traffic set <name> --to-latest`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		toLatest, _ := cmd.Flags().GetBool("to-latest")
-		revisionFlags, _ := cmd.Flags().GetStringArray("revision")
-
-		var targets []client.TrafficTarget
-
-		if toLatest {
-			targets = []client.TrafficTarget{
-				{Revision: "@latest", Percent: 100},
-			}
-		} else {
-			if len(revisionFlags) == 0 {
-				return fmt.Errorf("specify --revision flags or --to-latest")
-			}
-			for _, rv := range revisionFlags {
-				parts := strings.SplitN(rv, "=", 2)
-				if len(parts) != 2 {
-					return fmt.Errorf("invalid revision format %q, expected name=percent", rv)
-				}
-				var pct int
-				if _, err := fmt.Sscanf(parts[1], "%d", &pct); err != nil {
-					return fmt.Errorf("invalid percent %q in revision %q", parts[1], rv)
-				}
-				targets = append(targets, client.TrafficTarget{
-					Revision: parts[0],
-					Percent:  int64(pct),
-				})
-			}
-		}
-
-		outputFormat := rootCmd.Flag("output").Value.String()
-		c := getClient()
-		appID, err := appIDFrom(c, cmd, args)
-		if err != nil {
-			return err
-		}
-
-		var result []client.TrafficTarget
-		var setErr error
-		action := func() {
-			result, setErr = c.SetTraffic(context.Background(), appID, targets)
-		}
-
-		if !isStructured(outputFormat) {
-			withSpinner("Setting traffic...", action)
-		} else {
-			action()
-		}
-		if setErr != nil {
-			return setErr
-		}
-
-		if isStructured(outputFormat) {
-			return renderData(result)
-		}
-
-		rows := make([][]string, len(result))
-		for i, t := range result {
-			rows[i] = []string{t.Revision, fmt.Sprintf("%d%%", t.Percent), t.URL}
-		}
-		render([]string{"REVISION", "PERCENT", "URL"}, rows, result)
-		return nil
-	},
 }
 
 var appDeleteCmd = &cobra.Command{
@@ -1732,7 +1576,7 @@ and what went out, and the request id with --timestamps. A request that never
 reached the app has no app time, printed as "-". --source reads one kind
 alone, and --status reads the requests answered with a code (500) or a class
 (5xx). The platform keeps no client address and no query string, so a line
-never holds either. A worker and a serverless app have no request lines.
+never holds either. A worker has no request lines.
 
 --follow replays the window, then keeps printing. A restart is a gap in the
 output rather than the end of it. --until has no meaning while following and is
@@ -1821,9 +1665,6 @@ Every pod is replaced by a fresh one, one at a time, so a container that
 crashed and came back — reported as an Error on the app until its pod is
 replaced — starts clean. Not a deploy and not a reconcile: nothing is
 re-rendered, the image is unchanged and the release command does not run.
-
-A serverless app is refused: its revision is immutable, so a deploy is what
-replaces it.
 
   fpcloud app restart web`,
 	Args: cobra.MaximumNArgs(1),
@@ -1938,7 +1779,6 @@ func init() {
 	appCreateCmd.Flags().Int("replicas", 1, "Number of replicas")
 	appCreateCmd.Flags().String("ingress", "internal", "Ingress setting: 'all' (public) or 'internal' (default)")
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
-	appCreateCmd.Flags().String("mode", "always-on", "Hosting mode: 'always-on' (default) or 'serverless' (scale-to-zero)")
 	appCreateCmd.Flags().String("type", "web", "Process type: 'web' (default, serves HTTP) or 'worker' (long-running process with no port, URL or health checks). Frozen at create")
 	appCreateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; empty = image ENTRYPOINT)")
 	appCreateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; empty = image CMD), e.g. --arg -in-cluster")
@@ -1969,7 +1809,6 @@ func init() {
 	appListCmd.Flags().Bool("show-id", false, "Include the app ID column in the output")
 
 	appDeployCmd.Flags().String("image", "", "Container image (required)")
-	appDeployCmd.Flags().Bool("no-traffic", false, "Deploy without routing traffic to the new revision")
 	appDeployCmd.Flags().String("release", "", "Name this release (e.g. v1.4.0) — reported by `app version` and targetable by `app rollback`")
 	appDeployCmd.Flags().StringArray("release-command", nil, "Release command this deploy runs, set as part of it (repeatable; pass with no value to drop the release phase). Omit to keep the app's own")
 
@@ -1979,10 +1818,6 @@ func init() {
 
 	registerProbeFlags(appSetProbesCmd)
 	appSetProbesCmd.Flags().Bool("clear", false, "Drop every per-probe override, putting all three probes back on the shared health check")
-
-	appTrafficSetCmd.Flags().StringArray("revision", nil, "Revision traffic target (name=percent)")
-	appTrafficSetCmd.Flags().Bool("to-latest", false, "Route 100% traffic to the latest revision")
-	appTrafficCmd.AddCommand(appTrafficSetCmd)
 
 	appDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
@@ -1996,9 +1831,9 @@ func init() {
 	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed) or requests (what it was served)")
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
-	appScaleCmd.Flags().Int32("min", 0, "Minimum replicas — serverless is always 0 (scale-to-zero)")
-	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas (serverless mode)")
-	appScaleCmd.Flags().Int32("replicas", 1, "Fixed replica count (always-on mode)")
+	appScaleCmd.Flags().Int32("min", 0, "Minimum number of replicas")
+	appScaleCmd.Flags().Int32("max", 10, "Maximum number of replicas")
+	appScaleCmd.Flags().Int32("replicas", 1, "Fixed replica count")
 	appScaleCmd.Flags().String("cpu", "500m", "CPU limit (e.g. 500m, 1)")
 	appScaleCmd.Flags().String("memory", "512Mi", "Memory limit (e.g. 512Mi, 1Gi)")
 
@@ -2006,7 +1841,6 @@ func init() {
 
 	appUpdateCmd.Flags().String("display-name", "", "New cosmetic display name (the frozen app name is unchanged)")
 	appUpdateCmd.Flags().String("slug", "", "Set the vanity URL slug (<slug>.<tenant-domain>); pass --slug \"\" to clear it back to the derived host (always-on apps)")
-	appUpdateCmd.Flags().String("mode", "", "New hosting mode: 'always-on' or 'serverless'")
 	appUpdateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; pass with no value to clear back to the image ENTRYPOINT)")
 	appUpdateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; pass with no value to clear back to the image CMD)")
 	appUpdateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; pass with no value to drop the release phase)")
@@ -2018,7 +1852,7 @@ func init() {
 
 	appCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpgradeCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appRevisionsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appTrafficCmd, appDeploymentsCmd, appExecCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpgradeCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appDeploymentsCmd, appExecCmd)
 	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
 	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)

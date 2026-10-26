@@ -41,8 +41,8 @@ func TestHTTPLinesSeparateQuietFromUnknown(t *testing.T) {
 		httpLines(&client.HTTPLoad{Window: "6h", Step: "1m", Covered: "6h", Requests: &client.HTTPStatusCounts{}}, nil))
 	assert.Equal(t, []string{"http    nothing recorded over 1w"},
 		httpLines(&client.HTTPLoad{Window: "1w", Step: "1h", Covered: "0s", Requests: &client.HTTPStatusCounts{}}, nil))
-	assert.Equal(t, []string{"http    not measured: a serverless app is not served through the edge"},
-		httpLines(&client.HTTPLoad{Window: "1h", Step: "1m", Unmeasured: "serverless"}, nil))
+	assert.Equal(t, []string{"http    not measured: a worker app is not served through the edge"},
+		httpLines(&client.HTTPLoad{Window: "1h", Step: "1m", Unmeasured: "worker"}, nil))
 	assert.Equal(t, []string{"http    not read — prometheus unreachable"},
 		httpLines(nil, []client.UncheckedStatus{{Check: "http", Error: "prometheus unreachable"}}))
 	assert.Nil(t, httpLines(nil, nil))
@@ -74,7 +74,7 @@ func TestHTTPLinesDrawTheSeries(t *testing.T) {
 func TestProjectStatusRendersHTTPUnderAppsAndWebsites(t *testing.T) {
 	s := &client.ProjectStatus{
 		Project: client.StatusProject{Name: "demo", Namespace: "acme-demo", Egress: "open"},
-		Apps: []client.AppStatus{{Name: "api", Mode: "always-on", Status: "running", Desired: 1, Ready: 1,
+		Apps: []client.AppStatus{{Name: "api", Status: "running", Desired: 1, Ready: 1,
 			Load: &client.Load{Window: "1h", Step: "1m", Covered: "1h"},
 			HTTP: &client.HTTPLoad{Window: "1h", Step: "1m", Covered: "1h", Requests: &client.HTTPStatusCounts{Total: 3, C2xx: 3}},
 		}},

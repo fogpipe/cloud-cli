@@ -38,11 +38,11 @@ func TestLoadLinesRenderCPUThenMemoryAgainstTheLimit(t *testing.T) {
 
 }
 
-// An axis with no sample is a measured nothing — a serverless app scaled to
-// zero — and reads idle; an app with no load block under a load read is the
+// An axis with no sample is a measured nothing, an app with no running pod,
+// and reads idle; an app with no load block under a load read is the
 // store not answering, and the line says what the unchecked entry says.
 func TestLoadLinesSeparateIdleFromUnread(t *testing.T) {
-	idle := client.AppStatus{Name: "web", Mode: "serverless", Load: &client.Load{Window: "6h", Step: "1m", Covered: "6h"}}
+	idle := client.AppStatus{Name: "web", Load: &client.Load{Window: "6h", Step: "1m", Covered: "6h"}}
 	assert.Equal(t, []string{"cpu     idle over 6h", "memory  idle over 6h"}, loadLines(idle.Load, "app scale x", false, nil))
 
 	unknown := client.AppStatus{Name: "web", Load: &client.Load{Window: "1w", Step: "1h", Covered: "0s"}}
@@ -69,7 +69,7 @@ func TestFormatMillicoresSpeaksLikeADeclaredLimit(t *testing.T) {
 func TestProjectStatusRendersLoadUnderTheApp(t *testing.T) {
 	s := &client.ProjectStatus{
 		Project: client.StatusProject{Name: "demo", Namespace: "acme-demo", Egress: "open"},
-		Apps: []client.AppStatus{{Name: "api", Mode: "always-on", Status: "running", Desired: 1, Ready: 1, Load: &client.Load{
+		Apps: []client.AppStatus{{Name: "api", Status: "running", Desired: 1, Ready: 1, Load: &client.Load{
 			Window: "1h", Step: "1m", Covered: "1h",
 			CPU:    &client.LoadAxis{Avg: 10, Peak: 48, Limit: 250},
 			Memory: &client.LoadAxis{Avg: 80 << 20, Peak: 91 << 20, Limit: 256 << 20},
@@ -79,7 +79,7 @@ func TestProjectStatusRendersLoadUnderTheApp(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	var row int
 	for i, l := range lines {
-		if strings.Contains(l, "api ") && strings.Contains(l, "always-on") {
+		if strings.Contains(l, "api ") && strings.Contains(l, "1/1") {
 			row = i
 		}
 	}

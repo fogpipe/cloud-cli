@@ -54,8 +54,8 @@ per replica, the peak, and the limit the app declared; --percentile adds that
 level between the two. --window is spelled like a Prometheus duration (30m,
 6h, 3d, 2w), five minutes to a year: up to a day it is read from the metrics
 store at one-minute steps, beyond that from the hourly record the platform
-keeps, and the line says when the record covers less than was asked. A
-serverless app with no pod in the window reads idle. Without --load the
+keeps, and the line says when the record covers less than was asked. An
+app with no pod in the window reads idle. Without --load the
 document carries no load and no metrics read is made. --suggestions adds the
 limit each reading argues for (cpu from the percentile with headroom, memory
 from the peak) as the command that sets it, once a day of the window is
@@ -70,8 +70,8 @@ record holds nothing for reads "·", never idle.
 edge served it over the same window: the count by status class with the 5xx
 codes apart (502, 503 and 504 can be the edge failing to reach the app), bytes
 in and out, and p50, p95 and p99 of the app's time and the whole request's.
-A latency past the edge's top bucket prints as above it (">10s"). A serverless
-app and a worker are not served through the edge and say so; --series draws
+A latency past the edge's top bucket prints as above it (">10s"). A worker
+is not served through the edge and says so; --series draws
 the requests of each step.
 
 Checks that could not run are listed rather than dropped: a report is only
@@ -342,7 +342,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			hints = append(hints, moving)
 		}
 		appRows = append(appRows, statusRow{
-			cells:   []string{a.Name, a.Mode, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
+			cells:   []string{a.Name, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
 			details: append(loadLines(a.Load, "app scale "+a.Name, suggestions, s.Unchecked), httpLines(a.HTTP, unreadHTTP(s, a.Load != nil || a.HTTP != nil))...),
 			notes:   problemNotes(a.Problems),
 			hints:   hints,
@@ -357,7 +357,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 				len(was.Problems) != len(a.Problems)),
 		})
 	}
-	b.WriteString(renderStatusSection("APPS", []string{"MODE", "STATUS", "RELEASE", "IMAGE", "AGE", "CONFIG"}, appRows))
+	b.WriteString(renderStatusSection("APPS", []string{"STATUS", "RELEASE", "IMAGE", "AGE", "CONFIG"}, appRows))
 
 	dbRows := make([]statusRow, 0, len(s.Databases))
 	for _, d := range s.Databases {
@@ -527,8 +527,6 @@ func appReadiness(a client.AppStatus) string {
 			mutedStyle.Render(fmt.Sprintf(" %d/%d", r.Updated, r.Desired))
 	}
 	switch {
-	case a.Mode == "serverless" && a.Ready == 0:
-		return label + mutedStyle.Render(" 0 (idle)")
 	case a.Desired > 0 && a.Ready < a.Desired:
 		return label + lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired))
 	case a.Desired > 0:

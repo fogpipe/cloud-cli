@@ -115,7 +115,7 @@ var capacityAxisLabels = map[string]string{
 // named prints as the API spells it.
 var capacityUnmeasuredWords = map[string]string{
 	"job": "jobs", "runner": "runners", "volume": "volumes",
-	"serverless": "serverless apps", "s3_api": "the S3 API",
+	"s3_api": "the S3 API",
 }
 
 func capacityAxisLabel(axis string) string {
