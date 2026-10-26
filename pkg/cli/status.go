@@ -526,6 +526,11 @@ func appReadiness(a client.AppStatus) string {
 		return lipgloss.NewStyle().Foreground(colorInfo).Render("↻ rolling out") +
 			mutedStyle.Render(fmt.Sprintf(" %d/%d", r.Updated, r.Desired))
 	}
+	// Asleep is zero of zero by the app's own choice; the counts would read as
+	// an outage, so the cell says since when instead.
+	if a.AsleepSince != nil {
+		return label + mutedStyle.Render(" since "+humanizeSince(*a.AsleepSince)) + scaleBounds(a)
+	}
 	switch {
 	case a.Desired > 0 && a.Ready < a.Desired:
 		return label + lipgloss.NewStyle().Foreground(colorWarning).Render(fmt.Sprintf(" %d/%d", a.Ready, a.Desired)) + scaleBounds(a)

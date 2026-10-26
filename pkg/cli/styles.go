@@ -98,6 +98,11 @@ func renderStatus(status string) string {
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("✗ " + status)
 	case "stopped":
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("○ " + status)
+	// Asleep is an app at zero by its own min_scale, woken by its next request:
+	// quiet like stopped, since nothing is wrong, and distinct from it, since
+	// nothing is needed to bring it back.
+	case "asleep":
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("◌ " + status)
 	case "not_provisioned":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
 	case "pending", "provisioning", "invited", "unchecked":
