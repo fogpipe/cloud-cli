@@ -17,12 +17,13 @@ type Project struct {
 	Status         string `json:"status"` // active, suspended, deleting
 	Namespace      string `json:"namespace"`
 	Egress         string `json:"egress"`
-	// CallerRole is the caller's own effective role on the project, org
-	// inheritance included: what the caller may grant up to (ADR-283 §3).
-	// Omitted when the caller holds none.
-	CallerRole string    `json:"caller_role,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// CallerPermissions is every permission the caller holds on the project,
+	// organization inheritance included, flattened from every role: what a
+	// client draws its offers from, never from a refused request. Omitted when
+	// the caller holds none.
+	CallerPermissions []string  `json:"caller_permissions,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // CreateProjectRequest is the request body for creating a project.
@@ -1328,6 +1329,10 @@ type Organization struct {
 	// operator's reads of every org.
 	Role        string `json:"role,omitempty"`
 	BillingRole string `json:"billing_role,omitempty"`
+	// CallerPermissions is every permission the caller holds on the
+	// organization itself, flattened from every role, on the same reads Role
+	// is set on. Omitted when the caller holds none.
+	CallerPermissions []string `json:"caller_permissions,omitempty"`
 
 	// The org's resource ceiling, shared by every project it owns. A project
 	// carries no ceiling of its own: a tenant decides how many projects it has,
@@ -1511,9 +1516,6 @@ type ServiceAccount struct {
 	// App is the app this account is the identity of (ADR-283); empty for an
 	// account created on its own, for CI or tooling.
 	App string `json:"app,omitempty"`
-	// CallerRole is the caller's own effective role on the account's scope,
-	// so a client offers only the grants the caller may make.
-	CallerRole string `json:"caller_role,omitempty"`
 	// Bindings is everything the account holds: its project and organization
 	// roles and the resources handed to it (ADR-284). Set on a single read.
 	Bindings []*IAMBinding `json:"bindings,omitempty"`
