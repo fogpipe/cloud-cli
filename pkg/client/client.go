@@ -2860,6 +2860,20 @@ func (c *Client) DeleteServiceAccountKey(ctx context.Context, saID, keyID string
 
 // --- IAM Binding methods ---
 
+// ListRoles reads the role catalogue: every role a binding may name, with its
+// permissions and the kinds it is holdable on. The same for every caller.
+func (c *Client) ListRoles(ctx context.Context) (*RoleCatalog, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/iam/roles", nil)
+	if err != nil {
+		return nil, err
+	}
+	var catalog RoleCatalog
+	if err := c.do(httpReq, &catalog); err != nil {
+		return nil, err
+	}
+	return &catalog, nil
+}
+
 // SetIAMBinding creates an IAM binding on a project.
 func (c *Client) SetIAMBinding(ctx context.Context, projectID string, req SetIAMBindingRequest) (*IAMBinding, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/iam", req)

@@ -395,10 +395,12 @@ var iamSetCmd = &cobra.Command{
 	Use:   "set",
 	Short: "Set an IAM binding on the project, or hand a resource to a member",
 	Long: `Grant a role on the current project, or with --resource hand one of its
-resources to a member: a database or a bucket as its user, a secret as its
-reader. Handing a resource over needs what reading its credential needs:
-write on the database, administration of the bucket, write on the project
-for a secret.`,
+resources to a member: database.user on a database, bucket.user on a bucket,
+secret.reader on a secret. ` + "`fpcloud iam roles`" + ` lists every role, what
+it carries and where it is held. A member may hold several roles on one
+target; granting adds one and never replaces another. Handing a resource over
+needs what reading its credential needs: database.connect on the database,
+bucket.keys on the bucket, secret.write on the secret.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := requireProject()
 		if err != nil {
@@ -411,9 +413,9 @@ for a secret.`,
 
 		if role == "" {
 			if resource == "" {
-				return fmt.Errorf("--role is required (owner, editor, viewer)")
+				return fmt.Errorf("--role is required; `fpcloud iam roles` lists them")
 			}
-			return fmt.Errorf("--role is required (user on a database or a bucket, reader on a secret)")
+			return fmt.Errorf("--role is required (database.user, bucket.user or secret.reader)")
 		}
 		if member == "" {
 			return fmt.Errorf("--member is required (user:<email> or serviceAccount:<email>)")
@@ -510,6 +512,57 @@ With --resource, list who is handed one of the project's resources instead.`,
 			})
 		}
 		render(headers, rows, bindings)
+		return nil
+	},
+}
+
+var iamRolesCmd = &cobra.Command{
+	Use:   "roles [role]",
+	Short: "List the roles a binding may name, or one role's permissions",
+	Long: `The platform's role catalogue: a role is a named set of permissions, and a
+binding holds one role for a member on an organization, a project, or a
+resource in a project. The three scope roles are derived from each
+permission's level (viewer reads, editor also writes, owner also administers
+and reads the bill); the others list exactly what they carry. Name a role to
+see its permissions.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := getClient()
+		var catalog *client.RoleCatalog
+		var err error
+		withSpinner("Fetching the role catalogue...", func() {
+			catalog, err = c.ListRoles(cmd.Context())
+		})
+		if err != nil {
+			return err
+		}
+		if len(args) == 1 {
+			for _, r := range catalog.Roles {
+				if r.Name != args[0] {
+					continue
+				}
+				what := map[string]string{}
+				for _, p := range catalog.Permissions {
+					what[p.Name] = p.What
+				}
+				pairs := [][]string{{"Role", r.Name}, {"Held on", strings.Join(r.HoldableOn, ", ")}, {"Description", r.Description}}
+				for _, p := range r.Permissions {
+					pairs = append(pairs, []string{p, what[p]})
+				}
+				if isStructured(rootCmd.Flag("output").Value.String()) {
+					return renderData(r)
+				}
+				fmt.Println(renderInfoBox("Role "+r.Name, pairs))
+				return nil
+			}
+			return fmt.Errorf("%q is not a role; `fpcloud iam roles` lists them", args[0])
+		}
+		headers := []string{"ROLE", "HELD ON", "PERMISSIONS", "DESCRIPTION"}
+		var rows [][]string
+		for _, r := range catalog.Roles {
+			rows = append(rows, []string{r.Name, strings.Join(r.HoldableOn, ", "), fmt.Sprint(len(r.Permissions)), r.Description})
+		}
+		render(headers, rows, catalog)
 		return nil
 	},
 }
@@ -640,13 +693,14 @@ func init() {
 	rootCmd.AddCommand(saCmd)
 
 	// IAM commands
-	iamSetCmd.Flags().String("role", "", "Role to grant (owner, editor, viewer; user on a database or a bucket, reader on a secret)")
+	iamSetCmd.Flags().String("role", "", "Role to grant; `fpcloud iam roles` lists them")
 	iamSetCmd.Flags().String("member", "", "Member in format type:email (user:a@b.com or serviceAccount:sa@proj.cloud.fogpipe.com)")
 	iamSetCmd.Flags().String("resource", "", "Hand a resource to the member instead of granting a project role: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
 	iamListCmd.Flags().String("resource", "", "List who is handed a resource: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
 	iamRemoveCmd.Flags().String("resource", "", "The resource the binding is held on: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
 	iamCmd.AddCommand(iamSetCmd)
 	iamCmd.AddCommand(iamListCmd)
+	iamCmd.AddCommand(iamRolesCmd)
 	iamCmd.AddCommand(iamRemoveCmd)
 	rootCmd.AddCommand(iamCmd)
 }

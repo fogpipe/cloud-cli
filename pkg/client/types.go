@@ -1541,9 +1541,11 @@ type ServiceAccountKey struct {
 	ExpiresAt        *string `json:"expires_at,omitempty"`
 }
 
-// IAMBinding is a role held by a member on a resource. On an organization or
-// a project the role is owner, editor or viewer; on a database or a bucket it
-// is `user` and on a secret `reader`, the one role each kind admits (ADR-284).
+// IAMBinding is a role held by a member on a target: an organization, a
+// project, or a resource in a project. The role is one of the catalogue's
+// (ListRoles): a scope role such as owner, editor or viewer, or a fine role
+// such as database.user, held on its resource or on a scope. A member may
+// hold several roles on one target, each its own binding.
 type IAMBinding struct {
 	ID           string `json:"id"`
 	ResourceType string `json:"resource_type"` // organization, project, database, bucket, secret
@@ -1553,6 +1555,34 @@ type IAMBinding struct {
 	MemberType   string `json:"member_type"`
 	Member       string `json:"member"`
 	CreatedAt    string `json:"created_at"`
+}
+
+// RoleCatalog is what GET /api/v1/iam/roles serves: every role with its
+// permissions and the kinds of target it is holdable on, and every permission
+// with its level. The platform defines the roles; nothing here is a tenant's
+// to change.
+type RoleCatalog struct {
+	Roles       []Role          `json:"roles"`
+	Permissions []PermissionDef `json:"permissions"`
+}
+
+// Role is one catalogue role: its name, what it carries, and where a binding
+// of it may be held (organization, project, app, database, bucket, secret).
+type Role struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+	HoldableOn  []string `json:"holdable_on"`
+}
+
+// PermissionDef is one permission, `kind.verb`, with the level the three
+// scope roles are derived from: read is in viewer, write in editor as well,
+// administrate in owner alone, and a permission with no level is in none of
+// them and reaches a holder only through a role that lists it.
+type PermissionDef struct {
+	Name  string `json:"name"`
+	Level string `json:"level,omitempty"`
+	What  string `json:"what"`
 }
 
 // OrgMember represents a member of an organization.
