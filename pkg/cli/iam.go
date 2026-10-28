@@ -398,9 +398,9 @@ var iamSetCmd = &cobra.Command{
 resources to a member: database.user on a database, bucket.user on a bucket,
 secret.reader on a secret. ` + "`fpcloud iam roles`" + ` lists every role, what
 it carries and where it is held. A member may hold several roles on one
-target; granting adds one and never replaces another. Handing a resource over
-needs what reading its credential needs: database.connect on the database,
-bucket.keys on the bucket, secret.write on the secret.`,
+target; granting adds one and never replaces another. Granting, a role or a
+resource alike, needs iam.set on the project and everything the role carries;
+a grant never exceeds the granter. An app's own identity grants nothing.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := requireProject()
 		if err != nil {
