@@ -248,6 +248,9 @@ func storeAPIKey(ctx context.Context, apiKey string) error {
 		return fmt.Errorf("could not reach %s to verify the key (%w) — nothing was changed; retry when the API is reachable", apiURL, err)
 	}
 	cfg.APIKey = apiKey
+	if err := clearStorageCreds(); err != nil {
+		return fmt.Errorf("clear the cached object-store credential: %w", err)
+	}
 	if err := saveConfig(cfg); err != nil {
 		return err
 	}
@@ -291,6 +294,15 @@ var logoutCmd = &cobra.Command{
 			cleared = append(cleared, "browser session ("+tokenPath+")")
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("remove cached login token: %w", err)
+		}
+
+		// The object-store credential is read for the identity and cached
+		// beside its login; it goes with the login.
+		if credsDir := storageCredsWriteDir(); dirExists(credsDir) {
+			if err := clearStorageCreds(); err != nil {
+				return fmt.Errorf("remove cached object-store credential: %w", err)
+			}
+			cleared = append(cleared, "object-store credential ("+credsDir+")")
 		}
 
 		if len(cleared) == 0 {
@@ -386,6 +398,11 @@ func runLogin(ctx context.Context, port int, account string) error {
 		Expiry:       tok.Expiry,
 	}); err != nil {
 		return err
+	}
+	// The object-store credential is the identity's: whoever signs
+	// in next reads their own, never the last person's.
+	if err := clearStorageCreds(); err != nil {
+		return fmt.Errorf("clear the cached object-store credential: %w", err)
 	}
 	fmt.Println()
 	fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
@@ -534,4 +551,9 @@ func init() {
 // horizon from now.
 func tokenNeedsRefresh(exp, now time.Time, horizon time.Duration) bool {
 	return now.After(exp.Add(-horizon))
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

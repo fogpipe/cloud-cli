@@ -1886,17 +1886,17 @@ func (c *Client) GetBucketCredentials(ctx context.Context, id string) (*BucketCr
 	return &creds, nil
 }
 
-// MintBucketSessionCredentials mints an expiring S3 credential for this
-// caller's own data-plane traffic, carrying whatever the caller may already do
-// to the bucket's objects. This — not CreateBucketKey — is how a client reaches
-// the S3 plane: a scoped key is a durable credential handed to someone else, and
-// creating one is bucket administration (ADR-074).
-func (c *Client) MintBucketSessionCredentials(ctx context.Context, id string) (*BucketSessionCredentials, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/buckets/"+id+"/credentials", nil)
+// GetS3Credentials reads the caller's own object-store credential: the one key
+// the store holds for the identity, carrying per bucket what its bindings
+// grant. This — not CreateBucketKey — is how a client
+// reaches the S3 plane: a scoped key is a durable credential handed to someone
+// else, and creating one is bucket administration.
+func (c *Client) GetS3Credentials(ctx context.Context) (*S3Credentials, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth/credentials/s3", nil)
 	if err != nil {
 		return nil, err
 	}
-	var creds BucketSessionCredentials
+	var creds S3Credentials
 	if err := c.do(httpReq, &creds); err != nil {
 		return nil, err
 	}

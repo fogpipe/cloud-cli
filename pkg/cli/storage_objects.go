@@ -144,38 +144,47 @@ func addFilterFlags(cmd *cobra.Command) *[]filterRule {
 
 // --- credential acquisition + caching ---------------------------------------
 
-// cachedS3Creds is the on-disk session credential + endpoint for a bucket,
-// stored under <stateDir>/storage/<bucketID>.json (mode 0600). It expires, so
-// what is cached here is worth little for long — and the file is the only place
-// the secret ever lands.
+// cachedS3Creds is the on-disk object-store credential of the signed-in
+// identity: the one key the store holds for it, carrying per bucket
+// what its bindings grant, stored under <stateDir>/storage/identity.json (mode
+// 0600). It follows the login it belongs to — written beside the token and
+// cleared with it — and expires on its own, so the file is worth little for
+// long; it is the only place the secret ever lands.
 type cachedS3Creds struct {
 	AccessKeyID     string    `json:"access_key_id"`
 	SecretAccessKey string    `json:"secret_access_key"`
-	Endpoint        string    `json:"endpoint"`
-	Region          string    `json:"region"`
-	BucketName      string    `json:"bucket_name"`
 	ExpiresAt       time.Time `json:"expires_at"`
 }
 
-// credsExpiryMargin is how long a cached credential must still be good for to be
-// reused. A transfer started against a credential expiring in seconds fails
-// mid-flight instead of at the first call, so the margin buys the whole command
-// rather than its first request.
-const credsExpiryMargin = 2 * time.Minute
+// credsExpiryMargin is how long a cached credential must still be good for to
+// be reused. The API renews the key whenever less than half its twelve hours
+// remain, so a credential inside its last hour is one the API could not renew
+// (the store was refusing writes), and reading it again costs one request and
+// says how long it still reads.
+const credsExpiryMargin = time.Hour
 
-// storageCredsWriteDir is where a freshly minted credential is cached — the
-// directory the CLI writes state into, so a bucket key follows the login that
-// minted it rather than leaking into $HOME from a repo-local identity.
+// storageCredsWriteDir is where a credential is cached — the directory the CLI
+// writes state into, so the key follows the login that read it rather than
+// leaking into $HOME from a repo-local identity.
 func storageCredsWriteDir() string {
 	return filepath.Join(stateDir(), "storage")
 }
 
-func storageCredsPath(bucketID string) string {
-	return statePath(filepath.Join("storage", bucketID+".json"))
+func storageCredsPath() string {
+	return statePath(filepath.Join("storage", "identity.json"))
 }
 
-func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
-	data, err := os.ReadFile(storageCredsPath(bucketID))
+// clearStorageCreds forgets the cached credential, on logout because the key is
+// the identity's, and on login because the next identity is not the last.
+func clearStorageCreds() error {
+	if err := os.RemoveAll(storageCredsWriteDir()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func loadCachedS3Creds() (*cachedS3Creds, bool) {
+	data, err := os.ReadFile(storageCredsPath())
 	if err != nil {
 		return nil, false
 	}
@@ -183,7 +192,7 @@ func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, false
 	}
-	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" || creds.Endpoint == "" || creds.BucketName == "" {
+	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
 		return nil, false
 	}
 	if time.Now().Add(credsExpiryMargin).After(creds.ExpiresAt) {
@@ -192,7 +201,7 @@ func loadCachedS3Creds(bucketID string) (*cachedS3Creds, bool) {
 	return &creds, true
 }
 
-func saveCachedS3Creds(bucketID string, creds *cachedS3Creds) error {
+func saveCachedS3Creds(creds *cachedS3Creds) error {
 	dir := storageCredsWriteDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -201,44 +210,26 @@ func saveCachedS3Creds(bucketID string, creds *cachedS3Creds) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, bucketID+".json"), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, "identity.json"), data, 0o600)
 }
 
-// mintS3Creds mints a fresh expiring session credential for the bucket and
-// caches it until it expires.
+// fetchS3Creds reads the identity's credential from the API and caches it.
 //
-// It asks for no particular permissions: the credential carries whatever the
-// caller may already do to the bucket's objects (ADR-074), so a read-only member
+// It asks for nothing in particular: the key carries whatever the caller's
+// bindings already grant on every bucket they reach, so a viewer
 // gets a read-only credential rather than a refusal, and shipping a site needs
 // no more than the role that may change what it serves.
-func mintS3Creds(ctx context.Context, c *client.Client, bucketID string) (*cachedS3Creds, error) {
-	session, err := c.MintBucketSessionCredentials(ctx, bucketID)
+func fetchS3Creds(ctx context.Context, c *client.Client) (*cachedS3Creds, error) {
+	s3creds, err := c.GetS3Credentials(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("mint session credential: %w", err)
+		return nil, fmt.Errorf("read the object-store credential: %w", err)
 	}
 	creds := &cachedS3Creds{
-		AccessKeyID:     session.AccessKeyID,
-		SecretAccessKey: session.SecretAccessKey,
-		Endpoint:        session.Endpoint,
-		Region:          session.Region,
-		BucketName:      session.Bucket,
-		ExpiresAt:       session.ExpiresAt,
+		AccessKeyID:     s3creds.AccessKeyID,
+		SecretAccessKey: s3creds.SecretAccessKey,
+		ExpiresAt:       s3creds.Expiration,
 	}
-	if creds.BucketName == "" {
-		if b, err := c.GetBucket(ctx, bucketID); err == nil {
-			creds.BucketName = b.Name
-			if creds.Endpoint == "" {
-				creds.Endpoint = b.Endpoint
-			}
-			if creds.Region == "" {
-				creds.Region = b.Region
-			}
-		}
-	}
-	if creds.Endpoint == "" {
-		return nil, fmt.Errorf("bucket has no S3 endpoint configured (object storage not provisioned yet)")
-	}
-	_ = saveCachedS3Creds(bucketID, creds)
+	_ = saveCachedS3Creds(creds)
 	return creds, nil
 }
 
@@ -248,25 +239,39 @@ type remote struct {
 	bucket string
 }
 
-// bucketS3Client resolves bucketRef to a bucket id, reuses cached creds (or
-// mints fresh ones), and builds a path-style SigV4 s3.Client pointed at Garage.
-// forceRefresh drops the cache first so an auth failure can re-mint.
+// bucketS3Client resolves bucketRef to a bucket, reads where the bucket is,
+// reuses the cached identity credential (or reads a fresh one), and builds a
+// path-style SigV4 s3.Client pointed at the store. forceRefresh drops the
+// cache first so an auth failure can re-read a credential whose grants moved.
 func bucketS3Client(ctx context.Context, c *client.Client, bucketRef string, forceRefresh bool) (*s3.Client, string, error) {
 	bucketID, err := resolveBucketID(c, bucketRef)
 	if err != nil {
 		return nil, "", err
 	}
-	if forceRefresh {
-		_ = os.Remove(storageCredsPath(bucketID))
+	b, err := c.GetBucket(ctx, bucketID)
+	if err != nil {
+		return nil, "", fmt.Errorf("read bucket: %w", err)
 	}
-	creds, ok := loadCachedS3Creds(bucketID)
+	if b.Endpoint == "" {
+		return nil, "", fmt.Errorf("bucket has no S3 endpoint configured (object storage not provisioned yet)")
+	}
+	// The store addresses a bucket by its global alias; the name is
+	// what a row from before aliases carries.
+	name := b.GlobalAlias
+	if name == "" {
+		name = b.Name
+	}
+	if forceRefresh {
+		_ = os.Remove(storageCredsPath())
+	}
+	creds, ok := loadCachedS3Creds()
 	if !ok {
-		creds, err = mintS3Creds(ctx, c, bucketID)
+		creds, err = fetchS3Creds(ctx, c)
 		if err != nil {
 			return nil, "", err
 		}
 	}
-	region := creds.Region
+	region := b.Region
 	if region == "" {
 		region = "garage"
 	}
@@ -281,12 +286,12 @@ func bucketS3Client(ctx context.Context, c *client.Client, bucketRef string, for
 	if err != nil {
 		return nil, "", err
 	}
-	endpoint := creds.Endpoint
+	endpoint := b.Endpoint
 	cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.BaseEndpoint = &endpoint
 		o.UsePathStyle = true // Garage is path-style
 	})
-	return cli, creds.BucketName, nil
+	return cli, name, nil
 }
 
 // isS3AuthError reports whether err is an S3 authentication/authorization

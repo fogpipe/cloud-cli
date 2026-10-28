@@ -168,7 +168,7 @@ func TestEveryStateFileFollowsTheLocalDir(t *testing.T) {
 		{"config.yaml", filepath.Join(stateDir(), "config.yaml")},
 		{"oidc-token.json", filepath.Join(stateDir(), "oidc-token.json")},
 		{"version-check.json", filepath.Join(stateDir(), "version-check.json")},
-		{filepath.Join("storage", "b.json"), filepath.Join(storageCredsWriteDir(), "b.json")},
+		{filepath.Join("storage", "identity.json"), filepath.Join(storageCredsWriteDir(), "identity.json")},
 	} {
 		if want := filepath.Join(local, tc.name); tc.got != want {
 			t.Errorf("%s writes to %q, want %q", tc.name, tc.got, want)

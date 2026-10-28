@@ -1055,19 +1055,15 @@ type BucketCredentials struct {
 	Note            string `json:"note,omitempty"`
 }
 
-// BucketSessionCredentials is an expiring S3 credential minted for the caller's
-// own data-plane traffic (ADR-074). It carries the caller's own permissions on
-// the bucket — CanWrite is false for a caller that may only read — and stops
-// working at ExpiresAt without anything having to revoke it.
-type BucketSessionCredentials struct {
-	Bucket          string    `json:"bucket"`
-	Endpoint        string    `json:"endpoint"`
-	Region          string    `json:"region"`
-	AccessKeyID     string    `json:"access_key_id"`
-	SecretAccessKey string    `json:"secret_access_key"`
-	CanRead         bool      `json:"can_read"`
-	CanWrite        bool      `json:"can_write"`
-	ExpiresAt       time.Time `json:"expires_at"`
+// S3Credentials is the object-store credential of the caller's identity: the
+// one key the store holds for it, carrying per bucket what the identity's
+// bindings grant. The field names are the AWS container-credentials contract,
+// so an SDK pointed at the route reads it unchanged; Token is always empty.
+type S3Credentials struct {
+	AccessKeyID     string    `json:"AccessKeyId"`
+	SecretAccessKey string    `json:"SecretAccessKey"`
+	Token           string    `json:"Token"`
+	Expiration      time.Time `json:"Expiration"`
 }
 
 // ObjectInfo is a single stored object in the in-browser object browser (#268).
