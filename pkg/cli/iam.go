@@ -406,8 +406,9 @@ var iamGrantCmd = &cobra.Command{
 	Short: "Grant a role on the project, the organization, or a resource",
 	Long: `Grant a role to a member on the current project, or with --on on the
 organization or on one of the project's resources: database.user on a
-database, bucket.user on a bucket, secret.reader on a secret. ` + "`fpcloud iam roles`" + `
-lists every role, what it carries and where it is held. A member may hold
+database, bucket.reader or bucket.user on a bucket, secret.reader on a
+secret. ` + "`fpcloud iam roles`" + ` lists every role, what it carries and where it
+is held. A member may hold
 several roles on one target; granting adds one and never replaces another.
 Granting needs iam.set on the scope and everything the role carries; a grant
 never exceeds the granter, and an app's own identity grants nothing.`,
