@@ -373,30 +373,6 @@ type SetBudgetRequest struct {
 	Thresholds []int  `json:"thresholds,omitempty"`
 }
 
-// BillingBinding grants a billing role on an org (#114). A SEPARATE axis from
-// the resource roles — an org owner without one of these cannot see the bill.
-type BillingBinding struct {
-	ID         string    `json:"id"`
-	OrgID      string    `json:"org_id"`
-	MemberType string    `json:"member_type"`
-	Member     string    `json:"member"`
-	Role       string    `json:"role"` // billing.viewer, billing.admin
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-// Billing roles (#114).
-const (
-	BillingViewer = "billing.viewer"
-	BillingAdmin  = "billing.admin"
-)
-
-// GrantBillingBindingRequest grants a billing role to a member.
-type GrantBillingBindingRequest struct {
-	Member     string `json:"member"`
-	MemberType string `json:"member_type,omitempty"`
-	Role       string `json:"role"`
-}
-
 // UpdateProjectRequest is the request body for updating a project.
 type UpdateProjectRequest struct {
 	DisplayName string `json:"display_name,omitempty"`
@@ -1550,13 +1526,19 @@ type ServiceAccountKey struct {
 // hold several roles on one target, each its own binding.
 type IAMBinding struct {
 	ID           string `json:"id"`
-	ResourceType string `json:"resource_type"` // organization, project, database, bucket, secret
+	ResourceType string `json:"resource_type"` // organization, project, app, database, bucket, secret
 	ResourceID   string `json:"resource_id"`
 	ResourceName string `json:"resource_name"` // what the id names, filled by the server on every read; empty once the resource is gone
-	Role         string `json:"role"`
-	MemberType   string `json:"member_type"`
-	Member       string `json:"member"`
-	CreatedAt    string `json:"created_at"`
+	// Resource is `<kind>/<id>` when the binding is held on a resource rather
+	// than on the scope the list was read at; empty on a scope's own row.
+	Resource string `json:"resource,omitempty"`
+	// Inherited marks an organization's row in a project's list: it reaches
+	// the project and is managed on the organization.
+	Inherited  bool   `json:"inherited,omitempty"`
+	Role       string `json:"role"`
+	MemberType string `json:"member_type"`
+	Member     string `json:"member"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // RoleCatalog is what GET /api/v1/iam/roles serves: every role with its
@@ -1786,6 +1768,10 @@ type SetIAMBindingRequest struct {
 	Role       string `json:"role"`
 	MemberType string `json:"member_type"`
 	Member     string `json:"member"`
+	// Resource hands a resource in the scope to the member instead of
+	// granting a role on the scope: `<kind>/<id>`, a database, bucket or
+	// secret of the project, or an organization's own secret.
+	Resource string `json:"resource,omitempty"`
 }
 
 // APIError represents an error response from the API.

@@ -49,7 +49,7 @@ var saCreateCmd = &cobra.Command{
 			{"Status", renderStatus(sa.Status)},
 		}))
 		fmt.Println(mutedStyle.Render("It holds nothing yet. Grant it a role with:"))
-		fmt.Println(mutedStyle.Render("  fpcloud iam set --member serviceAccount:" + sa.Email + " --role viewer"))
+		fmt.Println(mutedStyle.Render("  fpcloud iam grant --member serviceAccount:" + sa.Email + " --role viewer"))
 		return nil
 	},
 }
@@ -132,7 +132,7 @@ var saCreateOrgCmd = &cobra.Command{
 			{"Status", renderStatus(sa.Status)},
 		}))
 		fmt.Println(mutedStyle.Render("It holds nothing yet. Grant it a role with:"))
-		fmt.Println(mutedStyle.Render("  fpcloud iam set --member serviceAccount:" + sa.Email + " --role viewer"))
+		fmt.Println(mutedStyle.Render("  fpcloud iam grant --member serviceAccount:" + sa.Email + " --role viewer"))
 		return nil
 	},
 }
@@ -316,29 +316,41 @@ var iamCmd = &cobra.Command{
 	Short: "Manage IAM bindings",
 }
 
-// accessResource is a resource a binding is held on, named on the command
-// line as <kind>/<name>: a database, a bucket or a secret in the current
-// project. Resolved to its id here, since every access route is by id.
-type accessResource struct {
-	Kind, Name, ID string
+// bindingTarget is what a binding is held on, named on the command line with
+// --on: "organization", or a database, bucket or secret as <kind>/<name>,
+// resolved to its id here since the wire carries ids. Absent, the target is
+// the current project.
+type bindingTarget struct {
+	Org      bool   // the organization itself
+	Resource string // <kind>/<id> for a resource, "" for a scope
+	Label    string // what to print: "organization", "project" or <kind>/<name>
 }
 
-func resolveAccessResource(c *client.Client, ref string) (*accessResource, error) {
-	kind, name, ok := strings.Cut(ref, "/")
-	if !ok || kind == "" || name == "" {
-		return nil, fmt.Errorf("--resource names a database, a bucket or a secret as <kind>/<name>, e.g. database/maindb")
+func resolveBindingTarget(c *client.Client, on string) (*bindingTarget, error) {
+	if on == "" {
+		return &bindingTarget{Label: "project"}, nil
 	}
-	r := &accessResource{Kind: kind, Name: name}
+	if on == "organization" {
+		return &bindingTarget{Org: true, Label: "organization"}, nil
+	}
+	kind, name, ok := strings.Cut(on, "/")
+	if !ok || kind == "" || name == "" {
+		return nil, fmt.Errorf("--on is organization, or a database, bucket or secret as <kind>/<name>, e.g. database/maindb")
+	}
+	var id string
 	var err error
 	switch kind {
 	case "database":
-		r.ID, err = resolveDatabaseID(c, name)
+		id, err = resolveDatabaseID(c, name)
 	case "bucket":
-		r.ID, err = resolveBucketID(c, name)
+		id, err = resolveBucketID(c, name)
 	case "secret":
 		var sec *client.Secret
 		if sec, err = resolveSecret(context.Background(), c, name); err == nil {
-			r.ID = sec.ID
+			id = sec.ID
+			if sec.Scope == "organization" {
+				return &bindingTarget{Org: true, Resource: "secret/" + id, Label: "secret/" + name}, nil
+			}
 		}
 	default:
 		return nil, fmt.Errorf("a binding is held on a database, a bucket or a secret, not on a %s", kind)
@@ -346,37 +358,35 @@ func resolveAccessResource(c *client.Client, ref string) (*accessResource, error
 	if err != nil {
 		return nil, err
 	}
-	return r, nil
+	return &bindingTarget{Resource: kind + "/" + id, Label: on}, nil
 }
 
-func (r *accessResource) set(ctx context.Context, c *client.Client, req client.SetIAMBindingRequest) (*client.IAMBinding, error) {
-	switch r.Kind {
-	case "database":
-		return c.SetDatabaseAccess(ctx, r.ID, req)
-	case "bucket":
-		return c.SetBucketAccess(ctx, r.ID, req)
+// parseMember splits user:<email> or serviceAccount:<email>.
+func parseMember(member string) (memberType, address string, err error) {
+	memberType, address, ok := strings.Cut(member, ":")
+	if !ok || memberType == "" || address == "" {
+		return "", "", fmt.Errorf("--member is user:<email> or serviceAccount:<email>")
 	}
-	return c.SetSecretAccess(ctx, r.ID, req)
+	return memberType, address, nil
 }
 
-func (r *accessResource) list(ctx context.Context, c *client.Client) ([]*client.IAMBinding, error) {
-	switch r.Kind {
-	case "database":
-		return c.ListDatabaseAccess(ctx, r.ID)
-	case "bucket":
-		return c.ListBucketAccess(ctx, r.ID)
+// listBindings reads the bindings of the scope a target is in.
+func listBindings(ctx context.Context, c *client.Client, t *bindingTarget, orgID, projectID string) ([]*client.IAMBinding, error) {
+	if t.Org {
+		return c.ListOrgIAMBindings(ctx, orgID)
 	}
-	return c.ListSecretAccess(ctx, r.ID)
+	return c.ListIAMBindings(ctx, projectID)
 }
 
-func (r *accessResource) remove(ctx context.Context, c *client.Client, bindingID string) error {
-	switch r.Kind {
-	case "database":
-		return c.RemoveDatabaseAccess(ctx, r.ID, bindingID)
-	case "bucket":
-		return c.RemoveBucketAccess(ctx, r.ID, bindingID)
+// scopeIDs resolves the scope a target needs: the organization when the
+// target is the organization or one of its secrets, else the current project.
+func scopeIDs(cmd *cobra.Command, t *bindingTarget) (orgID, projectID string, err error) {
+	if t.Org {
+		orgID, err = resolveOrgID(cmd)
+		return orgID, "", err
 	}
-	return c.RemoveSecretAccess(ctx, r.ID, bindingID)
+	projectID, err = requireProject()
+	return "", projectID, err
 }
 
 // accessRows renders bindings the way `iam list` and every `get` do.
@@ -391,74 +401,53 @@ func accessRows(bindings []*client.IAMBinding) string {
 	return strings.Join(parts, ", ")
 }
 
-var iamSetCmd = &cobra.Command{
-	Use:   "set",
-	Short: "Set an IAM binding on the project, or hand a resource to a member",
-	Long: `Grant a role on the current project, or with --resource hand one of its
-resources to a member: database.user on a database, bucket.user on a bucket,
-secret.reader on a secret. ` + "`fpcloud iam roles`" + ` lists every role, what
-it carries and where it is held. A member may hold several roles on one
-target; granting adds one and never replaces another. Granting, a role or a
-resource alike, needs iam.set on the project and everything the role carries;
-a grant never exceeds the granter. An app's own identity grants nothing.`,
+var iamGrantCmd = &cobra.Command{
+	Use:   "grant",
+	Short: "Grant a role on the project, the organization, or a resource",
+	Long: `Grant a role to a member on the current project, or with --on on the
+organization or on one of the project's resources: database.user on a
+database, bucket.user on a bucket, secret.reader on a secret. ` + "`fpcloud iam roles`" + `
+lists every role, what it carries and where it is held. A member may hold
+several roles on one target; granting adds one and never replaces another.
+Granting needs iam.set on the scope and everything the role carries; a grant
+never exceeds the granter, and an app's own identity grants nothing.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := requireProject()
+		role, _ := cmd.Flags().GetString("role")
+		member, _ := cmd.Flags().GetString("member")
+		on, _ := cmd.Flags().GetString("on")
+		if role == "" {
+			return fmt.Errorf("--role is required; `fpcloud iam roles` lists them")
+		}
+		memberType, address, err := parseMember(member)
 		if err != nil {
 			return err
 		}
-
-		role, _ := cmd.Flags().GetString("role")
-		member, _ := cmd.Flags().GetString("member")
-		resource, _ := cmd.Flags().GetString("resource")
-
-		if role == "" {
-			if resource == "" {
-				return fmt.Errorf("--role is required; `fpcloud iam roles` lists them")
-			}
-			return fmt.Errorf("--role is required (database.user, bucket.user or secret.reader)")
-		}
-		if member == "" {
-			return fmt.Errorf("--member is required (user:<email> or serviceAccount:<email>)")
-		}
-
-		parts := strings.SplitN(member, ":", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("member must be in format type:email (e.g. user:a@b.com or serviceAccount:sa@proj.cloud.fogpipe.com)")
-		}
-
 		c := getClient()
-		req := client.SetIAMBindingRequest{Role: role, MemberType: parts[0], Member: parts[1]}
-		var binding *client.IAMBinding
-		if resource != "" {
-			r, err := resolveAccessResource(c, resource)
-			if err != nil {
-				return err
-			}
-			withSpinner("Handing "+r.Kind+" "+r.Name+" over...", func() {
-				binding, err = r.set(cmd.Context(), c, req)
-			})
-			if err != nil {
-				return err
-			}
-			fmt.Println(renderInfoBox("Access Granted", [][]string{
-				{"Binding ID", binding.ID},
-				{"Resource", r.Kind + "/" + r.Name},
-				{"Role", binding.Role},
-				{"Member", binding.MemberType + ":" + binding.Member},
-			}))
-			return nil
+		target, err := resolveBindingTarget(c, on)
+		if err != nil {
+			return err
 		}
-		withSpinner("Setting IAM binding...", func() {
-			binding, err = c.SetIAMBinding(cmd.Context(), projectID, req)
+		req := client.SetIAMBindingRequest{Role: role, MemberType: memberType, Member: address, Resource: target.Resource}
+		orgID, projectID, err := scopeIDs(cmd, target)
+		if err != nil {
+			return err
+		}
+		var binding *client.IAMBinding
+		withSpinner("Granting...", func() {
+			if target.Org {
+				binding, err = c.SetOrgIAMBinding(cmd.Context(), orgID, req)
+			} else {
+				binding, err = c.SetIAMBinding(cmd.Context(), projectID, req)
+			}
 		})
 		if err != nil {
 			return err
 		}
-
-		fmt.Println(renderInfoBox("IAM Binding Set", [][]string{
+		fmt.Println(renderInfoBox("Granted", [][]string{
 			{"Binding ID", binding.ID},
 			{"Role", binding.Role},
 			{"Member", binding.MemberType + ":" + binding.Member},
+			{"On", target.Label},
 		}))
 		return nil
 	},
@@ -466,50 +455,33 @@ a grant never exceeds the granter. An app's own identity grants nothing.`,
 
 var iamListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List everyone who can reach a project, org roles included",
-	Long: `List everyone who can reach a project: the roles granted on it, and the
-organization's, which every project inherits. SCOPE says which one granted a
-role. An organization role is removed with ` + "`fpcloud org remove`" + `.
-With --resource, list who is handed one of the project's resources instead.`,
+	Short: "List every binding that reaches the project, or the organization",
+	Long: `List everyone who can reach the current project: the roles granted on it, the
+resources in it handed to a member (ON names which), and the organization's
+roles, which every project inherits (SCOPE organization). With --on
+organization, list the organization's own bindings instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := requireProject()
+		on, _ := cmd.Flags().GetString("on")
+		if on != "" && on != "organization" {
+			return fmt.Errorf("--on takes organization here; a resource's holders are the rows naming it in the project list")
+		}
+		c := getClient()
+		target, _ := resolveBindingTarget(c, on)
+		orgID, projectID, err := scopeIDs(cmd, target)
 		if err != nil {
 			return err
 		}
-
-		c := getClient()
 		var bindings []*client.IAMBinding
-		if resource, _ := cmd.Flags().GetString("resource"); resource != "" {
-			r, err := resolveAccessResource(c, resource)
-			if err != nil {
-				return err
-			}
-			withSpinner("Fetching who is handed "+r.Kind+" "+r.Name+"...", func() {
-				bindings, err = r.list(cmd.Context(), c)
-			})
-			if err != nil {
-				return err
-			}
-		} else {
-			withSpinner("Fetching IAM bindings...", func() {
-				bindings, err = c.ListIAMBindings(cmd.Context(), projectID)
-			})
-			if err != nil {
-				return err
-			}
+		withSpinner("Fetching bindings...", func() {
+			bindings, err = listBindings(cmd.Context(), c, target, orgID, projectID)
+		})
+		if err != nil {
+			return err
 		}
-
-		headers := []string{"ID", "ROLE", "MEMBER TYPE", "MEMBER", "SCOPE", "CREATED"}
+		headers := []string{"ID", "ROLE", "MEMBER", "ON", "CREATED"}
 		var rows [][]string
 		for _, b := range bindings {
-			rows = append(rows, []string{
-				b.ID,
-				b.Role,
-				b.MemberType,
-				b.Member,
-				bindingScope(b),
-				b.CreatedAt,
-			})
+			rows = append(rows, []string{b.ID, b.Role, b.MemberType + ":" + b.Member, bindingOn(b), b.CreatedAt})
 		}
 		render(headers, rows, bindings)
 		return nil
@@ -567,41 +539,61 @@ see its permissions.`,
 	},
 }
 
-var iamRemoveCmd = &cobra.Command{
-	Use:   "remove <binding-id>",
-	Short: "Remove an IAM binding, or with --resource a grant on a resource",
-	Long: `Remove a role granted on the project, or with --resource a grant held on
-one of its resources. A grant an app still mounts is refused until the app
-stops mounting it.`,
-	Args: cobra.ExactArgs(1),
+var iamRevokeCmd = &cobra.Command{
+	Use:   "revoke",
+	Short: "Revoke a role from a member on the project, the organization, or a resource",
+	Long: `Revoke one binding: the member's role on the current project, or with --on on
+the organization or on one of the project's resources. A grant an app still
+references in its env is refused until the reference goes. Revoking needs what
+granting needs.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := requireProject()
+		role, _ := cmd.Flags().GetString("role")
+		member, _ := cmd.Flags().GetString("member")
+		on, _ := cmd.Flags().GetString("on")
+		if role == "" {
+			return fmt.Errorf("--role is required: the one role to take back")
+		}
+		memberType, address, err := parseMember(member)
 		if err != nil {
 			return err
 		}
-
 		c := getClient()
-		if resource, _ := cmd.Flags().GetString("resource"); resource != "" {
-			r, err := resolveAccessResource(c, resource)
-			if err != nil {
-				return err
-			}
-			withSpinner("Revoking...", func() {
-				err = r.remove(cmd.Context(), c, args[0])
-			})
-			if err != nil {
-				return err
-			}
-			fmt.Println(successBox.Render("Access revoked."))
-			return nil
+		target, err := resolveBindingTarget(c, on)
+		if err != nil {
+			return err
 		}
-		withSpinner("Removing IAM binding...", func() {
-			err = c.RemoveIAMBinding(cmd.Context(), projectID, args[0])
+		orgID, projectID, err := scopeIDs(cmd, target)
+		if err != nil {
+			return err
+		}
+		var bindings []*client.IAMBinding
+		withSpinner("Finding the binding...", func() {
+			bindings, err = listBindings(cmd.Context(), c, target, orgID, projectID)
 		})
 		if err != nil {
 			return err
 		}
-		fmt.Println(successBox.Render("IAM binding removed."))
+		var found *client.IAMBinding
+		for _, b := range bindings {
+			if b.Inherited || b.Role != role || b.MemberType != memberType || !strings.EqualFold(b.Member, address) || b.Resource != target.Resource {
+				continue
+			}
+			found = b
+		}
+		if found == nil {
+			return fmt.Errorf("%s holds no %s on %s", member, role, target.Label)
+		}
+		withSpinner("Revoking...", func() {
+			if target.Org {
+				err = c.RemoveOrgIAMBinding(cmd.Context(), orgID, found.ID)
+			} else {
+				err = c.RemoveIAMBinding(cmd.Context(), projectID, found.ID)
+			}
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(successBox.Render("Revoked " + role + " from " + member + " on " + target.Label + "."))
 		return nil
 	},
 }
@@ -640,14 +632,14 @@ var saGetCmd = &cobra.Command{
 		}))
 		if len(sa.Bindings) == 0 {
 			fmt.Println()
-			fmt.Println(mutedStyle.Render("  Holds nothing. Grant a role with: fpcloud iam set --member serviceAccount:" + sa.Email + " --role <role>"))
+			fmt.Println(mutedStyle.Render("  Holds nothing. Grant a role with: fpcloud iam grant --member serviceAccount:" + sa.Email + " --role <role>"))
 			return nil
 		}
 		fmt.Println()
 		headers := []string{"ID", "SCOPE", "ROLE", "CREATED"}
 		var rows [][]string
 		for _, b := range sa.Bindings {
-			rows = append(rows, []string{b.ID, bindingScope(b), b.Role, b.CreatedAt})
+			rows = append(rows, []string{b.ID, bindingOn(b), b.Role, b.CreatedAt})
 		}
 		render(headers, rows, sa.Bindings)
 		return nil
@@ -693,23 +685,29 @@ func init() {
 	rootCmd.AddCommand(saCmd)
 
 	// IAM commands
-	iamSetCmd.Flags().String("role", "", "Role to grant; `fpcloud iam roles` lists them")
-	iamSetCmd.Flags().String("member", "", "Member in format type:email (user:a@b.com or serviceAccount:sa@proj.cloud.fogpipe.com)")
-	iamSetCmd.Flags().String("resource", "", "Hand a resource to the member instead of granting a project role: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
-	iamListCmd.Flags().String("resource", "", "List who is handed a resource: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
-	iamRemoveCmd.Flags().String("resource", "", "The resource the binding is held on: database/<name>, bucket/<name>, secret/<name> or secret/org/<name>")
-	iamCmd.AddCommand(iamSetCmd)
+	for _, c := range []*cobra.Command{iamGrantCmd, iamRevokeCmd} {
+		c.Flags().String("role", "", "The role; `fpcloud iam roles` lists them")
+		c.Flags().String("member", "", "user:<email> or serviceAccount:<email>")
+		c.Flags().String("on", "", "What the binding is held on: organization, or database/<name>, bucket/<name>, secret/<name>; the current project when absent")
+	}
+	iamListCmd.Flags().String("on", "", "organization, to list the organization's own bindings instead of the project's")
+	iamCmd.AddCommand(iamGrantCmd)
+	iamCmd.AddCommand(iamRevokeCmd)
 	iamCmd.AddCommand(iamListCmd)
 	iamCmd.AddCommand(iamRolesCmd)
-	iamCmd.AddCommand(iamRemoveCmd)
 	rootCmd.AddCommand(iamCmd)
 }
 
-// bindingScope names what a binding is held on: the kind and the resource's
-// name, which the server reads with the row, falling back to the id for a
-// resource that is gone.
-func bindingScope(b *client.IAMBinding) string {
-	if b.ResourceName == "" {
+// bindingOn names what a binding is held on: "project" or "organization" for a
+// scope's own row, "organization (inherited)" for an organization's row in a
+// project's list, and <kind>/<name> for a resource, the id when the name is gone.
+func bindingOn(b *client.IAMBinding) string {
+	switch {
+	case b.Inherited:
+		return "organization (inherited)"
+	case b.ResourceType == "project" || b.ResourceType == "organization":
+		return b.ResourceType
+	case b.ResourceName == "":
 		return b.ResourceType + "/" + b.ResourceID
 	}
 	return b.ResourceType + "/" + b.ResourceName

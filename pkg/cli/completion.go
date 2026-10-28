@@ -188,27 +188,6 @@ func completeServiceAccounts(cmd *cobra.Command, args []string, toComplete strin
 	return out, noFile
 }
 
-func completeIAMBindings(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	project, ok := completionProject()
-	if !ok {
-		return nil, noFile
-	}
-	ctx, cancel := compCtx()
-	defer cancel()
-	bindings, err := getClient().ListIAMBindings(ctx, project)
-	if err != nil {
-		return nil, noFile
-	}
-	out := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		if b.ResourceType != "project" {
-			continue
-		}
-		out = append(out, b.ID+"\t"+b.Member+" ("+b.Role+")")
-	}
-	return out, noFile
-}
-
 // completeDomains completes a domain argument scoped to the --app flag.
 func completeDomains(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	appID, _ := cmd.Flags().GetString("app")
@@ -283,7 +262,6 @@ func registerCompletions() {
 	}
 	// delete takes <sa-id> <key-id>; only complete service accounts for the first arg.
 	saKeysDeleteCmd.ValidArgsFunction = firstArgOnly(completeServiceAccounts)
-	iamRemoveCmd.ValidArgsFunction = completeIAMBindings
 	for _, c := range []*cobra.Command{domainRemoveCmd, domainStatusCmd} {
 		c.ValidArgsFunction = completeDomains
 	}
@@ -303,7 +281,7 @@ func registerCompletions() {
 		reg(c, "plan", fixed("starter", "standard", "premium"))
 	}
 	reg(appCreateCmd, "ingress", fixed("all", "internal"))
-	for _, c := range []*cobra.Command{orgInviteCmd, orgSetRoleCmd, iamSetCmd} {
+	for _, c := range []*cobra.Command{orgInviteCmd, orgSetRoleCmd} {
 		reg(c, "role", fixed("owner", "editor", "viewer"))
 	}
 	reg(auditLogCmd, "resource-type", fixed("project", "organization"))

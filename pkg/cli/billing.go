@@ -483,89 +483,6 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 	return nil
 }
 
-var billingRolesCmd = &cobra.Command{
-	Use:   "roles",
-	Short: "Manage who may see billing",
-}
-
-var billingRolesListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List billing role grants",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-		c := getClient()
-		var bindings []*client.BillingBinding
-		withSpinner("Fetching billing roles...", func() {
-			bindings, err = c.ListBillingBindings(cmd.Context(), orgID)
-		})
-		if err != nil {
-			return err
-		}
-		rows := make([][]string, len(bindings))
-		for i, b := range bindings {
-			rows[i] = []string{b.Member, b.MemberType, b.Role}
-		}
-		render([]string{"MEMBER", "TYPE", "ROLE"}, rows, bindings)
-		return nil
-	},
-}
-
-var billingRolesGrantCmd = &cobra.Command{
-	Use:   "grant <member>",
-	Short: "Grant a billing role (billing.viewer or billing.admin)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		role, _ := cmd.Flags().GetString("role")
-		if role != client.BillingViewer && role != client.BillingAdmin {
-			return fmt.Errorf("--role must be %s or %s", client.BillingViewer, client.BillingAdmin)
-		}
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-		memberType, _ := cmd.Flags().GetString("member-type")
-		c := getClient()
-		var b *client.BillingBinding
-		withSpinner("Granting billing role...", func() {
-			b, err = c.GrantBillingBinding(cmd.Context(), orgID, args[0], memberType, role)
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Granted %s to %s\n", b.Role, b.Member)
-		return nil
-	},
-}
-
-var billingRolesRevokeCmd = &cobra.Command{
-	Use:   "revoke <member>",
-	Short: "Revoke a member's billing role",
-	Long: `Remove a member's billing role.
-
-An organization's last billing.admin cannot be revoked: without one, nobody can
-see the bill or grant the role back. Grant someone else billing.admin first.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-		memberType, _ := cmd.Flags().GetString("member-type")
-		c := getClient()
-		withSpinner("Revoking billing role...", func() {
-			err = c.RevokeBillingBinding(cmd.Context(), orgID, args[0], memberType)
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Revoked billing access for %s\n", args[0])
-		return nil
-	},
-}
-
 var billingBudgetCmd = &cobra.Command{
 	Use:   "budget",
 	Short: "Set a spend target and get told when you approach it",
@@ -686,18 +603,12 @@ func init() {
 	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
 	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
 
-	billingRolesGrantCmd.Flags().String("role", "", "billing.viewer or billing.admin (required)")
-	billingRolesGrantCmd.Flags().String("member-type", "", "user (default) or serviceAccount")
-	billingRolesRevokeCmd.Flags().String("member-type", "", "user (default) or serviceAccount")
-
-	billingRolesCmd.AddCommand(billingRolesListCmd, billingRolesGrantCmd, billingRolesRevokeCmd)
-
 	billingBudgetSetCmd.Flags().String("amount", "", "Target spend for the period, e.g. 250 (required)")
 	billingBudgetSetCmd.Flags().String("currency", "", "Currency (default EUR)")
 	billingBudgetSetCmd.Flags().IntSlice("alert-at", nil, "Percentages to alert at (default 50,90,100)")
 	billingBudgetCmd.AddCommand(billingBudgetShowCmd, billingBudgetSetCmd, billingBudgetUnsetCmd)
 
 	billingPricesCmd.Flags().Bool("published", false, "Show the public price list rather than your org's own rates")
-	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingRolesCmd, billingBudgetCmd)
+	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingBudgetCmd)
 	rootCmd.AddCommand(billingCmd)
 }

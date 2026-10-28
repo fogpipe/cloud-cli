@@ -963,47 +963,6 @@ func (c *Client) GetInvoice(ctx context.Context, orgID, invoiceID string) (*Invo
 	return &inv, nil
 }
 
-// ListBillingBindings returns an org's billing role grants.
-func (c *Client) ListBillingBindings(ctx context.Context, orgID string) ([]*BillingBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/bindings", nil)
-	if err != nil {
-		return nil, err
-	}
-	var bindings []*BillingBinding
-	if err := c.do(httpReq, &bindings); err != nil {
-		return nil, err
-	}
-	return bindings, nil
-}
-
-// GrantBillingBinding grants a billing role to a member. Requires billing.admin.
-func (c *Client) GrantBillingBinding(ctx context.Context, orgID, member, memberType, role string) (*BillingBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/billing/bindings",
-		GrantBillingBindingRequest{Member: member, MemberType: memberType, Role: role})
-	if err != nil {
-		return nil, err
-	}
-	var b BillingBinding
-	if err := c.do(httpReq, &b); err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
-
-// RevokeBillingBinding removes a member's billing role. The server refuses to
-// remove an org's last billing admin.
-func (c *Client) RevokeBillingBinding(ctx context.Context, orgID, member, memberType string) error {
-	path := "/api/v1/orgs/" + orgID + "/billing/bindings/" + url.PathEscape(member)
-	if memberType != "" {
-		path += "?member_type=" + url.QueryEscape(memberType)
-	}
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, path, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
 // GetBudget returns an org's budget and the threshold crossings recorded against
 // it. Requires a billing role; a nil Budget means none is set.
 func (c *Client) GetBudget(ctx context.Context, orgID string) (*BudgetView, error) {
@@ -2874,7 +2833,8 @@ func (c *Client) ListRoles(ctx context.Context) (*RoleCatalog, error) {
 	return &catalog, nil
 }
 
-// SetIAMBinding creates an IAM binding on a project.
+// SetIAMBinding grants a role on a project, or with Resource hands a database,
+// bucket or secret of the project to the member.
 func (c *Client) SetIAMBinding(ctx context.Context, projectID string, req SetIAMBindingRequest) (*IAMBinding, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/iam", req)
 	if err != nil {
@@ -2887,7 +2847,9 @@ func (c *Client) SetIAMBinding(ctx context.Context, projectID string, req SetIAM
 	return &binding, nil
 }
 
-// ListIAMBindings lists all IAM bindings for a project.
+// ListIAMBindings lists every binding that reaches a project: its own rows,
+// those on resources in it (carrying Resource), and the organization's,
+// marked Inherited.
 func (c *Client) ListIAMBindings(ctx context.Context, projectID string) ([]*IAMBinding, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/iam", nil)
 	if err != nil {
@@ -2900,119 +2862,47 @@ func (c *Client) ListIAMBindings(ctx context.Context, projectID string) ([]*IAMB
 	return bindings, nil
 }
 
-// RemoveIAMBinding removes an IAM binding from a project.
+// SetOrgIAMBinding grants a role on an organization, or with Resource hands
+// one of the organization's own secrets to the member.
+func (c *Client) SetOrgIAMBinding(ctx context.Context, orgID string, req SetIAMBindingRequest) (*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/iam", req)
+	if err != nil {
+		return nil, err
+	}
+	var binding IAMBinding
+	if err := c.do(httpReq, &binding); err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+// ListOrgIAMBindings lists every binding held on an organization and on its
+// own secrets, each of the latter carrying Resource.
+func (c *Client) ListOrgIAMBindings(ctx context.Context, orgID string) ([]*IAMBinding, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/iam", nil)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []*IAMBinding
+	if err := c.do(httpReq, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
+// RemoveOrgIAMBinding removes a binding listed by ListOrgIAMBindings.
+func (c *Client) RemoveOrgIAMBinding(ctx context.Context, orgID, bindingID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/iam/"+bindingID, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
+// RemoveIAMBinding removes a binding listed by ListIAMBindings that is not
+// inherited: one on the project or on a resource in it.
 func (c *Client) RemoveIAMBinding(ctx context.Context, projectID, bindingID string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/projects/"+projectID+"/iam/"+bindingID, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
-// --- Resource access (ADR-284): who is handed a database, a bucket or a
-// secret. One role per kind — `user` on a database or a bucket, `reader` on a
-// secret — held by a user or a service account, granted by whoever may read
-// the credential anywhere else, listed on the resource and revoked by id.
-
-// SetDatabaseAccess grants a member `user` on a database.
-func (c *Client) SetDatabaseAccess(ctx context.Context, databaseID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/databases/"+databaseID+"/access", req)
-	if err != nil {
-		return nil, err
-	}
-	var binding IAMBinding
-	if err := c.do(httpReq, &binding); err != nil {
-		return nil, err
-	}
-	return &binding, nil
-}
-
-// ListDatabaseAccess lists the bindings held on a database.
-func (c *Client) ListDatabaseAccess(ctx context.Context, databaseID string) ([]*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/databases/"+databaseID+"/access", nil)
-	if err != nil {
-		return nil, err
-	}
-	var bindings []*IAMBinding
-	if err := c.do(httpReq, &bindings); err != nil {
-		return nil, err
-	}
-	return bindings, nil
-}
-
-// RemoveDatabaseAccess revokes one binding held on a database.
-func (c *Client) RemoveDatabaseAccess(ctx context.Context, databaseID, bindingID string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/databases/"+databaseID+"/access/"+bindingID, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
-// SetBucketAccess grants a member `user` on a bucket.
-func (c *Client) SetBucketAccess(ctx context.Context, bucketID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/buckets/"+bucketID+"/access", req)
-	if err != nil {
-		return nil, err
-	}
-	var binding IAMBinding
-	if err := c.do(httpReq, &binding); err != nil {
-		return nil, err
-	}
-	return &binding, nil
-}
-
-// ListBucketAccess lists the bindings held on a bucket.
-func (c *Client) ListBucketAccess(ctx context.Context, bucketID string) ([]*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/buckets/"+bucketID+"/access", nil)
-	if err != nil {
-		return nil, err
-	}
-	var bindings []*IAMBinding
-	if err := c.do(httpReq, &bindings); err != nil {
-		return nil, err
-	}
-	return bindings, nil
-}
-
-// RemoveBucketAccess revokes one binding held on a bucket.
-func (c *Client) RemoveBucketAccess(ctx context.Context, bucketID, bindingID string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/access/"+bindingID, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
-// SetSecretAccess grants a member `reader` on a secret.
-func (c *Client) SetSecretAccess(ctx context.Context, secretID string, req SetIAMBindingRequest) (*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/secrets/"+secretID+"/access", req)
-	if err != nil {
-		return nil, err
-	}
-	var binding IAMBinding
-	if err := c.do(httpReq, &binding); err != nil {
-		return nil, err
-	}
-	return &binding, nil
-}
-
-// ListSecretAccess lists the bindings held on a secret.
-func (c *Client) ListSecretAccess(ctx context.Context, secretID string) ([]*IAMBinding, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/secrets/"+secretID+"/access", nil)
-	if err != nil {
-		return nil, err
-	}
-	var bindings []*IAMBinding
-	if err := c.do(httpReq, &bindings); err != nil {
-		return nil, err
-	}
-	return bindings, nil
-}
-
-// RemoveSecretAccess revokes one binding held on a secret.
-func (c *Client) RemoveSecretAccess(ctx context.Context, secretID, bindingID string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/secrets/"+secretID+"/access/"+bindingID, nil)
 	if err != nil {
 		return err
 	}
