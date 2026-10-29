@@ -1568,43 +1568,42 @@ type PermissionDef struct {
 	What  string `json:"what"`
 }
 
-// OrgMember represents a member of an organization.
+// OrgMember is one person who can reach an organization: every role they
+// hold on it, and every role they hold below it, on one of its projects or on
+// one resource in it. It is a read over their bindings; a role is granted and
+// revoked as a binding, and removing the member removes every one of them.
 type OrgMember struct {
-	ID             string `json:"id"`
-	OrganizationID string `json:"organization_id"`
-	UserID         string `json:"user_id"`
-	// Role is the org role; empty for a person who reaches the org only
-	// through Projects.
-	Role         string `json:"role"`
-	InvitedBy    string `json:"invited_by,omitempty"`
-	InvitedEmail string `json:"invited_email,omitempty"`
+	// Email is the address their bindings name: the invitation, and the
+	// account once they sign in.
+	Email    string `json:"email"`
+	UserID   string `json:"user_id,omitempty"`
+	UserName string `json:"user_name,omitempty"`
 	// Status is how far the person has got to signing in: active, invited (an
 	// account exists and its setup mail was sent), not_provisioned (no account
 	// yet), or unchecked (not read by a provisioning pass yet).
-	Status    string             `json:"status"`
-	CreatedAt string             `json:"created_at"`
-	UpdatedAt string             `json:"updated_at"`
-	UserEmail string             `json:"user_email,omitempty"`
-	UserName  string             `json:"user_name,omitempty"`
-	Projects  []OrgMemberProject `json:"projects,omitempty"`
+	Status string `json:"status"`
+	// Roles are the roles held on the organization itself, the widest scope
+	// role first; empty for a person who reaches it only through Holdings.
+	Roles []string `json:"roles"`
+	// Holdings are the roles held below the organization.
+	Holdings []OrgMemberHolding `json:"holdings"`
+	// CreatedAt is when their first binding in the organization was written.
+	CreatedAt string `json:"created_at"`
 }
 
-// OrgMemberProject is one project role an org member holds.
-type OrgMemberProject struct {
-	ProjectID string `json:"project_id"`
-	Project   string `json:"project"`
-	Role      string `json:"role"`
-}
-
-// InviteOrgMemberRequest is the request body for inviting a member to an organization.
-type InviteOrgMemberRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
-}
-
-// UpdateOrgMemberRoleRequest is the request body for updating a member's role.
-type UpdateOrgMemberRoleRequest struct {
+// OrgMemberHolding is one role a member holds below the organization: on one
+// of its projects, or on one resource in it.
+type OrgMemberHolding struct {
 	Role string `json:"role"`
+	// ResourceType is "project" for a role on a project, otherwise the kind of
+	// the resource it is held on.
+	ResourceType string `json:"resource_type"`
+	ResourceID   string `json:"resource_id"`
+	ResourceName string `json:"resource_name"`
+	// ProjectID and Project name the project the role is held in; empty for
+	// one of the organization's own secrets.
+	ProjectID string `json:"project_id,omitempty"`
+	Project   string `json:"project,omitempty"`
 }
 
 // DatabaseBackup represents a backup of a managed database.

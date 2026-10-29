@@ -281,15 +281,10 @@ func registerCompletions() {
 		reg(c, "plan", fixed("starter", "standard", "premium"))
 	}
 	reg(appCreateCmd, "ingress", fixed("all", "internal"))
-	for _, c := range []*cobra.Command{orgInviteCmd, orgSetRoleCmd} {
-		reg(c, "role", fixed("owner", "editor", "viewer"))
-	}
 	reg(auditLogCmd, "resource-type", fixed("project", "organization"))
 
 	// --org override on the org sub-commands shadows the persistent flag.
-	for _, c := range []*cobra.Command{orgInviteCmd, orgSetRoleCmd, orgRemoveCmd} {
-		reg(c, "org", completeOrgs)
-	}
+	reg(orgRemoveCmd, "org", completeOrgs)
 
 	// --app flags take an app ID.
 	for _, c := range []*cobra.Command{appDeployCmd, domainAddCmd, domainRemoveCmd, domainListCmd, domainStatusCmd, webhookSetupCmd, webhookStatusCmd, webhookRemoveCmd} {

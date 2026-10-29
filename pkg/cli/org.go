@@ -77,16 +77,25 @@ func orgRoles(o *client.Organization) string {
 }
 
 var orgMembersCmd = &cobra.Command{
-	Use:   "members [org-id]",
-	Short: "List everyone who can reach an organization",
-	Long: `List everyone who can reach an organization: those holding an org role,
-and those holding a role on one of its projects only, shown with no org role.
-PROJECTS lists the project roles each person holds.
+	Use:   "members [org]",
+	Short: "List everyone who can reach an organization, with every role each holds in it",
+	Long: `List everyone who can reach an organization: whoever holds a role on it, on
+one of its projects, or on one resource in it.
+
+ORG ROLES are the roles held on the organization itself, which reach every
+project in it. OTHER ROLES are the roles held below it, each with what it is
+held on.
 
 STATUS says how far each person has got to signing in: active (signed in),
 invited (an account exists and its setup mail was sent), not_provisioned (no
 account yet, so no mail either), or unchecked (not read by the provisioning
-pass yet, which runs every few minutes).`,
+pass yet, which runs every few minutes).
+
+A person is invited by granting them a role, on the organization or on
+anything in it:
+
+  fpcloud iam grant --member user:ana@example.com --role viewer --on organization
+  fpcloud iam grant --member user:ana@example.com --role editor --project web`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var orgID string
@@ -108,15 +117,14 @@ pass yet, which runs every few minutes).`,
 			return err
 		}
 
-		headers := []string{"USER ID", "EMAIL", "NAME", "ROLE", "PROJECTS", "STATUS"}
+		headers := []string{"EMAIL", "NAME", "ORG ROLES", "OTHER ROLES", "STATUS"}
 		var rows [][]string
 		for _, m := range members {
 			rows = append(rows, []string{
-				m.UserID,
-				m.UserEmail,
+				m.Email,
 				m.UserName,
-				renderRole(m.Role),
-				memberProjects(m.Projects),
+				renderRoles(m.Roles),
+				memberHoldings(m.Holdings),
 				renderStatus(m.Status),
 			})
 		}
@@ -125,94 +133,32 @@ pass yet, which runs every few minutes).`,
 	},
 }
 
-var orgInviteCmd = &cobra.Command{
-	Use:   "invite <email>",
-	Short: "Invite a user to your organization",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-
-		role, _ := cmd.Flags().GetString("role")
-		if role == "" {
-			role = "viewer"
-		}
-
-		email := args[0]
-		c := getClient()
-		var member *client.OrgMember
-		withSpinner("Inviting member...", func() {
-			member, err = c.InviteOrgMember(cmd.Context(), orgID, email, role)
-		})
-		if err != nil {
-			return err
-		}
-
-		statusLabel := "Invited — setup mail goes out with the next provisioning pass"
-		if member.Status == "active" {
-			statusLabel = "Added (already signed in)"
-		}
-
-		fmt.Println(renderInfoBox("Member Invited", [][]string{
-			{"Email", email},
-			{"Role", member.Role},
-			{"Status", statusLabel},
-		}))
-		return nil
-	},
-}
-
-var orgSetRoleCmd = &cobra.Command{
-	Use:   "set-role <user-id|email>",
-	Short: "Change a member's role",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		orgID, err := resolveOrgID(cmd)
-		if err != nil {
-			return err
-		}
-
-		role, _ := cmd.Flags().GetString("role")
-		if role == "" {
-			return fmt.Errorf("--role is required (owner, editor, viewer)")
-		}
-
-		userID := args[0]
-		c := getClient()
-		withSpinner("Updating role...", func() {
-			err = c.UpdateOrgMemberRole(cmd.Context(), orgID, userID, role)
-		})
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(successBox.Render(fmt.Sprintf("Updated role to %s for user %s.", role, userID)))
-		return nil
-	},
-}
-
 var orgRemoveCmd = &cobra.Command{
-	Use:   "remove <user-id|email>",
-	Short: "Remove a member, or take back an invitation nobody has redeemed yet",
-	Args:  cobra.ExactArgs(1),
+	Use:   "remove <email|user-id>",
+	Short: "Remove a person from everything they hold in an organization",
+	Long: `Remove a person from an organization: every role they hold on it, on its
+projects and on the resources in them, billing roles included, in one step.
+An invitation nobody has redeemed yet is taken back the same way, by email.
+
+The organization's last owner cannot be removed. To take back one role and
+leave the rest, revoke that binding with 'fpcloud iam revoke'.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		orgID, err := resolveOrgID(cmd)
 		if err != nil {
 			return err
 		}
 
-		userID := args[0]
+		member := args[0]
 		c := getClient()
 		withSpinner("Removing member...", func() {
-			err = c.RemoveOrgMember(cmd.Context(), orgID, userID)
+			err = c.RemoveOrgMember(cmd.Context(), orgID, member)
 		})
 		if err != nil {
 			return err
 		}
 
-		fmt.Println(successBox.Render("Member removed from organization."))
+		fmt.Println(successBox.Render(fmt.Sprintf("Removed %s and every role they held in the organization.", member)))
 		return nil
 	},
 }
@@ -269,23 +215,36 @@ func resolveOrgRef(ctx context.Context, ref string) (string, error) {
 	return "", notFoundf("org %q not found", ref)
 }
 
-func renderRole(role string) string {
-	switch role {
-	case "":
-		return mutedStyle.Render("project access only")
-	case "owner":
-		return titleStyle.Render(role)
-	case "editor":
-		return role
-	default: // viewer
-		return mutedStyle.Render(role)
+// renderRoles prints the roles a member holds on the organization, the owner
+// role marked, or says there are none.
+func renderRoles(roles []string) string {
+	if len(roles) == 0 {
+		return mutedStyle.Render("none")
 	}
+	out := make([]string, len(roles))
+	for i, r := range roles {
+		if r == "owner" {
+			out[i] = titleStyle.Render(r)
+		} else {
+			out[i] = r
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
-func memberProjects(projects []client.OrgMemberProject) string {
-	out := make([]string, len(projects))
-	for i, p := range projects {
-		out[i] = p.Project + " (" + p.Role + ")"
+// memberHoldings prints each role a member holds below the organization with
+// what it is held on: "editor on demo", "secret.reader on secret db-key (demo)".
+func memberHoldings(holdings []client.OrgMemberHolding) string {
+	out := make([]string, len(holdings))
+	for i, h := range holdings {
+		switch {
+		case h.ResourceType == "project":
+			out[i] = h.Role + " on " + h.Project
+		case h.Project != "":
+			out[i] = h.Role + " on " + h.ResourceType + " " + h.ResourceName + " (" + h.Project + ")"
+		default:
+			out[i] = h.Role + " on " + h.ResourceType + " " + h.ResourceName
+		}
 	}
 	return strings.Join(out, ", ")
 }
@@ -370,16 +329,12 @@ so one chosen under the previous org would contradict the new one. Use
 func init() {
 	// --org is inherited from the root persistent flag (default: current org from
 	// `org switch`); these commands must not shadow it with a local --org.
-	orgInviteCmd.Flags().String("role", "viewer", "Role to assign (owner, editor, viewer)")
-	orgSetRoleCmd.Flags().String("role", "", "New role (owner, editor, viewer)")
 
 	orgRenameCmd.Flags().String("name", "", "The organization's new readable name")
 	orgCmd.AddCommand(orgRenameCmd)
 	orgCmd.AddCommand(orgListCmd)
 	orgCmd.AddCommand(orgSwitchCmd)
 	orgCmd.AddCommand(orgMembersCmd)
-	orgCmd.AddCommand(orgInviteCmd)
-	orgCmd.AddCommand(orgSetRoleCmd)
 	orgCmd.AddCommand(orgRemoveCmd)
 
 	rootCmd.AddCommand(orgCmd)

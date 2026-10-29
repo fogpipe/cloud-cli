@@ -2615,7 +2615,8 @@ func (c *Client) UpdateOrgDisplayName(ctx context.Context, id, displayName strin
 	return &org, nil
 }
 
-// ListOrgMembers lists all members of an organization.
+// ListOrgMembers lists everyone who can reach an organization, with every
+// role each holds in it.
 func (c *Client) ListOrgMembers(ctx context.Context, orgID string) ([]*OrgMember, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/members", nil)
 	if err != nil {
@@ -2628,36 +2629,11 @@ func (c *Client) ListOrgMembers(ctx context.Context, orgID string) ([]*OrgMember
 	return members, nil
 }
 
-// InviteOrgMember invites a user to an organization by email.
-func (c *Client) InviteOrgMember(ctx context.Context, orgID, email, role string) (*OrgMember, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs/"+orgID+"/members", InviteOrgMemberRequest{
-		Email: email,
-		Role:  role,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var member OrgMember
-	if err := c.do(httpReq, &member); err != nil {
-		return nil, err
-	}
-	return &member, nil
-}
-
-// UpdateOrgMemberRole updates a member's role in an organization.
-func (c *Client) UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/orgs/"+orgID+"/members/"+userID, UpdateOrgMemberRoleRequest{
-		Role: role,
-	})
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
-}
-
-// RemoveOrgMember removes a member from an organization.
-func (c *Client) RemoveOrgMember(ctx context.Context, orgID, userID string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/members/"+userID, nil)
+// RemoveOrgMember removes a person from an organization: every role they hold
+// on it, on its projects and on the resources in them. member is their email
+// or, once they have signed in, their user id.
+func (c *Client) RemoveOrgMember(ctx context.Context, orgID, member string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/members/"+member, nil)
 	if err != nil {
 		return err
 	}
