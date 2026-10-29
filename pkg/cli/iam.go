@@ -365,9 +365,37 @@ func resolveBindingTarget(c *client.Client, on string) (*bindingTarget, error) {
 func parseMember(member string) (memberType, address string, err error) {
 	memberType, address, ok := strings.Cut(member, ":")
 	if !ok || memberType == "" || address == "" {
-		return "", "", fmt.Errorf("--member is user:<email> or serviceAccount:<email>")
+		return "", "", fmt.Errorf("--member is user:<email>, or serviceAccount:<email> or serviceAccount:<name>")
 	}
 	return memberType, address, nil
+}
+
+// resolveMember turns a bare service account name into its address, looked
+// up among the target scope's own accounts: the project's, or the
+// organization's for an organization target. An address, and a user, pass
+// through as given.
+func resolveMember(ctx context.Context, c *client.Client, memberType, address string, t *bindingTarget, orgID, projectID string) (string, error) {
+	if memberType != "serviceAccount" || strings.Contains(address, "@") {
+		return address, nil
+	}
+	var accounts []*client.ServiceAccount
+	var err error
+	scope := "this project"
+	if t.Org {
+		accounts, err = c.ListOrgServiceAccounts(ctx, orgID)
+		scope = "this organization"
+	} else {
+		accounts, err = c.ListServiceAccounts(ctx, projectID)
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, sa := range accounts {
+		if sa.Name == address {
+			return sa.Email, nil
+		}
+	}
+	return "", fmt.Errorf("no service account named %q in %s; name one of its own, or give the address (serviceAccount:<email>)", address, scope)
 }
 
 // listBindings reads the bindings of the scope a target is in.
@@ -428,11 +456,14 @@ never exceeds the granter, and an app's own identity grants nothing.`,
 		if err != nil {
 			return err
 		}
-		req := client.SetIAMBindingRequest{Role: role, MemberType: memberType, Member: address, Resource: target.Resource}
 		orgID, projectID, err := scopeIDs(cmd, target)
 		if err != nil {
 			return err
 		}
+		if address, err = resolveMember(cmd.Context(), c, memberType, address, target, orgID, projectID); err != nil {
+			return err
+		}
+		req := client.SetIAMBindingRequest{Role: role, MemberType: memberType, Member: address, Resource: target.Resource}
 		var binding *client.IAMBinding
 		withSpinner("Granting...", func() {
 			if target.Org {
@@ -567,6 +598,9 @@ granting needs.`,
 		if err != nil {
 			return err
 		}
+		if address, err = resolveMember(cmd.Context(), c, memberType, address, target, orgID, projectID); err != nil {
+			return err
+		}
 		var bindings []*client.IAMBinding
 		withSpinner("Finding the binding...", func() {
 			bindings, err = listBindings(cmd.Context(), c, target, orgID, projectID)
@@ -688,7 +722,7 @@ func init() {
 	// IAM commands
 	for _, c := range []*cobra.Command{iamGrantCmd, iamRevokeCmd} {
 		c.Flags().String("role", "", "The role; `fpcloud iam roles` lists them")
-		c.Flags().String("member", "", "user:<email> or serviceAccount:<email>")
+		c.Flags().String("member", "", "user:<email>, or serviceAccount:<email> or serviceAccount:<name> for one of the scope's own accounts")
 		c.Flags().String("on", "", "What the binding is held on: organization, or database/<name>, bucket/<name>, secret/<name>; the current project when absent")
 	}
 	iamListCmd.Flags().String("on", "", "organization, to list the organization's own bindings instead of the project's")
