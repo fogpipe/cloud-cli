@@ -461,6 +461,11 @@ type App struct {
 	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
 	CreatedAt           time.Time        `json:"created_at"`
 	UpdatedAt           time.Time        `json:"updated_at"`
+	// Access is everyone who reaches this resource: every binding through
+	// which a member holds a permission on it, held on the resource or on its
+	// project or organization, each with HeldOn. Set on a single read for a
+	// caller who may read bindings on it, never on a list.
+	Access []*IAMBinding `json:"access,omitempty"`
 }
 
 // ProbeOverrides lets liveness, readiness, and startup diverge from the shared
@@ -775,9 +780,10 @@ type Database struct {
 	UsedBy    []string  `json:"used_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	// Access is who may be handed this resource's credential: the bindings held
-	// on it (ADR-284), each a member and the one role the kind admits. Set on a
-	// single read, never on a list.
+	// Access is everyone who reaches this resource: every binding through
+	// which a member holds a permission on it, held on the resource or on its
+	// project or organization, each with HeldOn. Set on a single read for a
+	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
 }
 
@@ -886,9 +892,10 @@ type Bucket struct {
 	// the bucket; the endpoint and the region are plain facts on the bucket.
 	Secrets map[string]string `json:"secrets,omitempty"`
 	UsedBy  []string          `json:"used_by,omitempty"` // apps whose env references one; the reference is the bind
-	// Access is who may be handed this resource's credential: the bindings held
-	// on it (ADR-284), each a member and the one role the kind admits. Set on a
-	// single read, never on a list.
+	// Access is everyone who reaches this resource: every binding through
+	// which a member holds a permission on it, held on the resource or on its
+	// project or organization, each with HeldOn. Set on a single read for a
+	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
 }
 
@@ -1250,8 +1257,10 @@ type Secret struct {
 	UsedBy    []string  `json:"used_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	// Access is who may be handed the value: the `reader` bindings held on the
-	// secret (ADR-284). Set on a single read, never on a list.
+	// Access is everyone who reaches this resource: every binding through
+	// which a member holds a permission on it, held on the resource or on its
+	// project or organization, each with HeldOn. Set on a single read for a
+	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
 }
 
@@ -1533,7 +1542,12 @@ type IAMBinding struct {
 	Resource string `json:"resource,omitempty"`
 	// Inherited marks an organization's row in a project's list: it reaches
 	// the project and is managed on the organization.
-	Inherited  bool   `json:"inherited,omitempty"`
+	Inherited bool `json:"inherited,omitempty"`
+	// HeldOn says, in a resource's Access, where a binding that reaches the
+	// resource is held: "resource", "owner" (the database or bucket a secret
+	// is the credential of), "project" or "organization". Only a binding held
+	// on the resource is revoked there.
+	HeldOn     string `json:"held_on,omitempty"`
 	Role       string `json:"role"`
 	MemberType string `json:"member_type"`
 	Member     string `json:"member"`

@@ -419,14 +419,22 @@ func scopeIDs(cmd *cobra.Command, t *bindingTarget) (orgID, projectID string, er
 	return "", projectID, err
 }
 
-// accessRows renders bindings the way `iam list` and every `get` do.
+// accessRows renders who reaches a resource, the way every `get` does: each
+// member and role, and where it is held when that is not the resource itself.
 func accessRows(bindings []*client.IAMBinding) string {
 	if len(bindings) == 0 {
 		return mutedStyle.Render("-")
 	}
 	parts := make([]string, 0, len(bindings))
 	for _, b := range bindings {
-		parts = append(parts, b.MemberType+":"+b.Member+" ("+b.Role+")")
+		held := b.Role
+		switch b.HeldOn {
+		case "owner":
+			held += ", through " + b.ResourceType + " " + b.ResourceName
+		case "project", "organization":
+			held += ", on the " + b.HeldOn
+		}
+		parts = append(parts, b.MemberType+":"+b.Member+" ("+held+")")
 	}
 	return strings.Join(parts, ", ")
 }

@@ -586,6 +586,7 @@ var appGetCmd = &cobra.Command{
 			{"Scale", scaleDisplay(app.MinScale, app.MaxScale)},
 			{"Release Command", releaseDisplay},
 			{"Service Account", saDisplay},
+			{"Access", accessRows(app.Access)},
 		}
 		if app.Template != "" {
 			templateDisplay := fmt.Sprintf("%s %s", app.Template, app.Release)
