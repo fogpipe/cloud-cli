@@ -317,7 +317,7 @@ var iamCmd = &cobra.Command{
 }
 
 // bindingTarget is what a binding is held on, named on the command line with
-// --on: "organization", or a database, bucket or secret as <kind>/<name>,
+// --on: "organization", or an app, database, bucket or secret as <kind>/<name>,
 // resolved to its id here since the wire carries ids. Absent, the target is
 // the current project.
 type bindingTarget struct {
@@ -335,11 +335,13 @@ func resolveBindingTarget(c *client.Client, on string) (*bindingTarget, error) {
 	}
 	kind, name, ok := strings.Cut(on, "/")
 	if !ok || kind == "" || name == "" {
-		return nil, fmt.Errorf("--on is organization, or a database, bucket or secret as <kind>/<name>, e.g. database/maindb")
+		return nil, fmt.Errorf("--on is organization, or an app, database, bucket or secret as <kind>/<name>, e.g. database/maindb")
 	}
 	var id string
 	var err error
 	switch kind {
+	case "app":
+		id, err = resolveAppID(c, name)
 	case "database":
 		id, err = resolveDatabaseID(c, name)
 	case "bucket":
@@ -353,7 +355,7 @@ func resolveBindingTarget(c *client.Client, on string) (*bindingTarget, error) {
 			}
 		}
 	default:
-		return nil, fmt.Errorf("a binding is held on a database, a bucket or a secret, not on a %s", kind)
+		return nil, fmt.Errorf("a binding is held on an app, a database, a bucket or a secret, not on a %s", kind)
 	}
 	if err != nil {
 		return nil, err
@@ -433,9 +435,9 @@ var iamGrantCmd = &cobra.Command{
 	Use:   "grant",
 	Short: "Grant a role on the project, the organization, or a resource",
 	Long: `Grant a role to a member on the current project, or with --on on the
-organization or on one of the project's resources: database.user on a
-database, bucket.reader or bucket.user on a bucket, secret.reader on a
-secret. ` + "`fpcloud iam roles`" + ` lists every role, what it carries and where it
+organization or on one of the project's resources: app.deployer on an app,
+database.user on a database, bucket.reader or bucket.user on a bucket,
+secret.reader on a secret. ` + "`fpcloud iam roles`" + ` lists every role, what it carries and where it
 is held. A member may hold
 several roles on one target; granting adds one and never replaces another.
 Granting needs iam.set on the scope and everything the role carries; a grant
@@ -723,7 +725,7 @@ func init() {
 	for _, c := range []*cobra.Command{iamGrantCmd, iamRevokeCmd} {
 		c.Flags().String("role", "", "The role; `fpcloud iam roles` lists them")
 		c.Flags().String("member", "", "user:<email>, or serviceAccount:<email> or serviceAccount:<name> for one of the scope's own accounts")
-		c.Flags().String("on", "", "What the binding is held on: organization, or database/<name>, bucket/<name>, secret/<name>; the current project when absent")
+		c.Flags().String("on", "", "What the binding is held on: organization, or app/<name>, database/<name>, bucket/<name>, secret/<name>; the current project when absent")
 	}
 	iamListCmd.Flags().String("on", "", "organization, to list the organization's own bindings instead of the project's")
 	iamCmd.AddCommand(iamGrantCmd)

@@ -13,7 +13,7 @@ import (
 )
 
 // orgSecretPrefix marks an organization secret wherever a secret is named: in
-// an env reference, on this command's verbs, in `iam set --resource`.
+// an env reference, on this command's verbs, in `iam grant --on secret/<name>`.
 const orgSecretPrefix = "org/"
 
 // secretCmd is the secret store (ADR-243, ADR-287): named values in a project
