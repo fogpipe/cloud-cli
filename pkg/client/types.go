@@ -1400,8 +1400,11 @@ type AuthConfigResponse struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
-	CLIClientID           string `json:"cli_client_id"`
-	ConsoleClientID       string `json:"console_client_id"`
+	// EndSessionEndpoint ends the person's session at the issuer, so signing
+	// out of the console signs them out of the identity provider too.
+	EndSessionEndpoint string `json:"end_session_endpoint"`
+	CLIClientID        string `json:"cli_client_id"`
+	ConsoleClientID    string `json:"console_client_id"`
 }
 
 // AuthSecurityResponse is how the caller signs in, as the identity provider
