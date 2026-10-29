@@ -262,7 +262,7 @@ var projectUpdateCmd = &cobra.Command{
 
   --display-name  Change the project's cosmetic display name. The frozen name
                   (which anchors the namespace and registry path) is untouched.
-  --egress        Egress policy: 'restricted', 'https' (443 only), or 'all' (the internet on any port but 25)
+  --egress        Egress policy: 'restricted' (no internet; the platform's own API and S3 endpoint only), 'https' (443 only), or 'all' (the internet on any port but 25)
                   (open, except TCP 25 — mail goes through a relay on 587 or
                   465, never direct to MX).
 
@@ -535,9 +535,9 @@ func pickProjectFzf(fzf string, projects []*client.Project) (string, error) {
 
 func init() {
 	projectCreateCmd.Flags().Bool("use", true, "Set as current project after creation (pass --use=false to skip)")
-	projectCreateCmd.Flags().String("egress", "restricted", "Egress policy: 'restricted' (default), 'https' (443 only), or 'all' (the internet on any port but tcp 25; inside the platform the same as restricted)")
+	projectCreateCmd.Flags().String("egress", "restricted", "Egress policy: 'restricted' (default: no internet, the platform's own API and S3 endpoint only), 'https' (443 only), or 'all' (the internet on any port but tcp 25; inside the platform the same as restricted)")
 	projectUpdateCmd.Flags().String("display-name", "", "New cosmetic display name (the frozen project name is unchanged)")
-	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted', 'https' (443 only), or 'all' (the internet on any port but tcp 25; inside the platform the same as restricted)")
+	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted' (no internet, the platform's own API and S3 endpoint only), 'https' (443 only), or 'all' (the internet on any port but tcp 25; inside the platform the same as restricted)")
 	projectListCmd.Flags().Bool("apps", false, "List each project's app names instead of just the count")
 	projectDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	projectDeleteCmd.Flags().Bool("no-wait", false, "Return once the deletion is accepted, without waiting for the teardown")
