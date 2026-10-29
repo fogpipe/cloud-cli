@@ -375,9 +375,9 @@ var probeFieldNames = []string{
 
 // parseProbeSpec parses one `key=value,key=value` probe override (#453), e.g.
 // "path=/healthz,period_seconds=5". Every field is independently optional: an
-// omitted one falls back to the app's shared --health-check-* value rather than
-// to a hardcoded default, so overriding a liveness path never silently restates
-// the timing.
+// omitted one falls back to that probe's default (the health check path; the
+// --health-check-* timing for startup and readiness, liveness's own for
+// liveness), so overriding a path never silently restates the timing.
 func parseProbeSpec(flag, value string) (*client.ProbeSpec, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
@@ -424,7 +424,7 @@ func parseProbeSpec(flag, value string) (*client.ProbeSpec, error) {
 
 // probeOverridesFromFlags assembles the per-probe overrides from --liveness,
 // --readiness and --startup, returning nil when none is set (every probe then
-// uses the shared --health-check-* shorthand).
+// keeps its default: the health check path, and its timing).
 func probeOverridesFromFlags(cmd *cobra.Command) (*client.ProbeOverrides, error) {
 	liveness, _ := cmd.Flags().GetString("liveness")
 	readiness, _ := cmd.Flags().GetString("readiness")
@@ -455,10 +455,11 @@ func probeOverridesFromFlags(cmd *cobra.Command) (*client.ProbeOverrides, error)
 // registerProbeFlags declares --liveness/--readiness/--startup on a command, so
 // `app create` and `app set-probes` spell an override identically.
 func registerProbeFlags(cmd *cobra.Command) {
-	suffix := " probe override as key=value,... (fields: " + strings.Join(probeFieldNames, ", ") + "); anything left out keeps the --health-check-* value"
-	cmd.Flags().String("liveness", "", "Liveness"+suffix+", e.g. path=/healthz")
-	cmd.Flags().String("readiness", "", "Readiness"+suffix+", e.g. path=/ready,failure_threshold=2")
-	cmd.Flags().String("startup", "", "Startup"+suffix+", e.g. path=/healthz,failure_threshold=30")
+	suffix := " probe override as key=value,... (fields: " + strings.Join(probeFieldNames, ", ") + ")"
+	shared := "; anything left out keeps the --health-check-* value"
+	cmd.Flags().String("liveness", "", "Liveness"+suffix+"; a left-out path keeps --health-check-path, left-out timing keeps liveness's own default (period 60s, timeout 5s, 5 failures), e.g. path=/healthz")
+	cmd.Flags().String("readiness", "", "Readiness"+suffix+shared+", e.g. path=/ready,failure_threshold=2")
+	cmd.Flags().String("startup", "", "Startup"+suffix+shared+", e.g. path=/healthz,failure_threshold=30")
 }
 
 // securityContextFromFlags assembles a SecurityContext from the hardening flags,
@@ -779,21 +780,26 @@ var appSetRoutesCmd = &cobra.Command{
 var appSetProbesCmd = &cobra.Command{
 	Use:   "set-probes [name]",
 	Short: "Give liveness, readiness and startup their own path and timing",
-	Long: "By default all three probes share the app's --health-check-* settings, so the same " +
+	Long: "By default all three probes request the app's --health-check-path, so the same " +
 		"request decides both whether traffic reaches the app and whether the pod is killed. " +
-		"That couples them: a health path that checks a downstream means a database blip " +
-		"restarts pods that were fine.\n\n" +
+		"Startup and readiness run on the --health-check-* timing; liveness runs on its own, " +
+		"a check every 60s with a 5s timeout, restarting the pod after 5 failures in a row " +
+		"(about five minutes), so a stall shorter than that only takes the pod out of traffic. " +
+		"Sharing the path still couples them: a health path that checks a downstream means a " +
+		"long database outage restarts pods that were fine.\n\n" +
 		"Point liveness at a cheap, dependency-free path and readiness at the one that checks " +
 		"downstreams, and a blip only pulls the pod out of the load balancer until it clears.\n\n" +
-		"Each probe takes a comma-separated key=value list; any field left out keeps the " +
-		"app's shared --health-check-* value, so setting a path never means restating timing. " +
+		"Each probe takes a comma-separated key=value list; any field left out keeps its " +
+		"default (the health check path, and the timing above), so setting a path never means " +
+		"restating timing. " +
 		"Fields: " + strings.Join(probeFieldNames, ", ") + ". success_threshold applies to " +
 		"readiness only — Kubernetes requires 1 for the other two.\n\n" +
 		"Replace-in-full: the flags given are the complete set, and --clear puts all three " +
-		"back on the shared shorthand. Always-on apps only.",
+		"back on their defaults. Always-on apps only.",
 	Example: "  fpcloud app set-probes api --liveness path=/healthz\n" +
 		"  fpcloud app set-probes api --liveness path=/healthz --readiness path=/ready,failure_threshold=2\n" +
 		"  fpcloud app set-probes api --startup path=/healthz,failure_threshold=30,period_seconds=10\n" +
+		"  fpcloud app set-probes api --liveness period_seconds=10,failure_threshold=3\n" +
 		"  fpcloud app set-probes api --clear",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -806,7 +812,7 @@ var appSetProbesCmd = &cobra.Command{
 			return fmt.Errorf("--clear cannot be combined with --liveness, --readiness or --startup")
 		}
 		if !clear && probes == nil {
-			return fmt.Errorf("at least one of --liveness, --readiness or --startup is required (or --clear to put all three back on the shared health check)")
+			return fmt.Errorf("at least one of --liveness, --readiness or --startup is required (or --clear to put all three back on their defaults)")
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
