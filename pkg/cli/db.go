@@ -910,7 +910,7 @@ func init() {
 	dbCreateCmd.Flags().String("version", "", "Database major version; empty = the platform's current default")
 	dbCreateCmd.Flags().String("display-name", "", "Cosmetic label (defaults to the name)")
 	dbCreateCmd.Flags().String("cpu", "", "CPU request/limit per instance (e.g. 500m); default 250m")
-	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 1Gi")
+	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 512Mi")
 	dbCreateCmd.Flags().String("storage", "", "Persistent storage size (e.g. 20Gi); default 10Gi")
 	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (reached at the owner URL's host with -rw replaced by -pooler)")
 	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable; name or name:schema (needs Postgres 18+)")
