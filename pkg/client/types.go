@@ -2892,3 +2892,26 @@ type InstantiateTemplateRequest struct {
 	Name   string            `json:"name"`
 	Inputs map[string]string `json:"inputs,omitempty"`
 }
+
+// TemplateDeployment is what deploying a template made: the app, and beside it
+// whatever the entry needed, each named as the server named it, so a caller
+// reads the names rather than rebuilding them.
+type TemplateDeployment struct {
+	App
+	Created TemplateCreated `json:"created"`
+}
+
+// TemplateCreated names what a template deploy made beside the app: a
+// database and a bucket when the entry needs them, and the secrets it
+// generated, which belong to the app.
+type TemplateCreated struct {
+	Database *CreatedResource  `json:"database,omitempty"`
+	Bucket   *CreatedResource  `json:"bucket,omitempty"`
+	Secrets  []CreatedResource `json:"secrets"`
+}
+
+// CreatedResource names one resource a request made.
+type CreatedResource struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}

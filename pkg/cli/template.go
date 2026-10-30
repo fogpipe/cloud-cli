@@ -152,7 +152,7 @@ template get <template>" lists them.
 			inputs[k] = v
 		}
 		c := getClient()
-		var app *client.App
+		var app *client.TemplateDeployment
 		var deployErr error
 		action := func() {
 			app, deployErr = c.InstantiateTemplate(context.Background(), projectID, args[0], client.InstantiateTemplateRequest{Name: name, Inputs: inputs})
@@ -174,6 +174,9 @@ template get <template>" lists them.
 		))
 		if app.URL != "" {
 			fmt.Printf("URL:       %s\n", app.URL)
+		}
+		if made := createdBeside(app.Created); made != "" {
+			fmt.Printf("Made:      %s\n", made)
 		}
 		if t, err := c.GetTemplate(context.Background(), args[0]); err == nil && t.Notes != "" {
 			fmt.Printf("Next:      %s\n", t.Notes)
@@ -250,4 +253,20 @@ func init() {
 	templateDeployCmd.Flags().StringArray("input", nil, "an input the entry asks for, KEY=VALUE (repeatable)")
 	templateCmd.AddCommand(templateListCmd, templateGetCmd, templateDeployCmd)
 	rootCmd.AddCommand(templateCmd)
+}
+
+// createdBeside says what a template deploy made beside the app, as the
+// server named it: "database umami-db, bucket umami, secret umami-app-secret".
+func createdBeside(c client.TemplateCreated) string {
+	var made []string
+	if c.Database != nil {
+		made = append(made, "database "+c.Database.Name)
+	}
+	if c.Bucket != nil {
+		made = append(made, "bucket "+c.Bucket.Name)
+	}
+	for _, sec := range c.Secrets {
+		made = append(made, "secret "+sec.Name)
+	}
+	return strings.Join(made, ", ")
 }

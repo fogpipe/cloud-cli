@@ -1226,17 +1226,17 @@ func (c *Client) GetTemplate(ctx context.Context, name string) (*Template, error
 
 // InstantiateTemplate deploys a catalog entry into a project as an app, a
 // managed database and a bucket the project then owns outright (ADR-235).
-// It returns the app.
-func (c *Client) InstantiateTemplate(ctx context.Context, projectID, name string, req InstantiateTemplateRequest) (*App, error) {
+// It returns the app and names what was made beside it.
+func (c *Client) InstantiateTemplate(ctx context.Context, projectID, name string, req InstantiateTemplateRequest) (*TemplateDeployment, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/templates/"+name, req)
 	if err != nil {
 		return nil, err
 	}
-	var app App
-	if err := c.do(httpReq, &app); err != nil {
+	var dep TemplateDeployment
+	if err := c.do(httpReq, &dep); err != nil {
 		return nil, err
 	}
-	return &app, nil
+	return &dep, nil
 }
 
 // ScaleApp updates the scaling configuration for an app.
