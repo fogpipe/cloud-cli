@@ -1,11 +1,12 @@
 package cli
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -75,53 +76,73 @@ var appExecCmd = &cobra.Command{
 			defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 		}
 
-		return relayExec(cmd.Context(), ws, tty)
+		return relayExec(ws, os.Stdin, os.Stdout)
 	},
 }
 
-// relayExec copies stdin into the session and the container's output back out,
-// returning when the far end closes. The read side owns the return: the
-// container decides when the command is over, and stdin may legitimately never
-// reach EOF (a terminal does not).
-func relayExec(ctx context.Context, ws *websocket.Conn, tty bool) error {
+// relayExec copies stdin into the session as binary frames and the container's
+// output back out, and returns how the command ended. The read side owns the
+// return: the container decides when the command is over, and stdin may
+// legitimately never reach EOF (a terminal does not).
+//
+// Stdin reaching EOF is told to the server as an ExecControl frame, never as
+// closing the session: a caller with no input — a script, an agent, `</dev/null`
+// — is the common shape of a non-interactive run, and closing the session on
+// it raced the command's first output and won.
+// The server answers the command's end with an ExecControl carrying its exit
+// status, which becomes this process's own; a session that closes without one
+// ended before the command did, and says so.
+func relayExec(ws *websocket.Conn, stdin io.Reader, stdout io.Writer) error {
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := os.Stdin.Read(buf)
+			n, err := stdin.Read(buf)
 			if n > 0 {
 				if werr := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); werr != nil {
 					return
 				}
 			}
 			if err != nil {
-				// EOF on a piped stdin is the caller saying there is no more
-				// input, which the container should see as a closed stream.
-				_ = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				_ = ws.WriteJSON(client.ExecControl{StdinEOF: true})
 				return
 			}
 		}
 	}()
 
+	var ended *client.ExecControl
 	for {
-		_, data, err := ws.ReadMessage()
-		if len(data) > 0 {
-			if _, werr := os.Stdout.Write(data); werr != nil {
+		mt, data, err := ws.ReadMessage()
+		if err != nil {
+			switch {
+			case ended == nil:
+				return fmt.Errorf("the exec session ended before the command did: %w", err)
+			case ended.Error != "":
+				return fmt.Errorf("%s", ended.Error)
+			case ended.ExitCode != nil && *ended.ExitCode != 0:
+				return execExitError{code: *ended.ExitCode}
+			}
+			return nil
+		}
+		switch mt {
+		case websocket.TextMessage:
+			var ctl client.ExecControl
+			if jerr := json.Unmarshal(data, &ctl); jerr != nil {
+				return fmt.Errorf("unreadable control frame from the exec session: %w", jerr)
+			}
+			ended = &ctl
+		case websocket.BinaryMessage:
+			if _, werr := stdout.Write(data); werr != nil {
 				return werr
 			}
 		}
-		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				return nil
-			}
-			// The server closes with the reason when the command itself
-			// failed, so it reaches the caller rather than being swallowed.
-			if ce, ok := err.(*websocket.CloseError); ok && ce.Text != "" {
-				return fmt.Errorf("%s", ce.Text)
-			}
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
 	}
+}
+
+// execExitError is the exit status of a command run in a container. The CLI
+// exits with it, as ssh and `kubectl exec` do, so a script branches on the
+// command's own status rather than on whether the CLI managed to run it.
+type execExitError struct{ code int }
+
+func (e execExitError) Error() string {
+	return fmt.Sprintf("command exited with status %d", e.code)
 }

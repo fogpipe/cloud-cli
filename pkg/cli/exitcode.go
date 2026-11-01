@@ -3,10 +3,12 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
 	"github.com/fogpipe/cloud-cli/pkg/client"
+	"github.com/gorilla/websocket"
 )
 
 // Exit statuses. A caller branches on these, never on stderr — prose is not a
@@ -46,6 +48,10 @@ func exitCode(err error) int {
 	if errors.As(err, &nf) {
 		return exitNotFound
 	}
+	var ee execExitError
+	if errors.As(err, &ee) {
+		return ee.code
+	}
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
 		switch apiErr.StatusCode {
@@ -63,6 +69,11 @@ func exitCode(err error) int {
 	if errors.As(err, &urlErr) {
 		return exitUnavailable
 	}
+	// A streaming session (app exec, db connect) that the far end dropped.
+	var closeErr *websocket.CloseError
+	if errors.As(err, &closeErr) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return exitUnavailable
+	}
 	return exitFailure
 }
 
@@ -74,6 +85,8 @@ const exitCodeHelp = `EXIT CODES (branch on these, not on stderr):
   3  not found: the named resource does not exist; do not retry
   4  not authenticated or not allowed (401/403); fix the credential, do not retry
   5  unavailable: the control plane could not be reached or answered 429/502/503/504; retry with backoff
+fpcloud app exec exits with the command's own status once it ran, whatever the
+number; the codes above are the CLI's only when the command never ran.
 Notes: a project-level name you cannot see exits 4, not 3 — the API answers 403
 rather than disclose whether it exists. A bare command group (fpcloud project)
 prints help and exits 0; an unrecognised word under one (fpcloud project show)

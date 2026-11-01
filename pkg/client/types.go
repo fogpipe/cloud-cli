@@ -2915,3 +2915,22 @@ type CreatedResource struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+// ExecControl is the text frame of an exec session (`DialAppExec`). Binary
+// frames carry the streams — the caller's stdin one way, the container's
+// output the other — and a text frame carries the two things a stream cannot
+// say about itself: that the caller's input has ended, and how the command
+// did.
+type ExecControl struct {
+	// StdinEOF is sent by the caller once its stdin has no more input. The
+	// server closes the command's stdin and the session stays open until the
+	// command ends; it is the one frame a caller sends that is not input.
+	StdinEOF bool `json:"stdin_eof,omitempty"`
+	// ExitCode is sent by the server once the command has ended, before it
+	// closes the session. A session closed without one ended before the
+	// command did.
+	ExitCode *int `json:"exit_code,omitempty"`
+	// Error is sent by the server instead of ExitCode when the command could
+	// not be run or the stream to it broke.
+	Error string `json:"error,omitempty"`
+}
