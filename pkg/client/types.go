@@ -541,7 +541,7 @@ type CreateAppRequest struct {
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.
 	Type string `json:"type,omitempty"`
-	// EnvVars seeds the app's config store — shorthand for a SetConfig per key.
+	// EnvVars seeds the app's config store at create.
 	// Env is plain by definition (#1069); a secret reaches the app through a
 	// SecretEnv entry.
 	EnvVars map[string]string `json:"env_vars,omitempty"`
@@ -1217,12 +1217,28 @@ type SecretRef struct {
 	Path   string `json:"path,omitempty"`
 }
 
-// SetConfigRequest is the request body for setting a config value.
-type SetConfigRequest struct {
+// ConfigEntry is one env entry an UpdateConfigRequest sets: a literal Value,
+// or a SecretRef delivered as the variable or as a file the variable names.
+type ConfigEntry struct {
 	Key   string `json:"key"`
-	Value string `json:"value"`
-	// SecretRef makes the entry a reference (ADR-284 §7); Value is then empty.
+	Value string `json:"value,omitempty"`
+	// SecretRef makes the entry a reference; Value is then empty.
 	SecretRef *SecretRef `json:"secret_ref,omitempty"`
+}
+
+// UpdateConfigRequest is one change to an app's env: the entries it sets and
+// the keys it removes, applied together and rolled out once. A key named twice,
+// or an unset of a key that is not set, refuses the whole change.
+type UpdateConfigRequest struct {
+	Set   []ConfigEntry `json:"set,omitempty"`
+	Unset []string      `json:"unset,omitempty"`
+}
+
+// UpdateConfigResponse is the app's whole env after a change, with a warning
+// for each literal whose key reads like a credential's.
+type UpdateConfigResponse struct {
+	Config   []*AppConfig `json:"config"`
+	Warnings []string     `json:"warnings,omitempty"`
 }
 
 // Secret is a named secret value in a project or in an organization

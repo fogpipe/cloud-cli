@@ -21,13 +21,15 @@ var appEnvCmd = &cobra.Command{
 	Use:   "env",
 	Short: "Manage an app's environment variables",
 	Long: `Set, list and remove the environment variables an app runs with. Every
-change rolls the app onto it.
+command is one change: the variables it names are written together and the app
+rolls onto them once.
 
   fpcloud app env set web LOG_LEVEL=info
+  fpcloud app env set web S3_BUCKET=media S3_REGION=garage
   fpcloud app env set web DATABASE_URL --from-secret maindb-owner
   fpcloud app env set web STRIPE_KEY_FILE --from-secret stripe-key --path /secrets/stripe
   fpcloud app env list web
-  fpcloud app env unset web LOG_LEVEL
+  fpcloud app env unset web LOG_LEVEL S3_REGION
 
 A literal reads back in full; a reference lists the secret it names, and
 --reveal prints the secret's value instead (each read audited). A credential
@@ -39,36 +41,39 @@ resource behind it. An organization secret is referenced as org/<name>.`,
 }
 
 var appEnvSetCmd = &cobra.Command{
-	Use:   "set <app> KEY=VALUE | KEY --from-secret <secret> [--path /file]",
-	Short: "Set an environment variable, literal or from a secret",
-	Long: `Set an environment variable for an app and roll the app onto it.
+	Use:   "set <app> KEY=VALUE... | KEY --from-secret <secret> [--path /file]",
+	Short: "Set environment variables, literal or from a secret",
+	Long: `Set environment variables for an app and roll the app onto them once.
 
-KEY=VALUE sets a literal. KEY --from-secret <secret> makes the variable hold
-the secret's value; with --path the file at that path holds the value and the
-variable holds the path. A reference hands the app's identity the resource
-behind the secret: the grant is written with it when you may make it, and the
-write is refused naming the grant when you may not.`,
-	Args: cobra.ExactArgs(2),
+Each KEY=VALUE sets a literal, and every one named is one change: the app never
+starts with some of them set and not others. KEY --from-secret <secret> makes
+the variable hold the secret's value; with --path the file at that path holds
+the value and the variable holds the path. A reference hands the app's
+identity the resource behind the secret: the grant is written with it when you
+may make it, and the write is refused naming the grant when you may not.`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appRef := args[0]
 		secret, _ := cmd.Flags().GetString("from-secret")
 		path, _ := cmd.Flags().GetString("path")
 
-		var key, value string
+		var req client.UpdateConfigRequest
 		if secret != "" {
-			if strings.Contains(args[1], "=") {
-				return fmt.Errorf("--from-secret takes the variable's name alone: KEY --from-secret %s", secret)
+			if len(args) != 2 || strings.Contains(args[1], "=") {
+				return fmt.Errorf("--from-secret takes one variable's name alone: KEY --from-secret %s", secret)
 			}
-			key = args[1]
+			req.Set = []client.ConfigEntry{{Key: args[1], SecretRef: &client.SecretRef{Secret: secret, Path: path}}}
 		} else {
 			if path != "" {
 				return fmt.Errorf("--path goes with --from-secret: the file holds a secret's value")
 			}
-			parts := strings.SplitN(args[1], "=", 2)
-			if len(parts) != 2 || parts[0] == "" {
-				return fmt.Errorf("invalid format: use KEY=VALUE, or KEY --from-secret <secret>")
+			for _, arg := range args[1:] {
+				parts := strings.SplitN(arg, "=", 2)
+				if len(parts) != 2 || parts[0] == "" {
+					return fmt.Errorf("invalid format %q: use KEY=VALUE, or KEY --from-secret <secret>", arg)
+				}
+				req.Set = append(req.Set, client.ConfigEntry{Key: parts[0], Value: parts[1]})
 			}
-			key, value = parts[0], parts[1]
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -78,18 +83,11 @@ write is refused naming the grant when you may not.`,
 		if err != nil {
 			return err
 		}
-		var cfg interface{}
+		var out *client.UpdateConfigResponse
 		var setErr error
-		action := func() {
-			if secret != "" {
-				cfg, setErr = c.SetSecretEnv(context.Background(), appID, key, secret, path)
-			} else {
-				cfg, setErr = c.SetConfig(context.Background(), appID, key, value)
-			}
-		}
-
+		action := func() { out, setErr = c.UpdateConfig(context.Background(), appID, req) }
 		if !isStructured(outputFormat) {
-			withSpinner("Setting variable...", action)
+			withSpinner("Setting variables...", action)
 		} else {
 			action()
 		}
@@ -98,19 +96,30 @@ write is refused naming the grant when you may not.`,
 		}
 
 		if isStructured(outputFormat) {
-			return renderData(cfg)
+			return renderData(out)
 		}
 
-		what := fmt.Sprintf(" Variable %q set for app %s", key, appRef)
+		var what string
 		switch {
 		case secret != "" && path != "":
-			what = fmt.Sprintf(" Variable %q names %s, the file holding secret %s, for app %s", key, path, secret, appRef)
+			what = fmt.Sprintf(" Variable %q names %s, the file holding secret %s, for app %s", args[1], path, secret, appRef)
 		case secret != "":
-			what = fmt.Sprintf(" Variable %q holds secret %s for app %s", key, secret, appRef)
+			what = fmt.Sprintf(" Variable %q holds secret %s for app %s", args[1], secret, appRef)
+		case len(req.Set) == 1:
+			what = fmt.Sprintf(" Variable %q set for app %s", req.Set[0].Key, appRef)
+		default:
+			keys := make([]string, len(req.Set))
+			for i, e := range req.Set {
+				keys[i] = e.Key
+			}
+			what = fmt.Sprintf(" Variables %s set for app %s", strings.Join(keys, ", "), appRef)
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") + what,
 		))
+		for _, w := range out.Warnings {
+			fmt.Println(mutedStyle.Render("! " + w))
+		}
 		return nil
 	},
 }
@@ -217,29 +226,34 @@ func revealConfigs(ctx context.Context, c *client.Client, configs []*client.AppC
 }
 
 var appEnvUnsetCmd = &cobra.Command{
-	Use:   "unset <app> KEY",
-	Short: "Remove an environment variable",
-	Args:  cobra.ExactArgs(2),
+	Use:   "unset <app> KEY...",
+	Short: "Remove environment variables",
+	Long: `Remove environment variables from an app and roll the app once. A key that
+is not set refuses the whole change, so nothing is removed.`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appRef, key := args[0], args[1]
+		appRef, keys := args[0], args[1:]
 
 		c := getClient()
 		appID, err := resolveAppID(c, appRef)
 		if err != nil {
 			return err
 		}
-		if err := c.UnsetConfig(context.Background(), appID, key); err != nil {
+		if _, err := c.UpdateConfig(context.Background(), appID, client.UpdateConfigRequest{Unset: keys}); err != nil {
 			return err
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		if isStructured(outputFormat) {
-			return renderData(map[string]string{"status": "removed", "key": key})
+			return renderData(map[string]any{"status": "removed", "keys": keys})
 		}
 
+		what := fmt.Sprintf(" Variable %q removed from app %s", keys[0], appRef)
+		if len(keys) > 1 {
+			what = fmt.Sprintf(" Variables %s removed from app %s", strings.Join(keys, ", "), appRef)
+		}
 		fmt.Println(successBox.Render(
-			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Variable %q removed from app %s", key, appRef),
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") + what,
 		))
 		return nil
 	},

@@ -564,3 +564,33 @@ func TestProjectStatusAsksForTheSeriesWhenTold(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, asked.Encode(), "no window, no load read at all")
 }
+
+func TestClientUpdateConfigIsOneChange(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/apps/app-1/config", r.URL.Path)
+
+		var req UpdateConfigRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.Equal(t, []ConfigEntry{
+			{Key: "S3_BUCKET", Value: "media"},
+			{Key: "S3_KEY", SecretRef: &SecretRef{Secret: "media-secret-access-key"}},
+		}, req.Set)
+		assert.Equal(t, []string{"S3_REGION"}, req.Unset)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateConfigResponse{Config: []*AppConfig{{Key: "S3_BUCKET", Value: "media"}}})
+	}))
+	defer server.Close()
+
+	out, err := New(server.URL, "test-key").UpdateConfig(context.Background(), "app-1", UpdateConfigRequest{
+		Set: []ConfigEntry{
+			{Key: "S3_BUCKET", Value: "media"},
+			{Key: "S3_KEY", SecretRef: &SecretRef{Secret: "media-secret-access-key"}},
+		},
+		Unset: []string{"S3_REGION"},
+	})
+	require.NoError(t, err)
+	require.Len(t, out.Config, 1)
+	assert.Equal(t, "S3_BUCKET", out.Config[0].Key)
+}

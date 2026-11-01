@@ -2473,30 +2473,22 @@ func (c *Client) RemoveDomain(ctx context.Context, appID string, domain string) 
 	return c.do(httpReq, nil)
 }
 
-// SetConfig sets a literal env value for an app.
-func (c *Client) SetConfig(ctx context.Context, appID, key, value string) (*AppConfig, error) {
-	return c.setConfig(ctx, appID, SetConfigRequest{Key: key, Value: value})
-}
-
-// SetSecretEnv sets an env entry that references a project secret (ADR-284
-// §7): delivered as the variable, or, with path, as a file at that path the
-// variable then names. Referencing a secret hands the app's identity the
-// resource behind it; the platform writes that grant when the caller may
-// make it and refuses the entry naming the grant when the caller may not.
-func (c *Client) SetSecretEnv(ctx context.Context, appID, key, secret, path string) (*AppConfig, error) {
-	return c.setConfig(ctx, appID, SetConfigRequest{Key: key, SecretRef: &SecretRef{Secret: secret, Path: path}})
-}
-
-func (c *Client) setConfig(ctx context.Context, appID string, req SetConfigRequest) (*AppConfig, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/apps/"+appID+"/config", req)
+// UpdateConfig applies one change to an app's env: every entry it sets and
+// every key it removes are written together and the app rolls onto them once,
+// so a pod never starts on part of the change. A reference hands the app's
+// identity the resource behind its secret; the platform writes that grant when
+// the caller may make it and refuses the whole change naming the grant when the
+// caller may not. The answer is the app's env as the change left it.
+func (c *Client) UpdateConfig(ctx context.Context, appID string, req UpdateConfigRequest) (*UpdateConfigResponse, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/apps/"+appID+"/config", req)
 	if err != nil {
 		return nil, err
 	}
-	var cfg AppConfig
-	if err := c.do(httpReq, &cfg); err != nil {
+	var out UpdateConfigResponse
+	if err := c.do(httpReq, &out); err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+	return &out, nil
 }
 
 // ListConfig lists all config values for an app.
@@ -2510,15 +2502,6 @@ func (c *Client) ListConfig(ctx context.Context, appID string) ([]*AppConfig, er
 		return nil, err
 	}
 	return configs, nil
-}
-
-// UnsetConfig removes a config value from an app.
-func (c *Client) UnsetConfig(ctx context.Context, appID, key string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/apps/"+appID+"/config/"+key, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(httpReq, nil)
 }
 
 // SetupWebhook configures a GitHub webhook for auto-deploy on an app.
