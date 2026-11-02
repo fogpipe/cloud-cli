@@ -963,6 +963,20 @@ func (c *Client) GetInvoice(ctx context.Context, orgID, invoiceID string) (*Invo
 	return &inv, nil
 }
 
+// GetOrgCredit returns the credit an org holds for the month in progress
+// Requires a billing role; a 404 means the month is not covered.
+func (c *Client) GetOrgCredit(ctx context.Context, orgID string) (*OrgCredit, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/credit", nil)
+	if err != nil {
+		return nil, err
+	}
+	var credit OrgCredit
+	if err := c.do(httpReq, &credit); err != nil {
+		return nil, err
+	}
+	return &credit, nil
+}
+
 // GetBudget returns an org's budget and the threshold crossings recorded against
 // it. Requires a billing role; a nil Budget means none is set.
 func (c *Client) GetBudget(ctx context.Context, orgID string) (*BudgetView, error) {

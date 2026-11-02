@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -131,9 +134,8 @@ on the project, and is priced at the organization's real rates.
 		// (ADR-276), so the total stays what the usage cost, and what the
 		// credit took off and what is due are said beneath it.
 		if len(report.Credits) > 0 {
-			for _, cr := range report.Credits {
-				fmt.Printf("  Credit %s: %s of %s %s applied\n",
-					cr.PeriodStart.UTC().Format("2006-01"), cr.Applied, cr.Allowance, report.Currency)
+			for _, line := range creditLines(report, time.Now()) {
+				fmt.Println("  " + line)
 			}
 			fmt.Printf("  Amount due: %s %s\n", report.AmountDue, report.Currency)
 		}
@@ -155,6 +157,62 @@ on the project, and is priced at the organization's real rates.
 		fmt.Println(mutedStyle.Render("  Computed from usage so far, not an invoice."))
 		return nil
 	},
+}
+
+// creditLines says how each month's credit stands: what of it the
+// month's usage consumed, and for the month in progress what is left, how
+// many days of the month remain, and when it runs out at the month's pace
+// where the server could say. Over the allowance it is fully used, and the
+// amount due beneath says what is invoiced above it. An unused part lapses
+// with its month, so a past month says only what was applied.
+func creditLines(report *client.CostReport, now time.Time) []string {
+	now = now.UTC()
+	lines := make([]string, 0, len(report.Credits))
+	for _, cr := range report.Credits {
+		line := fmt.Sprintf("Credit %s: %s of %s %s applied",
+			cr.PeriodStart.UTC().Format("2006-01"), formatAmount(cr.Applied), formatAmount(cr.Allowance), report.Currency)
+		end := cr.PeriodStart.UTC().AddDate(0, 1, 0)
+		if now.Before(cr.PeriodStart.UTC()) || !now.Before(end) {
+			lines = append(lines, line)
+			continue
+		}
+		left := amountLeft(cr.Allowance, cr.Applied)
+		days := daysLeft(now, end)
+		switch {
+		case left.Sign() <= 0:
+			line += ", fully used"
+		default:
+			line += fmt.Sprintf(", %s left, %s", left.FloatString(2), days)
+			if cr.RunsOutAt != nil {
+				line += fmt.Sprintf("; at this month's pace it runs out around %s", cr.RunsOutAt.UTC().Format("2 Jan"))
+			}
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// amountLeft is the allowance less what was applied, exact.
+func amountLeft(allowance, applied string) *big.Rat {
+	a, ok := new(big.Rat).SetString(allowance)
+	if !ok {
+		return new(big.Rat)
+	}
+	b, ok := new(big.Rat).SetString(applied)
+	if !ok {
+		return new(big.Rat)
+	}
+	return a.Sub(a, b)
+}
+
+// daysLeft counts the days of the month still to come, the day in progress
+// included, in UTC: the billing month is a UTC month.
+func daysLeft(now, end time.Time) string {
+	days := int(math.Ceil(end.Sub(now).Hours() / 24))
+	if days <= 1 {
+		return "last day of the month (UTC)"
+	}
+	return fmt.Sprintf("%d days left in the month (UTC)", days)
 }
 
 // costResourceID finds the one resource a name means among the rows of a read
@@ -430,16 +488,105 @@ MONTH is the month it was used in.
 		if err != nil {
 			return err
 		}
-		rows := make([][]string, len(invoices))
-		for i, inv := range invoices {
-			rows[i] = []string{
-				inv.PeriodStart.UTC().Format("2006-01"),
-				inv.Status,
-				inv.Total + " " + inv.Currency,
-				inv.ID,
+		headers, rows := invoiceRows(invoices)
+		render(headers, rows, invoices)
+		return nil
+	},
+}
+
+// invoiceRows lists the invoices, and when any carries a credit
+// says per month what the usage cost, what the credit took off and what is
+// due, since under a credit the total alone reads as a run of zeros. With no
+// credited invoice the list stays a total.
+func invoiceRows(invoices []*client.Invoice) ([]string, [][]string) {
+	credited := false
+	for _, inv := range invoices {
+		if inv.Credit != "" {
+			credited = true
+			break
+		}
+	}
+	rows := make([][]string, len(invoices))
+	for i, inv := range invoices {
+		period := inv.PeriodStart.UTC().Format("2006-01")
+		if !credited {
+			rows[i] = []string{period, inv.Status, inv.Total + " " + inv.Currency, inv.ID}
+			continue
+		}
+		credit := inv.Credit
+		if credit == "" {
+			credit = "0.00"
+		}
+		usage := new(big.Rat)
+		if t, ok := new(big.Rat).SetString(inv.Total); ok {
+			if c, ok := new(big.Rat).SetString(credit); ok {
+				usage = t.Add(t, c)
 			}
 		}
-		render([]string{"PERIOD", "STATUS", "TOTAL", "ID"}, rows, invoices)
+		rows[i] = []string{period, inv.Status, usage.FloatString(2) + " " + inv.Currency,
+			"-" + formatAmount(credit) + " " + inv.Currency, inv.Total + " " + inv.Currency, inv.ID}
+	}
+	if !credited {
+		return []string{"PERIOD", "STATUS", "TOTAL", "ID"}, rows
+	}
+	return []string{"PERIOD", "STATUS", "USAGE", "CREDIT", "DUE", "ID"}, rows
+}
+
+var billingCreditCmd = &cobra.Command{
+	Use:   "credit",
+	Short: "Show the credit your organization holds this month",
+	Long: `The credit your organization holds for the month in progress: an amount each
+month's invoice is taken down by, why, and the months it covers.
+
+Usage is metered and priced at your rates as for everyone; the credit is one
+line at the bottom of the invoice, capped at what the month cost, so usage
+above it is what you are invoiced. It covers whole months: an unused part
+lapses with its month and nothing carries over. The platform operator grants
+it; nothing here sets it.
+
+` + "`fpcloud billing cost`" + ` shows how much of this month's credit the usage so far
+has used, what is left, and when it runs out at this month's pace.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		var credit *client.OrgCredit
+		withSpinner("Fetching credit...", func() {
+			credit, err = c.GetOrgCredit(cmd.Context(), orgID)
+		})
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			// Not an error: most organizations hold none, and the read says so.
+			if isStructured(rootCmd.Flag("output").Value.String()) {
+				render(nil, nil, nil)
+				return nil
+			}
+			fmt.Println("No credit this month.")
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			render(nil, nil, credit)
+			return nil
+		}
+		fmt.Printf("Credit: %s %s a month\n", formatAmount(credit.Amount), credit.Currency)
+		if credit.Reason != "" {
+			fmt.Printf("Reason: %s\n", credit.Reason)
+		}
+		fmt.Printf("Since:  %s\n", credit.EffectiveFrom.UTC().Format("January 2006"))
+		if credit.EffectiveTo != nil {
+			// The month a credit ends is the first it no longer covers; the
+			// last covered month is the one a person reads it as.
+			fmt.Printf("Until:  %s (last month covered)\n", credit.EffectiveTo.UTC().AddDate(0, -1, 0).Format("January 2006"))
+		} else {
+			fmt.Println("Until:  withdrawn")
+		}
+		fmt.Println(mutedStyle.Render("An unused part lapses with its month; nothing carries over."))
 		return nil
 	},
 }
@@ -609,6 +756,6 @@ func init() {
 	billingBudgetCmd.AddCommand(billingBudgetShowCmd, billingBudgetSetCmd, billingBudgetUnsetCmd)
 
 	billingPricesCmd.Flags().Bool("published", false, "Show the public price list rather than your org's own rates")
-	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingBudgetCmd)
+	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingCreditCmd, billingBudgetCmd)
 	rootCmd.AddCommand(billingCmd)
 }

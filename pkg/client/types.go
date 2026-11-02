@@ -84,6 +84,27 @@ type CostCredit struct {
 	PeriodStart time.Time `json:"period_start"`
 	Allowance   string    `json:"allowance"`
 	Applied     string    `json:"applied"`
+	// RunsOutAt is when the month's usage reaches the allowance at the
+	// month's pace so far, for the month in progress only: a straight-line
+	// estimate from what has been used since the month began, never a
+	// promise. Absent until a day of the month has elapsed, when nothing has
+	// been used, when the pace does not reach the allowance before the month
+	// ends, and once the allowance is fully applied.
+	RunsOutAt *time.Time `json:"runs_out_at,omitempty"`
+}
+
+// OrgCredit is the credit an organization holds for the month in progress
+// as the organization reads it: the amount taken off each month's
+// invoice, why, and the months it covers. Granted by the platform operator;
+// an organization reads it and sets it nowhere.
+type OrgCredit struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+	Reason   string `json:"reason,omitempty"`
+	// EffectiveFrom is the first month covered; EffectiveTo the first month no
+	// longer covered, absent while the credit is held with no end.
+	EffectiveFrom time.Time  `json:"effective_from"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }
 
 // CostPriceBook is a rate card and the part of a cost window it priced.
@@ -299,7 +320,11 @@ type Invoice struct {
 	Currency         string    `json:"currency"`
 	// One amount, summed from the lines. No subtotal or tax: VAT is #115 and
 	// arrives with the code that computes it.
-	Total       string     `json:"total"`
+	Total string `json:"total"`
+	// Credit is what the credit line took off this invoice, as a
+	// positive amount; absent on an invoice with no credit line. Usage at
+	// the organization's rates is Total plus Credit.
+	Credit      string     `json:"credit,omitempty"`
 	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	// Lines is populated only when fetching a single invoice.
