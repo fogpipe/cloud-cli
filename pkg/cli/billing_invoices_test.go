@@ -95,10 +95,13 @@ func TestBillingInvoicesByReadsTheInvoicesUsage(t *testing.T) {
 
 	require.NoError(t, run("billing", "invoices", invoice, "--by", "resource,month"))
 	assert.Equal(t, []string{"/api/v1/orgs/" + org + "/billing/invoices/" + invoice + "/usage?group_by=resource,month"}, requested)
+	require.NoError(t, run("billing", "invoices", invoice, "--by", "project,resource,type"), "the tree's read: every entity axis in one key")
+	assert.Equal(t, "/api/v1/orgs/"+org+"/billing/invoices/"+invoice+"/usage?group_by=project,resource,resource_type", requested[1])
 
 	assert.Error(t, run("billing", "invoices", "--by", "resource"), "the list has no usage to read")
 	assert.Error(t, run("billing", "invoices", invoice, "--by", "week"), "a word the API has no axis for is refused before the request")
-	assert.Len(t, requested, 1)
+	assert.Error(t, run("billing", "invoices", invoice, "--by", "project,project"), "an axis named twice is refused before the request")
+	assert.Len(t, requested, 2)
 }
 
 // `--pdf` saves the invoice's statement from its own route, byte for byte.

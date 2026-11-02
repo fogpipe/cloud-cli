@@ -259,35 +259,44 @@ var (
 	costGrains   = map[string]string{"hour": "hour", "day": "day", "month": "month"}
 )
 
-// costGroupBy reads --group-by into the API's words, refusing two of one axis
-// before the request rather than after it. Unset is "type", which is what this
-// command has always shown.
+// costGroupBy reads --group-by into the API's words, refusing an axis named
+// twice before the request rather than after it. Unset is "type", which is
+// what this command has always shown.
 func costGroupBy(cmd *cobra.Command) ([]string, error) {
 	raw, _ := cmd.Flags().GetString("group-by")
 	if raw == "" {
 		raw = "type"
 	}
-	var entity, grain string
+	return costAxes("--group-by", raw)
+}
+
+// costAxes reads a grouping: any of project, resource and type, each at most
+// once, combined into one key, and at most one of hour, day and month.
+func costAxes(flag, raw string) ([]string, error) {
+	var entities []string
+	var grain string
 	for _, w := range strings.Split(raw, ",") {
 		w = strings.TrimSpace(w)
 		switch {
-		case costEntities[w] != "" && entity == "":
-			entity = costEntities[w]
+		case costEntities[w] != "":
+			for _, e := range entities {
+				if e == costEntities[w] {
+					return nil, fmt.Errorf("%s names %s twice", flag, w)
+				}
+			}
+			entities = append(entities, costEntities[w])
 		case costGrains[w] != "" && grain == "":
 			grain = costGrains[w]
-		case costEntities[w] != "" || costGrains[w] != "":
-			return nil, fmt.Errorf("--group-by takes one of project, resource, type and one of hour, day, month; %q is a second of one", w)
+		case costGrains[w] != "":
+			return nil, fmt.Errorf("%s takes one of hour, day, month; %q is a second of one", flag, w)
 		default:
-			return nil, fmt.Errorf("--group-by: %q is not one of project, resource, type, hour, day, month", w)
+			return nil, fmt.Errorf("%s: %q is not one of project, resource, type, hour, day, month", flag, w)
 		}
 	}
-	var out []string
-	for _, a := range []string{entity, grain} {
-		if a != "" {
-			out = append(out, a)
-		}
+	if grain != "" {
+		entities = append(entities, grain)
 	}
-	return out, nil
+	return entities, nil
 }
 
 // costRows lays a report out by its grouping: the keys asked for, then the
@@ -472,9 +481,9 @@ MONTH is the month it was used in.
 
 A line is one project's usage of one meter, which is the bill's grain. To see
 which app or database the money went to, --by reads the same usage the invoice
-billed by project, by resource or by type, the way billing cost does for a
-window; late usage from an earlier month is in it, under its own month with
---by month.
+billed by project, resource and type, any of them combined into one table,
+the way billing cost does for a window; late usage from an earlier month is
+in it, under its own month with --by month.
 
 --pdf writes the invoice as a statement to a file: the totals and the lines
 as billed, the document to forward to your bookkeeping. It is a statement,
@@ -662,26 +671,11 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 // rows are exact and sum to the usage, the invoice rounds per line, and the
 // credit, if any, is the invoice's line and not in these rows.
 func showInvoiceUsage(cmd *cobra.Command, c *client.Client, orgID, invoiceID, by string) error {
-	var entity, grain string
-	for _, w := range strings.Split(by, ",") {
-		w = strings.TrimSpace(w)
-		switch {
-		case costEntities[w] != "" && entity == "":
-			entity = costEntities[w]
-		case costGrains[w] != "" && grain == "":
-			grain = costGrains[w]
-		default:
-			return fmt.Errorf("--by takes one of project, resource, type and one of hour, day, month; got %q", w)
-		}
-	}
-	var axes []string
-	for _, a := range []string{entity, grain} {
-		if a != "" {
-			axes = append(axes, a)
-		}
+	axes, err := costAxes("--by", by)
+	if err != nil {
+		return err
 	}
 	var report *client.CostReport
-	var err error
 	withSpinner("Fetching invoice...", func() {
 		report, err = c.InvoiceUsage(cmd.Context(), orgID, invoiceID, "group_by="+strings.Join(axes, ","))
 	})
@@ -838,9 +832,9 @@ func percentList(thresholds []int) string {
 func init() {
 	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h")
 	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
-	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
+	billingCostCmd.Flags().String("group-by", "", "Any of project, resource, type, combined, and one of hour, day, month (default type)")
 	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
-	billingInvoicesCmd.Flags().String("by", "", "Read one invoice's usage by project, resource or type, and/or month, day, hour")
+	billingInvoicesCmd.Flags().String("by", "", "Read one invoice's usage by any of project, resource, type, combined, and/or month, day, hour")
 	billingInvoicesCmd.Flags().String("pdf", "", "Write one invoice as a PDF statement to this file")
 
 	billingBudgetSetCmd.Flags().String("amount", "", "Target spend for the period, e.g. 250 (required)")

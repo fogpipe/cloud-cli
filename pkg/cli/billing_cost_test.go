@@ -40,7 +40,7 @@ func TestCostGroupByMapsAndBoundsTheAxes(t *testing.T) {
 			t.Errorf("costGroupBy(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
-	for _, bad := range []string{"project,resource", "day,hour", "app", "resource_type"} {
+	for _, bad := range []string{"project,project", "day,hour", "app", "resource_type"} {
 		if _, err := costGroupBy(groupByCmd(bad)); err == nil {
 			t.Errorf("costGroupBy(%q) accepted, want a refusal before the request", bad)
 		}
