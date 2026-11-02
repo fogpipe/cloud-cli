@@ -770,10 +770,47 @@ func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*P
 	return &project, nil
 }
 
-// ListAudit returns audit log entries, optionally filtered by query params
-// (resource_type, resource_id, actor, limit, offset).
-func (c *Client) ListAudit(ctx context.Context, query string) ([]*AuditEntry, error) {
-	path := "/api/v1/audit"
+// OrgAudit reads an organization's audit trail: every entry recorded in the
+// organization's own scope and in any of its projects, deleted ones included.
+// query takes resource_type, resource_id, actor, limit and offset.
+func (c *Client) OrgAudit(ctx context.Context, orgID, query string) ([]*AuditEntry, error) {
+	path := "/api/v1/orgs/" + orgID + "/audit"
+	if query != "" {
+		path += "?" + query
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var entries []*AuditEntry
+	if err := c.do(httpReq, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// ProjectAudit reads one project's audit trail. query as for OrgAudit.
+func (c *Client) ProjectAudit(ctx context.Context, projectID, query string) ([]*AuditEntry, error) {
+	path := "/api/v1/projects/" + projectID + "/audit"
+	if query != "" {
+		path += "?" + query
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var entries []*AuditEntry
+	if err := c.do(httpReq, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// MyAudit reads the caller's own entries, in every scope they were recorded
+// in. query takes resource_type, resource_id, limit and offset; actor is the
+// caller and is not a filter here.
+func (c *Client) MyAudit(ctx context.Context, query string) ([]*AuditEntry, error) {
+	path := "/api/v1/auth/me/audit"
 	if query != "" {
 		path += "?" + query
 	}

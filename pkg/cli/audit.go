@@ -32,10 +32,20 @@ var auditLogCmd = &cobra.Command{
 		}
 
 		c := getClient()
-		// The log has two addresses (ADR-268): the organization's, which is
-		// everything the caller may see, and one project's. The project is the
-		// root --project, resolved to its id because the filter is by id.
-		if scope, _ := cmd.Flags().GetString("scope"); scope == "project" {
+		// The log has three addresses: the organization's, which is every
+		// entry in it and in any of its projects; one project's; and the
+		// caller's own, wherever it was recorded. The first two are read by
+		// permission on the scope, the third by being the person.
+		scope, _ := cmd.Flags().GetString("scope")
+		var read func() ([]*client.AuditEntry, error)
+		switch scope {
+		case "", "org":
+			orgID, err := resolveOrgID(cmd)
+			if err != nil {
+				return err
+			}
+			read = func() ([]*client.AuditEntry, error) { return c.OrgAudit(cmd.Context(), orgID, q.Encode()) }
+		case "project":
 			ref, err := requireProject()
 			if err != nil {
 				return err
@@ -44,14 +54,16 @@ var auditLogCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			q.Set("project_id", project.ID)
-		} else if scope != "" && scope != "org" {
-			return fmt.Errorf("--scope must be org or project, got %q", scope)
+			read = func() ([]*client.AuditEntry, error) { return c.ProjectAudit(cmd.Context(), project.ID, q.Encode()) }
+		case "me":
+			read = func() ([]*client.AuditEntry, error) { return c.MyAudit(cmd.Context(), q.Encode()) }
+		default:
+			return fmt.Errorf("--scope must be org, project or me, got %q", scope)
 		}
 		var entries []*client.AuditEntry
 		var err error
 		withSpinner("Fetching audit log...", func() {
-			entries, err = c.ListAudit(cmd.Context(), q.Encode())
+			entries, err = read()
 		})
 		if err != nil {
 			return err
@@ -144,7 +156,7 @@ func init() {
 	auditStatementsCmd.Flags().String("until", "", "The far end of the window, same forms")
 	auditStatementsCmd.Flags().Int("limit", 0, "Most entries to return")
 	auditLogCmd.Flags().String("limit", "", "Max entries (default 100)")
-	auditLogCmd.Flags().String("scope", "org", "org: everything you may see; project: the current project only")
+	auditLogCmd.Flags().String("scope", "org", "org: the organization's whole trail, every project included; project: the current project only; me: what you did, wherever you did it")
 	auditCmd.AddCommand(auditLogCmd)
 	auditCmd.AddCommand(auditStatementsCmd)
 	rootCmd.AddCommand(auditCmd)
