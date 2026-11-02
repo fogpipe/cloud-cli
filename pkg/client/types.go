@@ -650,10 +650,14 @@ type CreateAppRequest struct {
 	// MinScale and MaxScale bound the instance count; nil takes the
 	// platform default of one. Equal is a fixed size, a wider range autoscales
 	// on CPU between them.
-	MinScale *int32  `json:"min_scale,omitempty"`
-	MaxScale *int32  `json:"max_scale,omitempty"`
-	Ingress  string  `json:"ingress,omitempty"`
-	Routes   []Route `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
+	MinScale *int32 `json:"min_scale,omitempty"`
+	MaxScale *int32 `json:"max_scale,omitempty"`
+	// CPULimit and MemoryLimit size one instance; empty takes the platform
+	// default (500m, 512Mi), and a scale changes them afterwards.
+	CPULimit    string  `json:"cpu_limit,omitempty"`
+	MemoryLimit string  `json:"memory_limit,omitempty"`
+	Ingress     string  `json:"ingress,omitempty"`
+	Routes      []Route `json:"routes,omitempty"` // per-path visibility carve-outs (#501)
 	// Type is the process type: "web" (default) serves HTTP behind a Service;
 	// "worker" is a long-lived process with no port, Service or hostname. Frozen
 	// at create — no update path changes it.

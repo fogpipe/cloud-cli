@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -134,7 +135,7 @@ healthy if it also says that everything was looked at.`,
 			if isStructured(rootCmd.Flag("output").Value.String()) {
 				return renderData(status)
 			}
-			fmt.Print(renderProjectStatus(status, nil, query.Suggest))
+			fmt.Print(renderProjectStatus(status, nil, query.Suggest, savingsOf(context.Background(), c, project, status)))
 			return nil
 		}
 		if isStructured(rootCmd.Flag("output").Value.String()) {
@@ -201,7 +202,7 @@ func watchProjectStatus(source func() (string, error), interval time.Duration, l
 			// someone opened it for.
 			fmt.Print("\x1b[H\x1b[2J" + errorBox.Render(pollFailure(err)) + "\n")
 		case status != nil:
-			fmt.Print("\x1b[H\x1b[2J" + renderProjectStatus(status, prev, load.Suggest) +
+			fmt.Print("\x1b[H\x1b[2J" + renderProjectStatus(status, prev, load.Suggest, savingsOf(ctx, getClient(), watched, status)) +
 				mutedStyle.Render(fmt.Sprintf("\nwatching every %s — ctrl-c to stop\n", interval)))
 			prev, etag = status, newETag
 		}
@@ -306,7 +307,7 @@ func registryAge(p client.StatusProject) string {
 // renderProjectStatus renders the whole document. prev, when non-nil, is the
 // previous observation: rows that differ from it are marked, so a watcher sees
 // what moved rather than re-reading the whole screen.
-func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, suggestions bool) string {
+func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, suggestions bool, savings map[string]string) string {
 	var b strings.Builder
 
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(s.Project.Name)
@@ -343,7 +344,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		}
 		appRows = append(appRows, statusRow{
 			cells:   []string{a.Name, appReadiness(a), releaseLabel(a), shortImage(runningImage(a)), appAge(a), configLabel(a.Config)},
-			details: append(loadLines(a.Load, "app scale "+a.Name, suggestions, s.Unchecked), httpLines(a.HTTP, unreadHTTP(s, a.Load != nil || a.HTTP != nil))...),
+			details: append(loadLines(a.Load, "app scale "+a.Name, suggestions, savings[a.ID], s.Unchecked), httpLines(a.HTTP, unreadHTTP(s, a.Load != nil || a.HTTP != nil))...),
 			notes:   problemNotes(a.Problems),
 			hints:   hints,
 			// A rollout advancing is the main thing a watcher is waiting on, so
@@ -371,7 +372,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		}
 		dbRows = append(dbRows, statusRow{
 			cells:   []string{d.Name, engine, renderStatus(d.Status), pooler},
-			details: loadLines(d.Load, "db update "+d.Name, suggestions, s.Unchecked),
+			details: loadLines(d.Load, "db update "+d.Name, suggestions, savings[d.ID], s.Unchecked),
 			notes:   problemNotes(d.Problems),
 		})
 	}
@@ -793,4 +794,76 @@ func pollFailure(err error) string {
 		msg += "\n\nRun `fpcloud login` in another terminal — this view picks the\nnew credentials up on its next poll, no restart needed."
 	}
 	return msg
+}
+
+// savingsOf prices every suggestion the document carries against the
+// resource's current limits, by resource id: two quotes of the same kind,
+// the difference shown beside the suggestion. What the two quotes share — a
+// database's storage and pooler, an app's bounds — cancels, so the current
+// limits off the load reading and the kind are all it needs. Empty when no
+// suggestion was asked for or a quote cannot be read; a suggestion stands
+// without its price.
+func savingsOf(ctx context.Context, c *client.Client, project string, s *client.ProjectStatus) map[string]string {
+	out := map[string]string{}
+	quote := func(req client.QuoteRequest) (float64, string, bool) {
+		q, err := c.Quote(ctx, project, req)
+		if err != nil || q.TotalMax == "" {
+			return 0, "", false
+		}
+		v, err := strconv.ParseFloat(q.TotalMax, 64)
+		return v, q.Currency, err == nil
+	}
+	for _, a := range s.Apps {
+		if a.Load == nil || a.Load.Suggest == nil || a.Load.CPU == nil || a.Load.Memory == nil {
+			continue
+		}
+		minScale, maxScale := a.MinScale, a.MaxScale
+		now := client.ScaleRequest{MinScale: &minScale, MaxScale: &maxScale, CPULimit: formatMillicores(a.Load.CPU.Limit), MemoryLimit: quantityOf(a.Load.Memory.Limit)}
+		then := now
+		then.CPULimit, then.MemoryLimit = a.Load.Suggest.CPU, a.Load.Suggest.Memory
+		if line := savingsLine(quote, client.QuoteRequest{App: &now}, client.QuoteRequest{App: &then}); line != "" {
+			out[a.ID] = line
+		}
+	}
+	for _, d := range s.Databases {
+		if d.Load == nil || d.Load.Suggest == nil || d.Load.CPU == nil || d.Load.Memory == nil {
+			continue
+		}
+		now := client.QuoteDatabase{CPU: formatMillicores(d.Load.CPU.Limit), Memory: quantityOf(d.Load.Memory.Limit), Pooler: d.Pooler}
+		then := client.QuoteDatabase{CPU: d.Load.Suggest.CPU, Memory: d.Load.Suggest.Memory, Pooler: d.Pooler}
+		if line := savingsLine(quote, client.QuoteRequest{Database: &now}, client.QuoteRequest{Database: &then}); line != "" {
+			out[d.ID] = line
+		}
+	}
+	return out
+}
+
+// savingsLine is the monthly difference between two quotes, in words.
+func savingsLine(quote func(client.QuoteRequest) (float64, string, bool), now, then client.QuoteRequest) string {
+	a, currency, ok := quote(now)
+	if !ok {
+		return ""
+	}
+	b, _, ok := quote(then)
+	if !ok {
+		return ""
+	}
+	switch d := a - b; {
+	case d > 0.005:
+		return fmt.Sprintf("about %.2f %s a month less", d, currency)
+	case d < -0.005:
+		return fmt.Sprintf("about %.2f %s a month more", -d, currency)
+	default:
+		return "the same a month"
+	}
+}
+
+// quantityOf spells a byte count the way a limit is written: whole Gi when it
+// divides, Mi otherwise.
+func quantityOf(bytes int64) string {
+	const gi = 1 << 30
+	if bytes > 0 && bytes%gi == 0 {
+		return fmt.Sprintf("%dGi", bytes/gi)
+	}
+	return fmt.Sprintf("%dMi", (bytes+(1<<20)-1)/(1<<20))
 }

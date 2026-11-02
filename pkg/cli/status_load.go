@@ -18,7 +18,7 @@ import (
 // an app without one under --load is the store not answering, which the
 // unchecked list names — that is said on the line rather than left as a row
 // that merely lacks two lines.
-func loadLines(l *client.Load, sizing string, suggestions bool, unchecked []client.UncheckedStatus) []string {
+func loadLines(l *client.Load, sizing string, suggestions bool, savings string, unchecked []client.UncheckedStatus) []string {
 	if l == nil {
 		for _, u := range unchecked {
 			if u.Check == "load" {
@@ -64,7 +64,7 @@ func loadLines(l *client.Load, sizing string, suggestions bool, unchecked []clie
 			sparkLine("memory ", l.Series, l.SeriesStep, axisLimit(l.Memory), func(p client.LoadPoint) *client.LoadPointAxis { return p.Memory }, humanizeSize))
 	}
 	if suggestions {
-		lines = append(lines, suggestLine(l, sizing))
+		lines = append(lines, suggestLine(l, sizing, savings))
 	}
 	return lines
 }
@@ -139,7 +139,7 @@ func sparkLine(label string, series []client.LoadPoint, step string, limit int64
 // it, over what was covered. The API decides whether there is one — a day
 // covered, both axes read — and when there is none the line says which
 // was missing rather than leaving a flag that printed nothing.
-func suggestLine(l *client.Load, sizing string) string {
+func suggestLine(l *client.Load, sizing, savings string) string {
 	if l.Suggest == nil {
 		if l.CPU == nil || l.Memory == nil {
 			return "suggest —  nothing to size from: no reading on both axes"
@@ -150,8 +150,12 @@ func suggestLine(l *client.Load, sizing string) string {
 	if l.Percentile > 0 {
 		from = fmt.Sprintf("p%d", l.Percentile)
 	}
-	return fmt.Sprintf("suggest fpcloud %s --cpu %s --memory %s   (cpu from the %s, memory from the peak, over %s)",
+	line := fmt.Sprintf("suggest fpcloud %s --cpu %s --memory %s   (cpu from the %s, memory from the peak, over %s)",
 		sizing, l.Suggest.CPU, l.Suggest.Memory, from, l.Covered)
+	if savings != "" {
+		line += "   " + savings
+	}
+	return line
 }
 
 // loadAxisCells is one axis as columns — "10m avg", "31m p95", "48m peak",

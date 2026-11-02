@@ -24,7 +24,7 @@ func TestLoadLinesRenderCPUThenMemoryAgainstTheLimit(t *testing.T) {
 	assert.Equal(t, []string{
 		"cpu     10m avg   48m peak   of 250m    4%",
 		"memory  80Mi avg  91Mi peak  of 256Mi  31%",
-	}, loadLines(a.Load, "app scale x", false, nil))
+	}, loadLines(a.Load, "app scale x", false, "", nil))
 
 	week := client.AppStatus{Name: "api", Load: &client.Load{
 		Window: "7d", Step: "1h", Covered: "3d11h", Percentile: 95,
@@ -34,7 +34,7 @@ func TestLoadLinesRenderCPUThenMemoryAgainstTheLimit(t *testing.T) {
 	assert.Equal(t, []string{
 		"cpu     10m avg   31m p95   48m peak   of 250m    4%   (covered 3d11h of 7d, 1h steps)",
 		"memory  80Mi avg  88Mi p95  91Mi peak  of 256Mi  31%",
-	}, loadLines(week.Load, "app scale x", false, nil))
+	}, loadLines(week.Load, "app scale x", false, "", nil))
 
 }
 
@@ -43,17 +43,17 @@ func TestLoadLinesRenderCPUThenMemoryAgainstTheLimit(t *testing.T) {
 // store not answering, and the line says what the unchecked entry says.
 func TestLoadLinesSeparateIdleFromUnread(t *testing.T) {
 	idle := client.AppStatus{Name: "web", Load: &client.Load{Window: "6h", Step: "1m", Covered: "6h"}}
-	assert.Equal(t, []string{"cpu     idle over 6h", "memory  idle over 6h"}, loadLines(idle.Load, "app scale x", false, nil))
+	assert.Equal(t, []string{"cpu     idle over 6h", "memory  idle over 6h"}, loadLines(idle.Load, "app scale x", false, "", nil))
 
 	unknown := client.AppStatus{Name: "web", Load: &client.Load{Window: "1w", Step: "1h", Covered: "0s"}}
-	assert.Equal(t, []string{"cpu     nothing recorded over 1w   (covered 0s of 1w, 1h steps)", "memory  nothing recorded over 1w"}, loadLines(unknown.Load, "app scale x", false, nil),
+	assert.Equal(t, []string{"cpu     nothing recorded over 1w   (covered 0s of 1w, 1h steps)", "memory  nothing recorded over 1w"}, loadLines(unknown.Load, "app scale x", false, "", nil),
 		"a window the source holds nothing of is unknown, never idle (#1087)")
 
-	unread := loadLines(nil, "app scale api", false, []client.UncheckedStatus{{Check: "load", Error: "prometheus unreachable"}})
+	unread := loadLines(nil, "app scale api", false, "", []client.UncheckedStatus{{Check: "load", Error: "prometheus unreachable"}})
 	assert.Len(t, unread, 2)
 	assert.Contains(t, unread[0], "not read — prometheus unreachable")
 
-	assert.Nil(t, loadLines(nil, "app scale api", false, nil), "no load asked for, no lines")
+	assert.Nil(t, loadLines(nil, "app scale api", false, "", nil), "no load asked for, no lines")
 }
 
 func TestFormatMillicoresSpeaksLikeADeclaredLimit(t *testing.T) {
@@ -75,7 +75,7 @@ func TestProjectStatusRendersLoadUnderTheApp(t *testing.T) {
 			Memory: &client.LoadAxis{Avg: 80 << 20, Peak: 91 << 20, Limit: 256 << 20},
 		}}},
 	}
-	out := renderProjectStatus(s, nil, false)
+	out := renderProjectStatus(s, nil, false, nil)
 	lines := strings.Split(out, "\n")
 	var row int
 	for i, l := range lines {
@@ -110,7 +110,7 @@ func TestLoadLinesDrawTheSeriesAgainstTheLimit(t *testing.T) {
 		SeriesStep: "15m",
 		Series:     []client.LoadPoint{point(0, true, -1, 0), point(1, true, 125, 128<<20), point(2, true, 250, 256<<20), point(3, false, 0, 0)},
 	}
-	lines := loadLines(l, "app scale api", false, nil)
+	lines := loadLines(l, "app scale api", false, "", nil)
 	assert.Equal(t, "cpu     ▁▄█·  peak per 15m, against the 250m limit", lines[2])
 	assert.Equal(t, "memory  ▁▄█·  peak per 15m, against the 256Mi limit", lines[3])
 
@@ -123,7 +123,7 @@ func TestLoadLinesDrawTheSeriesAgainstTheLimit(t *testing.T) {
 		week = append(week, point(i, true, cpu, 1<<20))
 	}
 	l.SeriesStep, l.Series = "1h", week
-	cpu := loadLines(l, "app scale api", false, nil)[2]
+	cpu := loadLines(l, "app scale api", false, "", nil)[2]
 	assert.Contains(t, cpu, "peak per 4 × 1h")
 	bars := strings.Fields(cpu)[1]
 	assert.Equal(t, 42, len([]rune(bars)), "168 points, four to a column")

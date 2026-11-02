@@ -223,9 +223,11 @@ var appCreateCmd = &cobra.Command{
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
 
+		cpuLimit, _ := cmd.Flags().GetString("cpu")
+		memoryLimit, _ := cmd.Flags().GetString("memory")
 		if estimating(cmd) {
 			q, err := c.Quote(context.Background(), projectID, client.QuoteRequest{
-				App: &client.ScaleRequest{MinScale: changedInt32(cmd, "min-scale"), MaxScale: changedInt32(cmd, "max-scale")},
+				App: &client.ScaleRequest{MinScale: changedInt32(cmd, "min-scale"), MaxScale: changedInt32(cmd, "max-scale"), CPULimit: cpuLimit, MemoryLimit: memoryLimit},
 			})
 			if err != nil {
 				return err
@@ -249,6 +251,8 @@ var appCreateCmd = &cobra.Command{
 				Port:                port,
 				MinScale:            changedInt32(cmd, "min-scale"),
 				MaxScale:            changedInt32(cmd, "max-scale"),
+				CPULimit:            cpuLimit,
+				MemoryLimit:         memoryLimit,
 				Ingress:             ingress,
 				Routes:              routes,
 				Type:                appType,
@@ -1801,6 +1805,8 @@ event is the only record.
 
 func init() {
 	appCreateCmd.Flags().String("image", "", "Container image")
+	appCreateCmd.Flags().String("cpu", "", "CPU limit per instance, like 500m or 2 (default 500m)")
+	appCreateCmd.Flags().String("memory", "", "Memory limit per instance, like 512Mi or 2Gi (default 512Mi)")
 	estimateFlag(appCreateCmd)
 	appCreateCmd.Flags().Int("port", 8080, "Container port (default 8080, use 80 for nginx)")
 	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1); 0 lets a web app sleep after 15 minutes without a request and wake on the next one")

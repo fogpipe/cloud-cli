@@ -84,7 +84,7 @@ func TestProjectStatusRendersHTTPUnderAppsAndWebsites(t *testing.T) {
 		},
 		Unchecked: []client.UncheckedStatus{{Check: "http", Error: "the record is unreadable"}},
 	}
-	out := renderProjectStatus(s, nil, false)
+	out := renderProjectStatus(s, nil, false, nil)
 	assert.Contains(t, out, "http    3 requests: 2xx 3")
 	lines := strings.Split(out, "\n")
 	for i, l := range lines {
@@ -97,5 +97,5 @@ func TestProjectStatusRendersHTTPUnderAppsAndWebsites(t *testing.T) {
 	}
 
 	s.Apps[0].Load, s.Apps[0].HTTP, s.Unchecked = nil, nil, nil
-	assert.NotContains(t, renderProjectStatus(s, nil, false), "http ")
+	assert.NotContains(t, renderProjectStatus(s, nil, false, nil), "http ")
 }
