@@ -468,8 +468,15 @@ of the next month, and the invoice never changes after that. Usage that arrives
 after its month was invoiced is billed on the next invoice, on a line whose
 MONTH is the month it was used in.
 
+A line is one project's usage of one meter, which is the bill's grain. To see
+which app or database the money went to, --by reads the same usage the invoice
+billed by project, by resource or by type, the way billing cost does for a
+window; late usage from an earlier month is in it, under its own month with
+--by month.
+
   fpcloud billing invoices
-  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf`,
+  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf
+  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf --by resource`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		orgID, err := resolveOrgID(cmd)
@@ -478,7 +485,13 @@ MONTH is the month it was used in.
 		}
 		c := getClient()
 		if len(args) == 1 {
+			if by, _ := cmd.Flags().GetString("by"); by != "" {
+				return showInvoiceUsage(cmd, c, orgID, args[0], by)
+			}
 			return showInvoice(cmd, c, orgID, args[0])
+		}
+		if by, _ := cmd.Flags().GetString("by"); by != "" {
+			return fmt.Errorf("--by reads one invoice; name it")
 		}
 
 		var invoices []*client.Invoice
@@ -630,6 +643,43 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 	return nil
 }
 
+// showInvoiceUsage prints the usage one invoice billed at the grouping asked
+// for, in the cost table's layout, with the invoice's own total beneath: the
+// rows are exact and sum to the usage, the invoice rounds per line, and the
+// credit, if any, is the invoice's line and not in these rows.
+func showInvoiceUsage(cmd *cobra.Command, c *client.Client, orgID, invoiceID, by string) error {
+	var entity, grain string
+	for _, w := range strings.Split(by, ",") {
+		w = strings.TrimSpace(w)
+		switch {
+		case costEntities[w] != "" && entity == "":
+			entity = costEntities[w]
+		case costGrains[w] != "" && grain == "":
+			grain = costGrains[w]
+		default:
+			return fmt.Errorf("--by takes one of project, resource, type and one of hour, day, month; got %q", w)
+		}
+	}
+	var axes []string
+	for _, a := range []string{entity, grain} {
+		if a != "" {
+			axes = append(axes, a)
+		}
+	}
+	var report *client.CostReport
+	var err error
+	withSpinner("Fetching invoice...", func() {
+		report, err = c.InvoiceUsage(cmd.Context(), orgID, invoiceID, "group_by="+strings.Join(axes, ","))
+	})
+	if err != nil {
+		return err
+	}
+	headers, rows := costRows(report)
+	render(headers, rows, report)
+	fmt.Printf("\n  Usage: %s %s, as billed on this invoice\n", report.Total, report.Currency)
+	return nil
+}
+
 var billingBudgetCmd = &cobra.Command{
 	Use:   "budget",
 	Short: "Set a spend target and get told when you approach it",
@@ -749,6 +799,7 @@ func init() {
 	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
 	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
 	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
+	billingInvoicesCmd.Flags().String("by", "", "Read one invoice's usage by project, resource or type, and/or month, day, hour")
 
 	billingBudgetSetCmd.Flags().String("amount", "", "Target spend for the period, e.g. 250 (required)")
 	billingBudgetSetCmd.Flags().String("currency", "", "Currency (default EUR)")

@@ -61,3 +61,40 @@ func TestBillingInvoicesRoutesOnTheNamedInvoice(t *testing.T) {
 		"a second positional names nothing, so it must be refused rather than ignored")
 	assert.Empty(t, requested)
 }
+
+// `--by` reads the usage behind one invoice at the grouping asked for, from
+// the invoice's own usage route, and refuses to read it without an invoice.
+func TestBillingInvoicesByReadsTheInvoicesUsage(t *testing.T) {
+	const org = "6f1c1f24-3d0e-4a1f-9a3e-2b2b8f0d1a55"
+	const invoice = "2a11900f-4773-47ce-8b6e-7182e628fdbf"
+
+	var requested []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path+"?"+r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"from":"2026-07-01T00:00:00Z","to":"2026-08-01T00:00:00Z","group_by":["resource"],` +
+			`"currency":"EUR","price_books":[],"rows":[{"project_id":"p1","project_name":"web","resource_id":"a1",` +
+			`"resource_name":"api","kind":"app","amount":"1.2"}],"total":"1.20","unpriced":[]}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("FPCLOUD_API_URL", srv.URL)
+	t.Setenv("FPCLOUD_API_KEY", "test-key")
+
+	run := func(args ...string) error {
+		rootCmd.SetArgs(append(args, "--org", org))
+		defer func() {
+			rootCmd.SetArgs(nil)
+			_ = rootCmd.Flags().Set("org", "")
+			_ = billingInvoicesCmd.Flags().Set("by", "")
+		}()
+		return rootCmd.Execute()
+	}
+
+	require.NoError(t, run("billing", "invoices", invoice, "--by", "resource,month"))
+	assert.Equal(t, []string{"/api/v1/orgs/" + org + "/billing/invoices/" + invoice + "/usage?group_by=resource,month"}, requested)
+
+	assert.Error(t, run("billing", "invoices", "--by", "resource"), "the list has no usage to read")
+	assert.Error(t, run("billing", "invoices", invoice, "--by", "week"), "a word the API has no axis for is refused before the request")
+	assert.Len(t, requested, 1)
+}

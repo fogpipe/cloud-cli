@@ -1017,6 +1017,28 @@ func (c *Client) GetInvoice(ctx context.Context, orgID, invoiceID string) (*Invo
 	return &inv, nil
 }
 
+// InvoiceUsage reads the usage one invoice billed, grouped as OrgCost groups
+// a window: query takes group_by (up to one of project, resource,
+// resource_type and one of hour, day, month; empty means resource_type).
+// The invoice's lines are per project and meter and stay the bill; this is
+// the same rows at the ledger's grain, usage from an earlier month the
+// invoice billed late included. Gated as the invoice is.
+func (c *Client) InvoiceUsage(ctx context.Context, orgID, invoiceID, query string) (*CostReport, error) {
+	path := "/api/v1/orgs/" + orgID + "/billing/invoices/" + invoiceID + "/usage"
+	if query != "" {
+		path += "?" + query
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var report CostReport
+	if err := c.do(httpReq, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
 // GetOrgCredit returns the credit an org holds for the month in progress
 // Requires a billing role; a 404 means the month is not covered.
 func (c *Client) GetOrgCredit(ctx context.Context, orgID string) (*OrgCredit, error) {
