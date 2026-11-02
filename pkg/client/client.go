@@ -2647,7 +2647,7 @@ func (c *Client) ListOrgMembers(ctx context.Context, orgID string) ([]*OrgMember
 // on it, on its projects and on the resources in them. member is their email
 // or, once they have signed in, their user id.
 func (c *Client) RemoveOrgMember(ctx context.Context, orgID, member string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/members/"+member, nil)
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/members/"+url.PathEscape(member), nil)
 	if err != nil {
 		return err
 	}
