@@ -223,6 +223,16 @@ var appCreateCmd = &cobra.Command{
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
 
+		if estimating(cmd) {
+			q, err := c.Quote(context.Background(), projectID, client.QuoteRequest{
+				App: &client.ScaleRequest{MinScale: changedInt32(cmd, "min-scale"), MaxScale: changedInt32(cmd, "max-scale")},
+			})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
+
 		var app *client.App
 		var createErr error
 		action := func() {
@@ -1033,6 +1043,26 @@ var appScaleCmd = &cobra.Command{
 			req.MemoryLimit, _ = cmd.Flags().GetString("memory")
 		}
 
+		if estimating(cmd) {
+			current, err := c.GetApp(context.Background(), appID)
+			if err != nil {
+				return err
+			}
+			// The app after the change: what the command names over what it
+			// keeps, which is what the scale write itself does.
+			want := client.ScaleRequest{
+				MinScale:    firstInt32(req.MinScale, current.MinScale),
+				MaxScale:    firstInt32(req.MaxScale, current.MaxScale),
+				CPULimit:    firstNonEmpty(req.CPULimit, current.CPULimit),
+				MemoryLimit: firstNonEmpty(req.MemoryLimit, current.MemoryLimit),
+			}
+			q, err := c.Quote(context.Background(), current.ProjectID, client.QuoteRequest{App: &want})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
+
 		var app *client.App
 		var scaleErr error
 		action := func() {
@@ -1771,6 +1801,7 @@ event is the only record.
 
 func init() {
 	appCreateCmd.Flags().String("image", "", "Container image")
+	estimateFlag(appCreateCmd)
 	appCreateCmd.Flags().Int("port", 8080, "Container port (default 8080, use 80 for nginx)")
 	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1); 0 lets a web app sleep after 15 minutes without a request and wake on the next one")
 	appCreateCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load (default 1: a fixed size; equal to --min-scale is fixed, above it autoscales)")
@@ -1829,6 +1860,7 @@ func init() {
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
 	appScaleCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs; 0 lets a web app sleep after 15 minutes without a request and wake on the next one")
+	estimateFlag(appScaleCmd)
 	appScaleCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load; equal to --min-scale is a fixed size, above it autoscales between them")
 	appScaleCmd.Flags().String("cpu", "500m", "CPU limit (e.g. 500m, 1)")
 	appScaleCmd.Flags().String("memory", "512Mi", "Memory limit (e.g. 512Mi, 1Gi)")

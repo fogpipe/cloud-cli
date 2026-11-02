@@ -64,6 +64,15 @@ var dbCreateCmd = &cobra.Command{
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
+		if estimating(cmd) {
+			q, err := c.Quote(context.Background(), projectID, client.QuoteRequest{
+				Database: &client.QuoteDatabase{CPU: cpu, Memory: memory, Storage: storage, Pooler: pooler},
+			})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
 
 		var db *client.Database
 		var createErr error
@@ -835,6 +844,24 @@ var dbUpdateCmd = &cobra.Command{
 			req.Pooler == nil && req.Extensions == nil {
 			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --storage --postgres-version --pooler --extension")
 		}
+		if estimating(cmd) {
+			// What the database would run under after the change: the
+			// request's fields over the ones it keeps.
+			want := client.QuoteDatabase{
+				CPU:     firstNonEmpty(req.CPU, existing.CPU),
+				Memory:  firstNonEmpty(req.Memory, existing.Memory),
+				Storage: firstNonEmpty(req.Storage, existing.Storage),
+				Pooler:  existing.Pooler,
+			}
+			if req.Pooler != nil {
+				want.Pooler = *req.Pooler
+			}
+			q, err := c.Quote(context.Background(), existing.ProjectID, client.QuoteRequest{Database: &want})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
 		// Removing one uninstalls it, and `drop extension` takes what it created
 		// along — for pg_statecharts, the state machines in its own schema. That
 		// is data loss from an update flag, so it is confirmed like a delete
@@ -908,6 +935,7 @@ func init() {
 	// to state, and a default baked in here silently overrode it — a CLI still
 	// sending 17 kept every new database off the version extensions need.
 	dbCreateCmd.Flags().String("version", "", "Database major version; empty = the platform's current default")
+	estimateFlag(dbCreateCmd)
 	dbCreateCmd.Flags().String("display-name", "", "Cosmetic label (defaults to the name)")
 	dbCreateCmd.Flags().String("cpu", "", "CPU request/limit per instance (e.g. 500m); default 250m")
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 512Mi")
@@ -916,6 +944,7 @@ func init() {
 	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable; name or name:schema (needs Postgres 18+)")
 
 	dbUpdateCmd.Flags().String("display-name", "", "New cosmetic label")
+	estimateFlag(dbUpdateCmd)
 	dbUpdateCmd.Flags().String("cpu", "", "New CPU request/limit per instance (e.g. 500m)")
 	dbUpdateCmd.Flags().String("memory", "", "New memory request/limit per instance (e.g. 1Gi)")
 	dbUpdateCmd.Flags().String("storage", "", "New storage size (grow only, e.g. 20Gi)")

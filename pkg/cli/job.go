@@ -183,6 +183,15 @@ var jobCreateCmd = &cobra.Command{
 		}
 
 		c := getClient()
+		if estimating(cmd) {
+			q, err := c.Quote(context.Background(), project, client.QuoteRequest{
+				Job: &client.QuoteJob{App: req.App, Image: req.Image, HTTPURL: req.HTTPURL},
+			})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
 		job, err := c.CreateJob(context.Background(), project, req)
 		if err != nil {
 			return err
@@ -640,6 +649,7 @@ func jobSpecFlags(cmd *cobra.Command) {
 func init() {
 	jobSpecFlags(jobCreateCmd)
 	jobCreateCmd.Flags().String("app", "", "App whose image, config and identity the job inherits")
+	estimateFlag(jobCreateCmd)
 	_ = jobCreateCmd.MarkFlagRequired("schedule")
 
 	jobSpecFlags(jobUpdateCmd)

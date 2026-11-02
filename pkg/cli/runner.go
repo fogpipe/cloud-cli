@@ -109,6 +109,15 @@ var runnerCreateCmd = &cobra.Command{
 		}
 
 		c := getClient()
+		if estimating(cmd) {
+			q, err := c.Quote(context.Background(), project, client.QuoteRequest{
+				Runner: &client.QuoteRunner{Size: req.Size, MaxRunners: req.MaxRunners, Builder: req.Builder, Services: req.Services},
+			})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
 		runner, err := c.CreateRunner(context.Background(), project, req)
 		if err != nil {
 			return err
@@ -205,6 +214,37 @@ var runnerUpdateCmd = &cobra.Command{
 			return err
 		} else if services != nil {
 			req.Services = &services
+		}
+		if estimating(cmd) {
+			current, err := c.GetRunner(context.Background(), project)
+			if err != nil {
+				return err
+			}
+			// The runner after the patch: each field the patch names over the
+			// one it keeps, the builder and services replaced whole as the
+			// patch replaces them.
+			want := client.QuoteRunner{Size: current.Size, Builder: current.Builder, Services: current.Services}
+			max := current.MaxRunners
+			want.MaxRunners = &max
+			if req.Size != nil {
+				want.Size = *req.Size
+			}
+			if req.MaxRunners != nil {
+				want.MaxRunners = req.MaxRunners
+			}
+			if req.NoBuilder {
+				want.Builder = nil
+			} else if req.Builder != nil {
+				want.Builder = req.Builder
+			}
+			if req.Services != nil {
+				want.Services = *req.Services
+			}
+			q, err := c.Quote(context.Background(), project, client.QuoteRequest{Runner: &want})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
 		}
 		runner, err := c.UpdateRunner(context.Background(), project, req)
 		if err != nil {
@@ -587,6 +627,8 @@ func init() {
 	runnerUpdateCmd.Flags().Bool("no-services", false, "Remove every service container from the runner")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-services", "service")
 	runnerUpdateCmd.Flags().Bool("no-builder", false, "Remove the runner's image builder")
+	estimateFlag(runnerUpdateCmd)
+	estimateFlag(runnerCreateCmd)
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-cpu")
 	runnerUpdateCmd.MarkFlagsMutuallyExclusive("no-builder", "builder-memory")

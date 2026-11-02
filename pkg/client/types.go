@@ -296,6 +296,98 @@ type OrgPriceList struct {
 	Prices    []*Price `json:"prices"`
 }
 
+// QuoteRequest asks what one resource would cost before it exists, or after a
+// change to its size. Exactly one of the four is set, each in the
+// shape of the body that creates or resizes that kind, sizes only: the quote
+// prices the same booking admission charges the spec for, at the
+// organization's own rates, so it and the first invoice line agree.
+type QuoteRequest struct {
+	// App is an app at its limits between min_scale and max_scale; an unset
+	// field takes the platform default, as a create does.
+	App *ScaleRequest `json:"app,omitempty"`
+	// Database is a managed database at its size; the platform's instance
+	// count, each instance's backup agent and the pooler's own pod are priced
+	// in, since every one is metered.
+	Database *QuoteDatabase `json:"database,omitempty"`
+	// Runner is the project's runner at its size and max_runners; the quote
+	// runs from nothing (no job running) to every runner busy.
+	Runner *QuoteRunner `json:"runner,omitempty"`
+	// Job is one scheduled job: priced per hour a run takes, since a run is
+	// billed for how long it ran, so the answer carries no month.
+	Job *QuoteJob `json:"job,omitempty"`
+}
+
+// QuoteDatabase is the sizing half of CreateDatabaseRequest.
+type QuoteDatabase struct {
+	CPU     string `json:"cpu,omitempty"`
+	Memory  string `json:"memory,omitempty"`
+	Storage string `json:"storage,omitempty"`
+	Pooler  bool   `json:"pooler,omitempty"`
+}
+
+// QuoteRunner is the sizing half of CreateRunnerRequest.
+type QuoteRunner struct {
+	Size       string          `json:"size,omitempty"`
+	MaxRunners *int            `json:"max_runners,omitempty"`
+	Builder    *RunnerBuilder  `json:"builder,omitempty"`
+	Services   []RunnerService `json:"services,omitempty"`
+}
+
+// QuoteJob is what sizes a scheduled job's run: an HTTP target runs the
+// platform's dispatcher, an app's job runs at the app's limits, an image of
+// its own at the project's default limits.
+type QuoteJob struct {
+	App     string `json:"app,omitempty"`
+	Image   string `json:"image,omitempty"`
+	HTTPURL string `json:"http_url,omitempty"`
+}
+
+// Quote is what a spec would cost at the organization's rates: one
+// line per resource type the spec is metered as, each a quantity per hour at
+// the bottom and the top of the spec's range, and the money that makes.
+//
+// Every figure is a decimal string. The quantities and hourly amounts are
+// exact; TotalMin and TotalMax are rounded once to the cent. A line with no
+// rate in the book has no UnitPrice and no amount, and its type is named in
+// Unpriced: the total leaves it out, and it is not free.
+type Quote struct {
+	Currency  string `json:"currency"`
+	PriceBook string `json:"price_book"`
+	// Hours is the month the monthly amounts are at (730). Zero for a job,
+	// which is billed per run and so has no month: its lines carry quantities
+	// and HourlyMin/HourlyMax per hour a run takes, and no amounts.
+	Hours int         `json:"hours"`
+	Lines []QuoteLine `json:"lines"`
+	// HourlyMin and HourlyMax are what one hour costs at the bottom and the
+	// top of the range; TotalMin and TotalMax the same over Hours.
+	HourlyMin string `json:"hourly_min"`
+	HourlyMax string `json:"hourly_max"`
+	TotalMin  string `json:"total_min,omitempty"`
+	TotalMax  string `json:"total_max,omitempty"`
+	// Unpriced names every resource type here that the book has no rate for.
+	Unpriced []string `json:"unpriced"`
+	// Accrues names what the spec will be billed for on measured bytes as they
+	// grow, which no size in the request can predict: a database's backups.
+	Accrues []string `json:"accrues"`
+	// NotBilled names what the platform meters or serves for this kind and
+	// does not bill: traffic.
+	NotBilled []string `json:"not_billed"`
+}
+
+// QuoteLine is one resource type of a quote.
+type QuoteLine struct {
+	ResourceType string `json:"resource_type"`
+	Unit         string `json:"unit"`
+	// QuantityMin and QuantityMax are per hour: cores for a CPU line, GiB for
+	// memory and storage.
+	QuantityMin string `json:"quantity_min"`
+	QuantityMax string `json:"quantity_max"`
+	UnitPrice   string `json:"unit_price,omitempty"`
+	// AmountMin and AmountMax are over the quote's Hours; absent on a job's.
+	AmountMin string `json:"amount_min,omitempty"`
+	AmountMax string `json:"amount_max,omitempty"`
+}
+
 // BillingAccount is what settles an org's usage. PriceBook and Currency are one
 // pair — a rate cannot be read without both.
 type BillingAccount struct {

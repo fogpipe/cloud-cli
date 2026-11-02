@@ -936,6 +936,23 @@ func (c *Client) OrgPrices(ctx context.Context, orgID string) (*OrgPriceList, er
 	return &out, nil
 }
 
+// Quote prices a spec before it exists, or a resize before it is made:
+// what the organization would be billed for it an hour and a month,
+// at its own rates, as a range from the spec's floor to its ceiling. Exactly
+// one kind is set on the request. Needs project.cost, what reading the
+// project's cost needs.
+func (c *Client) Quote(ctx context.Context, projectID string, req QuoteRequest) (*Quote, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/quote", req)
+	if err != nil {
+		return nil, err
+	}
+	var out Quote
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListInvoices returns an org's invoices, newest period first.
 func (c *Client) ListInvoices(ctx context.Context, orgID string) ([]*Invoice, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/invoices", nil)

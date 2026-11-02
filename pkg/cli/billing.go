@@ -759,3 +759,76 @@ func init() {
 	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingCreditCmd, billingBudgetCmd)
 	rootCmd.AddCommand(billingCmd)
 }
+
+// estimateFlag is `--estimate` on every command that sizes something: print
+// what the spec would cost at the organization's rates and stop, creating or
+// changing nothing. The same body the command would send is what is
+// quoted, so a quote never drifts from the command.
+func estimateFlag(cmd *cobra.Command) {
+	cmd.Flags().Bool("estimate", false, "Print what this would cost a month at your organization's rates, and do nothing")
+}
+
+// estimating reports whether the command was asked only to quote.
+func estimating(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("estimate")
+	return v
+}
+
+// printQuote prints a quote the way `billing cost` prints cost: one row per
+// resource type with its quantity an hour, its rate and its month, then the
+// range and what the number leaves out. A quantity is a range when the spec
+// is one, so an app that sleeps reads "0 – 1.5" and a fixed size one number.
+func printQuote(q *client.Quote) error {
+	if isStructured(rootCmd.Flag("output").Value.String()) {
+		return renderData(q)
+	}
+	span := func(lo, hi string) string {
+		if lo == hi {
+			return hi
+		}
+		return lo + " – " + hi
+	}
+	headers := []string{"RESOURCE", "PER HOUR", "UNIT", "RATE", "PER MONTH"}
+	if q.Hours == 0 {
+		headers = []string{"RESOURCE", "PER RUN-HOUR", "UNIT", "RATE"}
+	}
+	rows := make([][]string, 0, len(q.Lines))
+	for _, l := range q.Lines {
+		rate, month := l.UnitPrice, span(l.AmountMin, l.AmountMax)
+		if rate == "" {
+			rate, month = mutedStyle.Render("not priced"), mutedStyle.Render("not in the total")
+		}
+		row := []string{l.ResourceType, span(l.QuantityMin, l.QuantityMax), l.Unit, rate}
+		if q.Hours != 0 {
+			row = append(row, month)
+		}
+		rows = append(rows, row)
+	}
+	renderTable(headers, rows)
+	fmt.Println()
+	if q.Hours == 0 {
+		fmt.Printf("  %s %s per hour a run takes\n", span(q.HourlyMin, q.HourlyMax), q.Currency)
+	} else {
+		fmt.Printf("  About %s %s a month (%d hours), %s %s an hour\n", span(q.TotalMin, q.TotalMax), q.Currency, q.Hours, span(q.HourlyMin, q.HourlyMax), q.Currency)
+	}
+	fmt.Printf("  Price book: %s\n", q.PriceBook)
+	for _, u := range q.Unpriced {
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("  %s has no rate in this book yet and is not in the number; it is not free.", u)))
+	}
+	if len(q.Accrues) > 0 {
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("  On top, as it grows: %s.", strings.Join(q.Accrues, ", "))))
+	}
+	if len(q.NotBilled) > 0 {
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Not billed: %s.", strings.Join(q.NotBilled, ", "))))
+	}
+	fmt.Println(mutedStyle.Render("  An estimate at today's rates for the hours it runs; the invoice bills the ledger."))
+	return nil
+}
+
+// firstInt32 is the bound a scale names, or the one the app keeps.
+func firstInt32(named *int32, kept int32) *int32 {
+	if named != nil {
+		return named
+	}
+	return &kept
+}
