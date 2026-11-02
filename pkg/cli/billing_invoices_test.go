@@ -3,6 +3,8 @@ package cli
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,4 +99,35 @@ func TestBillingInvoicesByReadsTheInvoicesUsage(t *testing.T) {
 	assert.Error(t, run("billing", "invoices", "--by", "resource"), "the list has no usage to read")
 	assert.Error(t, run("billing", "invoices", invoice, "--by", "week"), "a word the API has no axis for is refused before the request")
 	assert.Len(t, requested, 1)
+}
+
+// `--pdf` saves the invoice's statement from its own route, byte for byte.
+func TestBillingInvoicesPDFSavesTheStatement(t *testing.T) {
+	const org = "6f1c1f24-3d0e-4a1f-9a3e-2b2b8f0d1a55"
+	const invoice = "2a11900f-4773-47ce-8b6e-7182e628fdbf"
+
+	var requested []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("%PDF-1.3 statement"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("FPCLOUD_API_URL", srv.URL)
+	t.Setenv("FPCLOUD_API_KEY", "test-key")
+	path := filepath.Join(t.TempDir(), "october.pdf")
+
+	rootCmd.SetArgs([]string{"billing", "invoices", invoice, "--pdf", path, "--org", org})
+	defer func() {
+		rootCmd.SetArgs(nil)
+		_ = rootCmd.Flags().Set("org", "")
+		_ = billingInvoicesCmd.Flags().Set("pdf", "")
+	}()
+	require.NoError(t, rootCmd.Execute())
+
+	assert.Equal(t, []string{"/api/v1/orgs/" + org + "/billing/invoices/" + invoice + "/statement.pdf"}, requested)
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF-1.3 statement", string(saved))
 }

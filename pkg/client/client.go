@@ -1039,6 +1039,30 @@ func (c *Client) InvoiceUsage(ctx context.Context, orgID, invoiceID, query strin
 	return &report, nil
 }
 
+// InvoiceStatement reads one invoice as a PDF statement: the month's totals
+// and its lines as billed, the document a tenant forwards to their
+// bookkeeping. The caller reads and closes the body. Gated as the invoice is.
+func (c *Client) InvoiceStatement(ctx context.Context, orgID, invoiceID string) (io.ReadCloser, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/invoices/"+invoiceID+"/statement.pdf", nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Accept", "application/pdf")
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("executing request: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		apiErr := &APIError{StatusCode: resp.StatusCode}
+		if err := json.NewDecoder(resp.Body).Decode(apiErr); err != nil {
+			return nil, &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		}
+		return nil, apiErr
+	}
+	return resp.Body, nil
+}
+
 // GetOrgCredit returns the credit an org holds for the month in progress
 // Requires a billing role; a 404 means the month is not covered.
 func (c *Client) GetOrgCredit(ctx context.Context, orgID string) (*OrgCredit, error) {

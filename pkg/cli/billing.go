@@ -3,10 +3,12 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -474,9 +476,14 @@ billed by project, by resource or by type, the way billing cost does for a
 window; late usage from an earlier month is in it, under its own month with
 --by month.
 
+--pdf writes the invoice as a statement to a file: the totals and the lines
+as billed, the document to forward to your bookkeeping. It is a statement,
+not a tax invoice.
+
   fpcloud billing invoices
   fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf
-  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf --by resource`,
+  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf --by resource
+  fpcloud billing invoices 2a11900f-4773-47ce-8b6e-7182e628fdbf --pdf october.pdf`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		orgID, err := resolveOrgID(cmd)
@@ -484,14 +491,21 @@ window; late usage from an earlier month is in it, under its own month with
 			return err
 		}
 		c := getClient()
+		by, _ := cmd.Flags().GetString("by")
+		pdfPath, _ := cmd.Flags().GetString("pdf")
 		if len(args) == 1 {
-			if by, _ := cmd.Flags().GetString("by"); by != "" {
+			switch {
+			case by != "" && pdfPath != "":
+				return fmt.Errorf("--by and --pdf are two readings of one invoice; ask for one")
+			case pdfPath != "":
+				return saveInvoiceStatement(cmd, c, orgID, args[0], pdfPath)
+			case by != "":
 				return showInvoiceUsage(cmd, c, orgID, args[0], by)
 			}
 			return showInvoice(cmd, c, orgID, args[0])
 		}
-		if by, _ := cmd.Flags().GetString("by"); by != "" {
-			return fmt.Errorf("--by reads one invoice; name it")
+		if by != "" || pdfPath != "" {
+			return fmt.Errorf("--by and --pdf read one invoice; name it")
 		}
 
 		var invoices []*client.Invoice
@@ -680,6 +694,33 @@ func showInvoiceUsage(cmd *cobra.Command, c *client.Client, orgID, invoiceID, by
 	return nil
 }
 
+// saveInvoiceStatement writes the invoice's PDF statement to path, which is
+// created or replaced, and says where it went.
+func saveInvoiceStatement(cmd *cobra.Command, c *client.Client, orgID, invoiceID, path string) error {
+	var body io.ReadCloser
+	var err error
+	withSpinner("Fetching statement...", func() {
+		body, err = c.InvoiceStatement(cmd.Context(), orgID, invoiceID)
+	})
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(f, body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	fmt.Printf("Wrote %s (%d bytes).\n", path, n)
+	return nil
+}
+
 var billingBudgetCmd = &cobra.Command{
 	Use:   "budget",
 	Short: "Set a spend target and get told when you approach it",
@@ -800,6 +841,7 @@ func init() {
 	billingCostCmd.Flags().String("group-by", "", "Up to one of project, resource, type and one of hour, day, month (default type)")
 	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
 	billingInvoicesCmd.Flags().String("by", "", "Read one invoice's usage by project, resource or type, and/or month, day, hour")
+	billingInvoicesCmd.Flags().String("pdf", "", "Write one invoice as a PDF statement to this file")
 
 	billingBudgetSetCmd.Flags().String("amount", "", "Target spend for the period, e.g. 250 (required)")
 	billingBudgetSetCmd.Flags().String("currency", "", "Currency (default EUR)")
