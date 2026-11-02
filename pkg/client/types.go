@@ -583,6 +583,12 @@ type App struct {
 	// project or organization, each with HeldOn. Set on a single read for a
 	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
+	// CallerPermissions is every permission the caller holds on this
+	// resource, from a role on it, its project or its organization, on a
+	// single read and on every row of a list. A list returns only the rows
+	// the caller may read, so a member granted one resource finds it by name.
+	// Omitted when the caller holds none.
+	CallerPermissions []string `json:"caller_permissions,omitempty"`
 }
 
 // ProbeOverrides lets liveness, readiness, and startup diverge from the shared
@@ -906,6 +912,12 @@ type Database struct {
 	// project or organization, each with HeldOn. Set on a single read for a
 	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
+	// CallerPermissions is every permission the caller holds on this
+	// resource, from a role on it, its project or its organization, on a
+	// single read and on every row of a list. A list returns only the rows
+	// the caller may read, so a member granted one resource finds it by name.
+	// Omitted when the caller holds none.
+	CallerPermissions []string `json:"caller_permissions,omitempty"`
 }
 
 // DatabaseConnection is a database's live connection info (GET
@@ -1018,6 +1030,12 @@ type Bucket struct {
 	// project or organization, each with HeldOn. Set on a single read for a
 	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
+	// CallerPermissions is every permission the caller holds on this
+	// resource, from a role on it, its project or its organization, on a
+	// single read and on every row of a list. A list returns only the rows
+	// the caller may read, so a member granted one resource finds it by name.
+	// Omitted when the caller holds none.
+	CallerPermissions []string `json:"caller_permissions,omitempty"`
 }
 
 // WebsiteVersion is one published version of a static site (#476). It exists
@@ -1399,6 +1417,12 @@ type Secret struct {
 	// project or organization, each with HeldOn. Set on a single read for a
 	// caller who may read bindings on it, never on a list.
 	Access []*IAMBinding `json:"access,omitempty"`
+	// CallerPermissions is every permission the caller holds on this
+	// resource, from a role on it, its project or its organization, on a
+	// single read and on every row of a list. A list returns only the rows
+	// the caller may read, so a member granted one resource finds it by name.
+	// Omitted when the caller holds none.
+	CallerPermissions []string `json:"caller_permissions,omitempty"`
 }
 
 // SecretValue is a secret's value, carried by the value read alone and by no
