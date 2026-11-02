@@ -809,7 +809,7 @@ func printQuote(q *client.Quote) error {
 	if q.Hours == 0 {
 		fmt.Printf("  %s %s per hour a run takes\n", span(q.HourlyMin, q.HourlyMax), q.Currency)
 	} else {
-		fmt.Printf("  About %s %s a month (%d hours), %s %s an hour\n", span(q.TotalMin, q.TotalMax), q.Currency, q.Hours, span(q.HourlyMin, q.HourlyMax), q.Currency)
+		fmt.Printf("  Estimate: %s %s a month (%d hours), %s %s an hour\n", span(q.TotalMin, q.TotalMax), q.Currency, q.Hours, span(q.HourlyMin, q.HourlyMax), q.Currency)
 	}
 	fmt.Printf("  Price book: %s\n", q.PriceBook)
 	for _, u := range q.Unpriced {
@@ -818,10 +818,7 @@ func printQuote(q *client.Quote) error {
 	if len(q.Accrues) > 0 {
 		fmt.Println(mutedStyle.Render(fmt.Sprintf("  On top, as it grows: %s.", strings.Join(q.Accrues, ", "))))
 	}
-	if len(q.NotBilled) > 0 {
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("  Not billed: %s.", strings.Join(q.NotBilled, ", "))))
-	}
-	fmt.Println(mutedStyle.Render("  An estimate at today's rates for the hours it runs; the invoice bills the ledger."))
+	fmt.Println(mutedStyle.Render("  Today's rates for the hours it runs; the invoice bills what actually ran."))
 	return nil
 }
 
