@@ -1021,7 +1021,12 @@ type Bucket struct {
 	// URL is where the bucket answers, present whenever PublicRead: the
 	// platform host while that is served, the tenant's own domain once one is
 	// active (ADR-130).
-	URL            string `json:"url,omitempty"`
+	URL string `json:"url,omitempty"`
+	// TLSStatus is the website's platform-host certificate, issued or pending,
+	// and TLSDetail what is in its way while pending or renewing; on a single
+	// bucket read with a website. A custom domain's certificate is on the domain.
+	TLSStatus      string `json:"tls_status,omitempty"`
+	TLSDetail      string `json:"tls_detail,omitempty"`
 	WebsiteVersion int    `json:"website_version"`
 
 	// Secrets names the project secrets holding this bucket's read+write key,
@@ -1250,13 +1255,18 @@ type PresignResponse struct {
 
 // Domain represents a custom domain attached to an application.
 type Domain struct {
-	ID                string     `json:"id"`
-	AppID             string     `json:"app_id,omitempty"`
-	BucketID          string     `json:"bucket_id,omitempty"`
-	Domain            string     `json:"domain"`
-	Mode              string     `json:"mode"`
-	Status            string     `json:"status"`
-	TLSStatus         string     `json:"tls_status"`
+	ID        string `json:"id"`
+	AppID     string `json:"app_id,omitempty"`
+	BucketID  string `json:"bucket_id,omitempty"`
+	Domain    string `json:"domain"`
+	Mode      string `json:"mode"`
+	Status    string `json:"status"`
+	TLSStatus string `json:"tls_status"`
+	// TLSDetail is what stands between the domain and its certificate while
+	// TLSStatus is pending, or while an issued certificate's renewal is stuck:
+	// the ACME challenge's reason, or cert-manager's last failure and next
+	// attempt. Empty when nothing is in the way.
+	TLSDetail         string     `json:"tls_detail,omitempty"`
 	VerificationToken string     `json:"verification_token,omitempty"`
 	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
 	// Routes fan the host out to other apps by path prefix (#581, ADR-060);
@@ -2845,10 +2855,13 @@ type DomainStatus struct {
 	Domain string `json:"domain"`
 	// Source is "custom" for a hostname someone attached, "platform" for the one
 	// the app was given.
-	Source    string          `json:"source"`
-	Mode      string          `json:"mode,omitempty"`
-	Status    string          `json:"status"`
-	TLSStatus string          `json:"tls_status,omitempty"`
+	Source    string `json:"source"`
+	Mode      string `json:"mode,omitempty"`
+	Status    string `json:"status"`
+	TLSStatus string `json:"tls_status,omitempty"`
+	// TLSDetail is what is in the certificate's way while it is pending or
+	// renewing; empty when nothing is.
+	TLSDetail string          `json:"tls_detail,omitempty"`
 	Owner     string          `json:"owner,omitempty"`
 	OwnerKind string          `json:"owner_kind,omitempty"`
 	Problems  []StatusProblem `json:"problems,omitempty"`

@@ -401,7 +401,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			mode = mutedStyle.Render(d.Source)
 		}
 		domainRows = append(domainRows, statusRow{
-			cells: []string{d.Domain, mode, renderStatus(d.Status), tlsLabel(d.TLSStatus), owner},
+			cells: []string{d.Domain, mode, renderStatus(d.Status), tlsCell(d.TLSStatus, d.TLSDetail), owner},
 			notes: problemNotes(d.Problems),
 		})
 	}
@@ -587,6 +587,16 @@ func lastRunLabel(r *client.JobRunStatus) string {
 	default:
 		return lipgloss.NewStyle().Foreground(colorInfo).Render("◌ " + r.Status)
 	}
+}
+
+// tlsCell is the TLS label with what is in the certificate's way beside it,
+// when something is: a tenant reads here what they would otherwise read as a
+// browser warning.
+func tlsCell(status, detail string) string {
+	if detail == "" {
+		return tlsLabel(status)
+	}
+	return tlsLabel(status) + " " + mutedStyle.Render("· "+detail)
 }
 
 func tlsLabel(status string) string {
