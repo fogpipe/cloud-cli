@@ -625,7 +625,6 @@ func tlsReasonPhrase(reason string, next *time.Time) string {
 	return phrase
 }
 
-
 func tlsLabel(status string) string {
 	switch status {
 	case "issued":
