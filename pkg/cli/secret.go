@@ -48,7 +48,7 @@ organization's projects; it is named org/<name> everywhere:
 
   fpcloud secret create org/stripe-key sk_live_...
   fpcloud app env set web STRIPE_KEY --from-secret org/stripe-key
-  fpcloud secret list --org`,
+  fpcloud secret list --on organization`,
 }
 
 var secretCreateCmd = &cobra.Command{
@@ -90,14 +90,17 @@ var secretCreateCmd = &cobra.Command{
 
 var secretListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List the project's secrets, or the organization's with --org (names, never values)",
+	Short:   "List the project's secrets, or the organization's with --on organization (names, never values)",
 	Aliases: []string{"ls"},
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
-		org, _ := cmd.Flags().GetBool("org")
+		on, _ := cmd.Flags().GetString("on")
+		if on != "" && on != "organization" {
+			return fmt.Errorf("--on takes organization, to list the organization's secrets; leave it out for the project's")
+		}
 		var secrets []*client.Secret
-		if org {
+		if on == "organization" {
 			orgID, err := resolveOrgID(cmd)
 			if err != nil {
 				return err
@@ -274,7 +277,7 @@ func resolveSecret(ctx context.Context, c *client.Client, name string) (*client.
 				return sec, nil
 			}
 		}
-		return nil, fmt.Errorf("no secret %q in this organization", orgName)
+		return nil, notFoundf("no secret %q in this organization", orgName)
 	}
 	projectID, err := requireProject()
 	if err != nil {
@@ -289,7 +292,7 @@ func resolveSecret(ctx context.Context, c *client.Client, name string) (*client.
 			return sec, nil
 		}
 	}
-	return nil, fmt.Errorf("no secret %q in this project", name)
+	return nil, notFoundf("no secret %q in this project", name)
 }
 
 // secretDisplayName is the name a secret is referenced by: bare in its
@@ -358,7 +361,10 @@ func secretUsers(sec *client.Secret) string {
 }
 
 func init() {
-	secretListCmd.Flags().Bool("org", false, "List the organization's secrets instead of the project's")
+	// The scope flag is spelled as `iam list` spells it. A local --org bool
+	// shadowed the root's --org <id>, so `fpcloud --org yqw secret list` read
+	// yqw as a command.
+	secretListCmd.Flags().String("on", "", "organization, to list the organization's secrets instead of the project's")
 	secretGetCmd.Flags().Bool("reveal", false, "Include the secret's value (audited)")
 	secretCmd.AddCommand(secretCreateCmd, secretGetCmd, secretAccessCmd, secretListCmd, secretUpdateCmd, secretDeleteCmd)
 	rootCmd.AddCommand(secretCmd)

@@ -840,9 +840,9 @@ var dbUpdateCmd = &cobra.Command{
 			e = slices.DeleteFunc(e, func(name string) bool { return name == "" })
 			req.Extensions = &e
 		}
-		if req.CPU == "" && req.Memory == "" && req.Storage == "" && req.Version == "" &&
+		if req.DisplayName == "" && req.CPU == "" && req.Memory == "" && req.Storage == "" && req.Version == "" &&
 			req.Pooler == nil && req.Extensions == nil {
-			return fmt.Errorf("nothing to update: set at least one of --cpu --memory --storage --postgres-version --pooler --extension")
+			return fmt.Errorf("nothing to update: set at least one of --display-name --cpu --memory --storage --postgres-version --pooler --extension")
 		}
 		if estimating(cmd) {
 			// What the database would run under after the change: the
