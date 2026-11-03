@@ -138,13 +138,20 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any) 
 	return req, nil
 }
 
-// maxRateLimitRetries bounds how many times a refused request is repeated. The
-// platform refuses a rate-limited request BEFORE it reaches the handler, so no
-// work happened and nothing was half-created — the request is repeatable
-// whatever its method, which is what makes retrying a POST sound here rather
-// than a hack. What it is not is unbounded: a caller that keeps retrying into a
-// budget it has genuinely exhausted is the load it is being refused for.
-const maxRateLimitRetries = 4
+// maxRetries bounds how many times a request is repeated, whichever of the two
+// reasons repeats it. The platform refuses a rate-limited request BEFORE it
+// reaches the handler, so no work happened and nothing was half-created — the
+// request is repeatable whatever its method, which is what makes retrying a POST
+// sound here rather than a hack. What it is not is unbounded: a caller that
+// keeps retrying into a budget it has genuinely exhausted is the load it is
+// being refused for.
+const maxRetries = 4
+
+// transportRetryAfter is how long a request whose connection failed waits
+// before it is sent again, before jitter. A dropped connection says nothing
+// about when the path is back, so this is short and the attempt count bounds
+// it.
+const transportRetryAfter = time.Second
 
 // maxRetryAfter caps how long a single refusal may park the caller, however
 // long the server asks for. The caller's own context still ends anything
@@ -154,7 +161,7 @@ const maxRetryAfter = 60 * time.Second
 func (c *Client) do(req *http.Request, out any) error {
 	for attempt := 0; ; attempt++ {
 		retryIn, err := c.attempt(req, out)
-		if retryIn <= 0 || attempt >= maxRateLimitRetries {
+		if retryIn <= 0 || attempt >= maxRetries {
 			return err
 		}
 		replay, replayErr := replayRequest(req)
@@ -168,13 +175,23 @@ func (c *Client) do(req *http.Request, out any) error {
 	}
 }
 
-// attempt performs one exchange. A non-zero duration means the platform refused
-// the request as rate limited and said when to come back; the error is returned
-// alongside it, so a caller that stops retrying still reports what happened.
+// attempt performs one exchange. A non-zero duration means the request may be
+// sent again after it: the platform refused it as rate limited and said when to
+// come back, or its connection failed and its method is safe to repeat. The
+// error is returned alongside it, so a caller that stops retrying still reports
+// what happened.
 func (c *Client) attempt(req *http.Request, out any) (time.Duration, error) {
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("executing request: %w", err)
+		err = fmt.Errorf("executing request: %w", err)
+		// A reset or an EOF from the edge may land after the server acted, so
+		// only a method whose repeat changes nothing more is sent again; a POST
+		// is not. A context that ended is the
+		// caller stopping, never the path failing.
+		if req.Context().Err() != nil || !idempotent(req.Method) {
+			return 0, err
+		}
+		return jittered(transportRetryAfter), err
 	}
 	defer resp.Body.Close()
 
@@ -214,7 +231,23 @@ func retryAfter(header string) time.Duration {
 	if base <= 0 {
 		base = time.Second
 	}
+	return jittered(base)
+}
+
+// jittered adds up to half of base to it, never subtracting: clients that
+// failed together come back spread out, and none sooner than asked.
+func jittered(base time.Duration) time.Duration {
 	return base + time.Duration(rand.Int63n(int64(base/2)+1))
+}
+
+// idempotent reports whether sending a request twice leaves the platform as
+// sending it once would.
+func idempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodDelete:
+		return true
+	}
+	return false
 }
 
 // wait sleeps, unless the caller's context ends first — a retry must never

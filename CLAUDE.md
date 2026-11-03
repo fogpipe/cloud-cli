@@ -78,6 +78,12 @@ there is no half-created resource for a repeat to collide with. The jitter is
 added, never subtracted — one org's clients share one budget, so they are
 refused together and told the same second to return.
 
+It also **retries a transport error** — a reset, an `EOF` — on a `GET`,
+`HEAD`, `OPTIONS`, `PUT` or `DELETE`, under the same attempt bound, after about a
+second with jitter. Those are safe to repeat; a
+`POST` is not, because a connection can drop after the server acted. A context
+that ended is the caller stopping and is never retried.
+
 Nothing else is retried. A 5xx may have done work.
 
 ## A change here is a release

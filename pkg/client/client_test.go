@@ -463,6 +463,54 @@ func TestClient_RetriesARefusedRequestIncludingItsBody(t *testing.T) {
 		"every attempt must carry the body, not just the first")
 }
 
+// A connection the edge drops is sent again when its method is safe to repeat:
+// one reset mid-destroy used to fail it and
+// leave the resource standing.
+func TestClient_RetriesAnIdempotentRequestWhoseConnectionDropped(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"deleting"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fp-test")
+	req, err := c.newRequest(context.Background(), http.MethodDelete, "/api/v1/projects/p", nil)
+	require.NoError(t, err)
+
+	var out struct {
+		Status string `json:"status"`
+	}
+	require.NoError(t, c.do(req, &out))
+	assert.Equal(t, "deleting", out.Status)
+	assert.Equal(t, 3, attempts)
+}
+
+// A POST whose connection dropped may already have created what it asked for,
+// so it is reported, never sent again.
+func TestClient_DoesNotRepeatAPostWhoseConnectionDropped(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		conn, _, _ := w.(http.Hijacker).Hijack()
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "fp-test")
+	req, err := c.newRequest(context.Background(), http.MethodPost, "/api/v1/projects", map[string]string{"name": "demo"})
+	require.NoError(t, err)
+
+	require.Error(t, c.do(req, nil))
+	assert.Equal(t, 1, attempts)
+}
+
 // Retrying is bounded: a caller that keeps retrying into a budget it has really
 // exhausted is the load it is being refused for. The last refusal is what the
 // caller is told about.
@@ -485,7 +533,7 @@ func TestClient_StopsRetryingAndReportsTheRefusal(t *testing.T) {
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
-	assert.Equal(t, maxRateLimitRetries+1, attempts)
+	assert.Equal(t, maxRetries+1, attempts)
 }
 
 // A retry never outlives the deadline the caller set — the caller's context is
