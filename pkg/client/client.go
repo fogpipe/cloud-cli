@@ -757,9 +757,10 @@ func (c *Client) ListProjectsInOrg(ctx context.Context, orgID string) ([]*Projec
 	return projects, nil
 }
 
-// UpdateProjectEgress sets a project's egress mode (restricted, https, all).
+// UpdateProjectEgress sets a project's egress mode (restricted, https, all),
+// which takes the owner's permission on the project, not the editor's.
 func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*Project, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/projects/"+id, UpdateProjectRequest{Egress: egress})
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/projects/"+id+"/egress", SetProjectEgressRequest{Egress: egress})
 	if err != nil {
 		return nil, err
 	}

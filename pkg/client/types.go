@@ -490,10 +490,16 @@ type SetBudgetRequest struct {
 	Thresholds []int  `json:"thresholds,omitempty"`
 }
 
-// UpdateProjectRequest is the request body for updating a project.
+// UpdateProjectRequest is the request body for renaming a project.
 type UpdateProjectRequest struct {
-	DisplayName string `json:"display_name,omitempty"`
-	Egress      string `json:"egress,omitempty"`
+	DisplayName string `json:"display_name"`
+}
+
+// SetProjectEgressRequest is the request body for setting a project's egress
+// mode, a route of its own: opening a project's network is an owner's act,
+// renaming it an editor's.
+type SetProjectEgressRequest struct {
+	Egress string `json:"egress"`
 }
 
 // TrustBinding is a per-project OIDC federation trust binding: a repo (matched by
