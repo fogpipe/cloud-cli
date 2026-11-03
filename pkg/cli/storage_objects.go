@@ -55,7 +55,7 @@ func parseObjectURL(s string) (bucket, key string, isRemote bool) {
 // `v1/*` is the whole tree under v1/ and `*.log` is every log at any depth.
 // filepath.Match is not this: its `*` stops at a slash, which left all but the
 // first level of v1/ in a recursive delete asked to exclude `v1/*`
-// (fogpipe/cloud-workspace#1203).
+// .
 type glob struct {
 	pattern string
 	re      *regexp.Regexp
@@ -236,8 +236,13 @@ func fetchS3Creds(ctx context.Context, c *client.Client) (*cachedS3Creds, error)
 // remote bundles an S3 client with the resolved bucket name for a command.
 type remote struct {
 	cli    *s3.Client
-	bucket string
+	bucket string // the store's name for the bucket, what every S3 call takes
+	name   string // the bucket's fpcloud name, what the caller typed and is told
 }
+
+// url is the fps:// address of key as the caller knows it: by the bucket's
+// fpcloud name, never the store's alias, which the CLI itself would not take.
+func (r *remote) url(key string) string { return "fps://" + r.name + "/" + key }
 
 // bucketS3Client resolves bucketRef to a bucket, reads where the bucket is,
 // reuses the cached identity credential (or reads a fresh one), and builds a
@@ -720,7 +725,7 @@ func resolveDstKey(dstKey, srcName string) string {
 // key that Garage stores verbatim — and filepath.Join cleans, so it resolved to
 // exactly that file: written by cp -r and sync, removed by sync --delete, by
 // whoever next mirrored the bucket onto a workstation
-// (fogpipe/cloud-workspace#343). Refused rather than skipped: a key that cannot
+// . Refused rather than skipped: a key that cannot
 // be written is data the user asked for and would not get, and a mirror of that
 // bucket is not a thing this directory can be.
 func localPath(dir, rel string) (string, error) {
@@ -777,14 +782,14 @@ func runCopy(cmd *cobra.Command, args []string, remove bool) error {
 			if err != nil {
 				return err
 			}
-			srcR = &remote{cli, b}
+			srcR = &remote{cli: cli, bucket: b, name: srcBucket}
 		}
 		if dstRemote {
 			cli, b, err := bucketS3Client(ctx, c, dstBucket, force)
 			if err != nil {
 				return err
 			}
-			dstR = &remote{cli, b}
+			dstR = &remote{cli: cli, bucket: b, name: dstBucket}
 		}
 
 		if !recursive {
@@ -806,13 +811,14 @@ func runCopy(cmd *cobra.Command, args []string, remove bool) error {
 			} else if srcArg != "-" {
 				dLocal = resolveDstPath(dstArg, sKey)
 			}
-			logTransfer(verb, srcArg, dstArg, dryrun)
 			if dryrun {
+				logTransfer(verb, srcArg, dstArg, dryrun)
 				return nil
 			}
 			if err := copyOne(ctx, srcR, mux(srcRemote, sKey, srcArg), dstR, mux(dstRemote, dKeyOrPath, dLocal), opts); err != nil {
 				return err
 			}
+			logTransfer(verb, srcArg, dstArg, dryrun)
 			if remove {
 				return removeSource(ctx, srcR, srcRemote, sKey, srcArg)
 			}
@@ -864,13 +870,14 @@ func uploadLocalTree(ctx context.Context, srcDir string, dstR *remote, dstPrefix
 			return nil
 		}
 		key := joinKey(dstPrefix, rel)
-		logTransfer(verb, p, "fps://"+dstR.bucket+"/"+key, dryrun)
 		if dryrun {
+			logTransfer(verb, p, dstR.url(key), dryrun)
 			return nil
 		}
 		if err := copyOne(ctx, nil, p, dstR, key, opts); err != nil {
 			return err
 		}
+		logTransfer(verb, p, dstR.url(key), dryrun)
 		if remove {
 			return os.Remove(p)
 		}
@@ -894,26 +901,28 @@ func copyRemoteTreeThenMaybeDelete(ctx context.Context, srcR *remote, srcPrefix 
 		var dstDesc string
 		if dstRemote {
 			dstKey := joinKey(dstPrefix, rel)
-			dstDesc = "fps://" + dstR.bucket + "/" + dstKey
-			logTransfer(verb, "fps://"+srcR.bucket+"/"+key, dstDesc, dryrun)
+			dstDesc = dstR.url(dstKey)
 			if dryrun {
+				logTransfer(verb, srcR.url(key), dstDesc, dryrun)
 				return nil
 			}
 			if err := copyOne(ctx, srcR, key, dstR, dstKey, opts); err != nil {
 				return err
 			}
+			logTransfer(verb, srcR.url(key), dstDesc, dryrun)
 		} else {
 			outPath, err := localPath(dstLocal, rel)
 			if err != nil {
 				return err
 			}
-			logTransfer(verb, "fps://"+srcR.bucket+"/"+key, outPath, dryrun)
 			if dryrun {
+				logTransfer(verb, srcR.url(key), outPath, dryrun)
 				return nil
 			}
 			if err := copyOne(ctx, srcR, key, nil, outPath, putOpts{}); err != nil {
 				return err
 			}
+			logTransfer(verb, srcR.url(key), outPath, dryrun)
 		}
 		if remove {
 			if _, err := srcR.cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &srcR.bucket, Key: &key}); err != nil {
@@ -924,6 +933,10 @@ func copyRemoteTreeThenMaybeDelete(ctx context.Context, srcR *remote, srcPrefix 
 	}, nil)
 }
 
+// A line is printed once an object has been transferred or deleted, never
+// before: retryOnAuth re-runs the whole command on a stale credential, and a
+// line printed ahead of the work was printed again by the retry
+// . A dry run prints where the work would be.
 func logTransfer(verb, src, dst string, dryrun bool) {
 	if !verbose() {
 		return
@@ -986,14 +999,15 @@ var storageRmCmd = &cobra.Command{
 				if key == "" {
 					return fmt.Errorf("refusing to delete without a key; pass --recursive to empty a bucket")
 				}
-				if verbose() {
-					fmt.Printf("%sdelete: fps://%s/%s\n", dryPrefix(dryrun), s3bucket, key)
-				}
 				if dryrun {
+					logDelete(bucket, key, dryrun)
 					return nil
 				}
-				_, err := cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &s3bucket, Key: &key})
-				return err
+				if _, err := cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &s3bucket, Key: &key}); err != nil {
+					return err
+				}
+				logDelete(bucket, key, dryrun)
+				return nil
 			}
 			// recursive: list + batch delete
 			var batch []s3types.ObjectIdentifier
@@ -1006,6 +1020,11 @@ var storageRmCmd = &cobra.Command{
 					Bucket: &s3bucket,
 					Delete: &s3types.Delete{Objects: batch, Quiet: aws.Bool(true)},
 				})
+				if err == nil {
+					for _, o := range batch {
+						logDelete(bucket, aws.ToString(o.Key), dryrun)
+					}
+				}
 				batch = nil
 				return err
 			}
@@ -1018,8 +1037,8 @@ var storageRmCmd = &cobra.Command{
 				if !includedByFilters(rules, rel) {
 					return nil
 				}
-				if verbose() {
-					fmt.Printf("%sdelete: fps://%s/%s\n", dryPrefix(dryrun), s3bucket, k)
+				if dryrun {
+					logDelete(bucket, k, dryrun)
 				}
 				batch = append(batch, s3types.ObjectIdentifier{Key: aws.String(k)})
 				if len(batch) >= 1000 {
@@ -1033,6 +1052,18 @@ var storageRmCmd = &cobra.Command{
 			return flush()
 		})
 	},
+}
+
+func logDelete(bucket, key string, dryrun bool) {
+	if verbose() {
+		fmt.Printf("%sdelete: fps://%s/%s\n", dryPrefix(dryrun), bucket, key)
+	}
+}
+
+func logLocalDelete(p string, dryrun bool) {
+	if verbose() {
+		fmt.Printf("%sdelete: %s\n", dryPrefix(dryrun), p)
+	}
 }
 
 func dryPrefix(dryrun bool) string {
@@ -1105,14 +1136,14 @@ func runSync(srcArg, dstArg string, opts syncOptions) error {
 			if err != nil {
 				return err
 			}
-			srcR = &remote{cli, b}
+			srcR = &remote{cli: cli, bucket: b, name: srcBucket}
 		}
 		if dstRemote {
 			cli, b, err := bucketS3Client(ctx, c, dstBucket, force)
 			if err != nil {
 				return err
 			}
-			dstR = &remote{cli, b}
+			dstR = &remote{cli: cli, bucket: b, name: dstBucket}
 		}
 
 		srcList, err := listMeta(ctx, srcR, srcRemote, srcArg, srcPrefix, true)
@@ -1218,12 +1249,12 @@ func syncCopyOne(ctx context.Context, srcR *remote, srcRemote bool, srcArg, srcP
 	srcDesc := srcKeyOrPath
 	if srcRemote {
 		srcKeyOrPath = joinKey(srcPrefix, rel)
-		srcDesc = "fps://" + srcR.bucket + "/" + srcKeyOrPath
+		srcDesc = srcR.url(srcKeyOrPath)
 	}
 	dstKeyOrPath := joinKey(dstPrefix, rel)
 	dstDesc := ""
 	if dstRemote {
-		dstDesc = "fps://" + dstR.bucket + "/" + dstKeyOrPath
+		dstDesc = dstR.url(dstKeyOrPath)
 	} else {
 		p, err := localPath(dstArg, rel)
 		if err != nil {
@@ -1231,38 +1262,43 @@ func syncCopyOne(ctx context.Context, srcR *remote, srcRemote bool, srcArg, srcP
 		}
 		dstKeyOrPath, dstDesc = p, p
 	}
-	if verbose() {
-		fmt.Printf("%scopy: %s -> %s\n", dryPrefix(dryrun), srcDesc, dstDesc)
-	}
 	if dryrun {
+		logTransfer("copy", srcDesc, dstDesc, dryrun)
 		return nil
 	}
-	return copyOne(ctx, srcR, srcKeyOrPath, dstR, dstKeyOrPath, put)
+	if err := copyOne(ctx, srcR, srcKeyOrPath, dstR, dstKeyOrPath, put); err != nil {
+		return err
+	}
+	logTransfer("copy", srcDesc, dstDesc, dryrun)
+	return nil
 }
 
 func syncDeleteOne(ctx context.Context, dstR *remote, dstRemote bool, dstArg, dstPrefix, rel string, dryrun bool) error {
 	if dstRemote {
 		key := joinKey(dstPrefix, rel)
-		if verbose() {
-			fmt.Printf("%sdelete: fps://%s/%s\n", dryPrefix(dryrun), dstR.bucket, key)
-		}
 		if dryrun {
+			logDelete(dstR.name, key, dryrun)
 			return nil
 		}
-		_, err := dstR.cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &dstR.bucket, Key: &key})
-		return err
+		if _, err := dstR.cli.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &dstR.bucket, Key: &key}); err != nil {
+			return err
+		}
+		logDelete(dstR.name, key, dryrun)
+		return nil
 	}
 	p, err := localPath(dstArg, rel)
 	if err != nil {
 		return err
 	}
-	if verbose() {
-		fmt.Printf("%sdelete: %s\n", dryPrefix(dryrun), p)
-	}
 	if dryrun {
+		logLocalDelete(p, dryrun)
 		return nil
 	}
-	return os.Remove(p)
+	if err := os.Remove(p); err != nil {
+		return err
+	}
+	logLocalDelete(p, dryrun)
+	return nil
 }
 
 // --- cat --------------------------------------------------------------------
