@@ -29,3 +29,14 @@ func TestRenderInfoBoxBordersEveryLine(t *testing.T) {
 		t.Errorf("second value line should carry the value alone: %q", lines[4])
 	}
 }
+
+// A message box's blank line above it is a newline, never a row of spaces:
+// lipgloss pads a margin row to the box's width, which captured output shows
+// as a line of trailing whitespace.
+func TestMessageBoxLeavesNoWhitespaceOnlyLine(t *testing.T) {
+	for _, line := range strings.Split(successBox.Render("done"), "\n") {
+		if strings.TrimSpace(line) == "" && line != "" {
+			t.Fatalf("whitespace-only line %q in %q", line, successBox.Render("done"))
+		}
+	}
+}

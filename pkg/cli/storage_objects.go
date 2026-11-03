@@ -1327,6 +1327,10 @@ var storageCatCmd = &cobra.Command{
 			}
 			out, err := cli.GetObject(ctx, in)
 			if err != nil {
+				var missing *s3types.NoSuchKey
+				if errors.As(err, &missing) {
+					return notFoundf("%s: no such object", args[0])
+				}
 				return err
 			}
 			defer out.Body.Close()

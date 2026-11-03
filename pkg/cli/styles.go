@@ -121,26 +121,34 @@ var titleStyle = lipgloss.NewStyle().
 // Subtle text for IDs and timestamps
 var mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
 
+// messageBox is a bordered box printed on a line of its own, with one empty
+// line above it. The empty line is a real newline and not a lipgloss margin:
+// a margin row is padded to the box's width with spaces, which is invisible
+// in a terminal and a line of trailing whitespace in anything that captures
+// the output.
+type messageBox struct{ lipgloss.Style }
+
+func (b messageBox) Render(strs ...string) string {
+	return "\n" + b.Style.Render(strs...)
+}
+
 // Success message box
-var successBox = lipgloss.NewStyle().
+var successBox = messageBox{lipgloss.NewStyle().
 	BorderStyle(lipgloss.RoundedBorder()).
 	BorderForeground(colorSuccess).
-	Padding(0, 2).
-	MarginTop(1)
+	Padding(0, 2)}
 
 // Warning box: something the user has to decide on, not a failure
-var warnBox = lipgloss.NewStyle().
+var warnBox = messageBox{lipgloss.NewStyle().
 	BorderStyle(lipgloss.RoundedBorder()).
 	BorderForeground(colorWarning).
-	Padding(0, 2).
-	MarginTop(1)
+	Padding(0, 2)}
 
 // Error message box
-var errorBox = lipgloss.NewStyle().
+var errorBox = messageBox{lipgloss.NewStyle().
 	BorderStyle(lipgloss.RoundedBorder()).
 	BorderForeground(colorDanger).
-	Padding(0, 2).
-	MarginTop(1)
+	Padding(0, 2)}
 
 // Key-value pair rendering for detail views
 // renderKeyValue draws one label and its value as one row. A value holding
