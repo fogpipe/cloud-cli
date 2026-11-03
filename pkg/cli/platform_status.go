@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-	"golang.org/x/mod/semver"
 )
 
 var statusCmd = &cobra.Command{
@@ -37,8 +36,7 @@ show command.`,
 			})
 		}
 		fmt.Print(renderPlatformStatus(server, version, time.Now()))
-		if semver.IsValid(version) && semver.IsValid(server.MinClientVersion) &&
-			semver.Compare(version, server.MinClientVersion) < 0 {
+		if clientVersionBelow(version, server.MinClientVersion) {
 			fmt.Fprintln(os.Stderr, lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render(
 				"This client is older than the oldest version the control plane serves; run `fpcloud upgrade`."))
 		}

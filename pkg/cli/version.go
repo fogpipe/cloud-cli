@@ -59,8 +59,7 @@ var versionCmd = &cobra.Command{
 		if server.LatestRelease != "" {
 			fmt.Printf("Latest Release: %s\n", server.LatestRelease)
 		}
-		if semver.IsValid(version) && semver.IsValid(server.MinClientVersion) &&
-			semver.Compare(version, server.MinClientVersion) < 0 {
+		if clientVersionBelow(version, server.MinClientVersion) {
 			fmt.Printf("\n%s\n", lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render(
 				"This deployment refuses fpcloud "+version+". Run `fpcloud upgrade`."))
 		}
