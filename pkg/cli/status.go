@@ -625,16 +625,6 @@ func tlsReasonPhrase(reason string, next *time.Time) string {
 	return phrase
 }
 
-func shortDuration(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return "under a minute"
-	case d < time.Hour:
-		return fmt.Sprintf("%d min", int(d.Minutes()))
-	default:
-		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-	}
-}
 
 func tlsLabel(status string) string {
 	switch status {
