@@ -224,7 +224,9 @@ func renderRoles(roles []string) string {
 	out := make([]string, len(roles))
 	for i, r := range roles {
 		if r == "owner" {
-			out[i] = titleStyle.Render(r)
+			// Bold alone: titleStyle carries a bottom margin, which rendered
+			// as an empty table row under every owner.
+			out[i] = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(r)
 		} else {
 			out[i] = r
 		}

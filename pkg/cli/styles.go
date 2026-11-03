@@ -143,20 +143,54 @@ var errorBox = lipgloss.NewStyle().
 	MarginTop(1)
 
 // Key-value pair rendering for detail views
+// renderKeyValue draws one label and its value as one row. A value holding
+// several lines keeps the label on its first line, with the rest indented
+// under the value: a box row is then as many terminal lines as the value has,
+// each one bordered by renderInfoBox.
 func renderKeyValue(key, value string) string {
-	k := lipgloss.NewStyle().Bold(true).Width(16).Render(key)
-	return k + value
+	return renderKeyValueWidth(key, value, labelWidth(key))
 }
 
-// Info box for resource creation results
+// labelWidth is the column a label takes: the label itself and one space,
+// never narrower than the sixteen columns the boxes have always used, so a
+// box with short labels keeps its familiar shape.
+func labelWidth(labels ...string) int {
+	width := 16
+	for _, l := range labels {
+		if w := lipgloss.Width(l) + 1; w > width {
+			width = w
+		}
+	}
+	return width
+}
+
+func renderKeyValueWidth(key, value string, width int) string {
+	k := lipgloss.NewStyle().Bold(true).Width(width).Render(key)
+	lines := strings.Split(value, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = strings.Repeat(" ", width) + lines[i]
+	}
+	return k + strings.Join(lines, "\n")
+}
+
+// Info box for resource creation results. The label column is sized from the
+// longest label in the box, so a label the fixed sixteen columns could not
+// hold no longer wraps inside its cell and breaks the border
+// .
 func renderInfoBox(title string, pairs [][]string) string {
+	labels := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		labels = append(labels, pair[0])
+	}
+	column := labelWidth(labels...)
 	rows := make([]string, 0, len(pairs))
 	width := 0
 	for _, pair := range pairs {
-		row := renderKeyValue(pair[0], pair[1])
-		rows = append(rows, row)
-		if w := lipgloss.Width(row); w > width {
-			width = w
+		for _, line := range strings.Split(renderKeyValueWidth(pair[0], pair[1], column), "\n") {
+			rows = append(rows, line)
+			if w := lipgloss.Width(line); w > width {
+				width = w
+			}
 		}
 	}
 	// The title sits in the top border rather than on a row of its own, so the

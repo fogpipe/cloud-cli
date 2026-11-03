@@ -830,8 +830,8 @@ func percentList(thresholds []int) string {
 }
 
 func init() {
-	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h")
-	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d")
+	billingCostCmd.Flags().String("from", "", "Start of the period: RFC3339 timestamp, or an offset like 30d/12h; given together with --to (default: the month so far)")
+	billingCostCmd.Flags().String("to", "", "End of the period: RFC3339 timestamp, or an offset like 1d; given together with --from")
 	billingCostCmd.Flags().String("group-by", "", "Any of project, resource, type, combined, and one of hour, day, month (default type)")
 	billingCostCmd.Flags().String("resource", "", "One app, database, job, runner or bucket, by name or id")
 	billingInvoicesCmd.Flags().String("by", "", "Read one invoice's usage by any of project, resource, type, combined, and/or month, day, hour")

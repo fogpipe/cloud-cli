@@ -119,7 +119,7 @@ var domainRemoveCmd = &cobra.Command{
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Domain %q removed from app %s.", args[0], appID),
+				fmt.Sprintf(" Domain %q removed from app %s.", args[0], appRef),
 		))
 		return nil
 	},

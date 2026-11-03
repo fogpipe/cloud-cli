@@ -94,7 +94,7 @@ var saListCmd = &cobra.Command{
 }
 
 // A machine identity the ORGANIZATION holds, rather than one of its projects
-// (fogpipe/cloud-workspace#778). For a credential that outlives every project —
+// . For a credential that outlives every project —
 // a CI suite that creates and destroys its own, a tofu root — which had no home
 // in the schema and was written as a user row instead, so the identity
 // provisioning task mailed CI an invitation (#741).
@@ -263,6 +263,11 @@ func runSAKeyCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// A script that mints a key reads it back from the structured form; the
+	// box is for a person.
+	if isStructured(rootCmd.Flag("output").Value.String()) {
+		return renderData(key)
+	}
 	fmt.Println(renderInfoBox("Service Account Key Created", [][]string{
 		{"Key ID", key.ID},
 		{"API Key", key.APIKey},
@@ -436,7 +441,9 @@ func accessRows(bindings []*client.IAMBinding) string {
 		}
 		parts = append(parts, b.MemberType+":"+b.Member+" ("+held+")")
 	}
-	return strings.Join(parts, ", ")
+	// One holder per line: joined with a comma the row was one 280-column
+	// line on a project with four bindings.
+	return strings.Join(parts, "\n")
 }
 
 var iamGrantCmd = &cobra.Command{

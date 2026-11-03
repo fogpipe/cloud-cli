@@ -518,9 +518,14 @@ func lastRunSummary(r *client.JobRun) string {
 func jobInfoRows(j *client.Job) [][]string {
 	rows := [][]string{
 		{"Name", j.Name},
-		{"Schedule", fmt.Sprintf("%s (%s)", j.Schedule, j.Timezone)},
-		{"Target", jobTargetSummary(j)},
 	}
+	if j.DisplayName != "" && j.DisplayName != j.Name {
+		rows = append(rows, []string{"Display Name", j.DisplayName})
+	}
+	rows = append(rows,
+		[]string{"Schedule", fmt.Sprintf("%s (%s)", j.Schedule, j.Timezone)},
+		[]string{"Target", jobTargetSummary(j)},
+	)
 	if j.AppName != "" {
 		rows = append(rows, []string{"App", j.AppName})
 	}

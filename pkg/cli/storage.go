@@ -307,7 +307,7 @@ var storageBucketDeleteCmd = &cobra.Command{
 		if err := c.DeleteBucket(context.Background(), id); err != nil {
 			var apiErr *client.APIError
 			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
-				return fmt.Errorf("bucket %q is not empty: %s (empty it with an S3 client first; --force empty-then-delete lands in #266)", args[0], apiErr.Error())
+				return fmt.Errorf("bucket %q is not empty: %s (empty it first: fpcloud storage rm fps://%s/ --recursive)", args[0], apiErr.Error(), args[0])
 			}
 			return err
 		}
@@ -774,6 +774,7 @@ var storageKeysDeleteCmd = &cobra.Command{
 func websiteInfoPairs(b *client.Bucket) [][]string {
 	pairs := [][]string{
 		{"Name", b.Name},
+		{"Public read", yesNo(b.PublicRead)},
 		{"Website", yesNo(b.WebsiteEnabled)},
 	}
 	if b.WebsiteEnabled {
