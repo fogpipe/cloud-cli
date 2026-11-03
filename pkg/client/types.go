@@ -1022,12 +1022,14 @@ type Bucket struct {
 	// platform host while that is served, the tenant's own domain once one is
 	// active (ADR-130).
 	URL string `json:"url,omitempty"`
-	// TLSStatus is the website's platform-host certificate, issued or pending,
-	// and TLSDetail what is in its way while pending or renewing; on a single
-	// bucket read with a website. A custom domain's certificate is on the domain.
-	TLSStatus      string `json:"tls_status,omitempty"`
-	TLSDetail      string `json:"tls_detail,omitempty"`
-	WebsiteVersion int    `json:"website_version"`
+	// TLSStatus is the website's platform-host certificate, issued or pending;
+	// TLSReason and TLSNextAttempt say what is in its way while an issuance or
+	// a renewal fails, as on Domain. On a single bucket read with a website; a
+	// custom domain's certificate is on the domain.
+	TLSStatus      string     `json:"tls_status,omitempty"`
+	TLSReason      string     `json:"tls_reason,omitempty"`
+	TLSNextAttempt *time.Time `json:"tls_next_attempt,omitempty"`
+	WebsiteVersion int        `json:"website_version"`
 
 	// Secrets names the project secrets holding this bucket's read+write key,
 	// by part (ADR-296): "access_key_id" is <name>-access-key-id and
@@ -1262,11 +1264,14 @@ type Domain struct {
 	Mode      string `json:"mode"`
 	Status    string `json:"status"`
 	TLSStatus string `json:"tls_status"`
-	// TLSDetail is what stands between the domain and its certificate while
-	// TLSStatus is pending, or while an issued certificate's renewal is stuck:
-	// the ACME challenge's reason, or cert-manager's last failure and next
-	// attempt. Empty when nothing is in the way.
-	TLSDetail         string     `json:"tls_detail,omitempty"`
+	// TLSReason is what stands between the domain and its certificate while an
+	// issuance or a renewal is failing: "dns" (the name does not point here;
+	// the verification says what to point it at), "unreachable" (something in
+	// front of the platform answered the check), "rate_limited" (the CA, for
+	// now) or "platform" (ours, and alerted). TLSNextAttempt is when the next
+	// try is. Both empty when nothing is in the way.
+	TLSReason         string     `json:"tls_reason,omitempty"`
+	TLSNextAttempt    *time.Time `json:"tls_next_attempt,omitempty"`
 	VerificationToken string     `json:"verification_token,omitempty"`
 	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
 	// Routes fan the host out to other apps by path prefix (#581, ADR-060);
@@ -2859,12 +2864,13 @@ type DomainStatus struct {
 	Mode      string `json:"mode,omitempty"`
 	Status    string `json:"status"`
 	TLSStatus string `json:"tls_status,omitempty"`
-	// TLSDetail is what is in the certificate's way while it is pending or
-	// renewing; empty when nothing is.
-	TLSDetail string          `json:"tls_detail,omitempty"`
-	Owner     string          `json:"owner,omitempty"`
-	OwnerKind string          `json:"owner_kind,omitempty"`
-	Problems  []StatusProblem `json:"problems,omitempty"`
+	// TLSReason and TLSNextAttempt say what is in the certificate's way while
+	// an issuance or a renewal fails, as on Domain; empty when nothing is.
+	TLSReason      string          `json:"tls_reason,omitempty"`
+	TLSNextAttempt *time.Time      `json:"tls_next_attempt,omitempty"`
+	Owner          string          `json:"owner,omitempty"`
+	OwnerKind      string          `json:"owner_kind,omitempty"`
+	Problems       []StatusProblem `json:"problems,omitempty"`
 }
 
 // BucketStatus is one managed bucket, and whether it serves a website.

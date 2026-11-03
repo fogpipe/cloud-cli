@@ -83,7 +83,7 @@ var domainAddCmd = &cobra.Command{
 		fmt.Println(renderInfoBox("Custom Domain Added", [][]string{
 			{"Domain", d.Domain},
 			{"Status", renderStatus(status)},
-			{"TLS", tlsCell(d.TLSStatus, d.TLSDetail)},
+			{"TLS", tlsCell(d.TLSStatus, d.TLSReason, d.TLSNextAttempt)},
 		}))
 		fmt.Println()
 		if verr == nil {
@@ -174,7 +174,7 @@ With --app it is that app's own domains, with their routing.`,
 			if len(d.Routes) > 0 {
 				routes = fmt.Sprintf("%d apps", len(d.Routes)+1)
 			}
-			rows[i] = []string{d.Domain, d.Mode, renderStatus(d.Status), tlsCell(d.TLSStatus, d.TLSDetail), routes}
+			rows[i] = []string{d.Domain, d.Mode, renderStatus(d.Status), tlsCell(d.TLSStatus, d.TLSReason, d.TLSNextAttempt), routes}
 		}
 		render(
 			[]string{"DOMAIN", "MODE", "STATUS", "TLS", "ROUTING"},
@@ -237,7 +237,7 @@ var domainStatusCmd = &cobra.Command{
 		fmt.Println(renderInfoBox("Domain Status", [][]string{
 			{"Domain", d.Domain},
 			{"Status", renderStatus(d.Status)},
-			{"TLS", tlsCell(d.TLSStatus, d.TLSDetail)},
+			{"TLS", tlsCell(d.TLSStatus, d.TLSReason, d.TLSNextAttempt)},
 		}))
 		fmt.Println()
 		if d.Status == "active" {

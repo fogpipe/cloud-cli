@@ -401,7 +401,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			mode = mutedStyle.Render(d.Source)
 		}
 		domainRows = append(domainRows, statusRow{
-			cells: []string{d.Domain, mode, renderStatus(d.Status), tlsCell(d.TLSStatus, d.TLSDetail), owner},
+			cells: []string{d.Domain, mode, renderStatus(d.Status), tlsCell(d.TLSStatus, d.TLSReason, d.TLSNextAttempt), owner},
 			notes: problemNotes(d.Problems),
 		})
 	}
@@ -592,11 +592,48 @@ func lastRunLabel(r *client.JobRunStatus) string {
 // tlsCell is the TLS label with what is in the certificate's way beside it,
 // when something is: a tenant reads here what they would otherwise read as a
 // browser warning.
-func tlsCell(status, detail string) string {
-	if detail == "" {
+func tlsCell(status, reason string, next *time.Time) string {
+	if reason == "" {
 		return tlsLabel(status)
 	}
-	return tlsLabel(status) + " " + mutedStyle.Render("· "+detail)
+	return tlsLabel(status) + " " + mutedStyle.Render("· "+tlsReasonPhrase(reason, next))
+}
+
+// tlsReasonPhrase says what a TLS reason means and what, if anything, to do.
+// The reason is the platform's classification, never the controller's sentence.
+func tlsReasonPhrase(reason string, next *time.Time) string {
+	var phrase string
+	switch reason {
+	case "dns":
+		phrase = "DNS is not pointing here; the domain's verification says which record to set"
+	case "unreachable":
+		phrase = "something in front of the platform answers the certificate check"
+	case "rate_limited":
+		phrase = "the certificate authority is rate-limiting; nothing to do but wait"
+	case "platform":
+		phrase = "on our side, and we have been alerted"
+	default:
+		phrase = reason
+	}
+	if next != nil {
+		if until := time.Until(*next); until > 0 {
+			phrase += ", next try in " + shortDuration(until)
+		} else {
+			phrase += ", retrying"
+		}
+	}
+	return phrase
+}
+
+func shortDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "under a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	}
 }
 
 func tlsLabel(status string) string {

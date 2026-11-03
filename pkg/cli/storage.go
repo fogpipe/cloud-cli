@@ -785,7 +785,7 @@ func websiteInfoPairs(b *client.Bucket) [][]string {
 			url = lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(url)
 		}
 		if b.TLSStatus != "" {
-			pairs = append(pairs, []string{"TLS", tlsCell(b.TLSStatus, b.TLSDetail)})
+			pairs = append(pairs, []string{"TLS", tlsCell(b.TLSStatus, b.TLSReason, b.TLSNextAttempt)})
 		}
 		index := b.WebsiteIndexDocument
 		if index == "" {
