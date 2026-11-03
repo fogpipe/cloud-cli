@@ -1940,9 +1940,10 @@ type Deployment struct {
 	ReleaseLogs string  `json:"release_logs,omitempty"`
 	StartedAt   string  `json:"started_at"`
 	FinishedAt  *string `json:"finished_at,omitempty"`
-	DurationMs  *int    `json:"duration_ms,omitempty"`
-	CreatedBy   string  `json:"created_by,omitempty"`
-	CreatedAt   string  `json:"created_at"`
+	// CreatedBy is the email of the person or service account that made the
+	// deployment, as the audit trail records it.
+	CreatedBy string `json:"created_by,omitempty"`
+	CreatedAt string `json:"created_at"`
 }
 
 // SetIAMBindingRequest is the request body for setting an IAM binding.

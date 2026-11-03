@@ -1494,19 +1494,6 @@ var appDeploymentsCmd = &cobra.Command{
 				id = id[:12]
 			}
 
-			// Format duration.
-			duration := "\u2014" // em dash
-			if d.DurationMs != nil {
-				ms := *d.DurationMs
-				if ms < 1000 {
-					duration = fmt.Sprintf("%dms", ms)
-				} else if ms < 60000 {
-					duration = fmt.Sprintf("%ds", ms/1000)
-				} else {
-					duration = fmt.Sprintf("%dm %ds", ms/60000, (ms%60000)/1000)
-				}
-			}
-
 			// Format relative time.
 			created := d.CreatedAt
 			if t, parseErr := parseTimeAgo(d.CreatedAt); parseErr == nil {
@@ -1524,9 +1511,9 @@ var appDeploymentsCmd = &cobra.Command{
 				reason = d.Message
 			}
 
-			rows[i] = []string{id, releaseCell(d.Release), d.Image, status, duration, created, reason}
+			rows[i] = []string{id, releaseCell(d.Release), d.Image, status, created, reason}
 		}
-		render([]string{"ID", "RELEASE", "IMAGE", "STATUS", "DURATION", "CREATED", "REASON"}, rows, deployments)
+		render([]string{"ID", "RELEASE", "IMAGE", "STATUS", "CREATED", "REASON"}, rows, deployments)
 		return nil
 	},
 }
