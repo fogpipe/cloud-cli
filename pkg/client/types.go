@@ -1854,14 +1854,17 @@ type SetBackupDestinationRequest struct {
 	Schedule        string `json:"schedule,omitempty"`
 }
 
-// UpdateBackupConfigRequest is what turns managed backups on or off and sets
-// their schedule and retention. Separate from BackupConfig for the same reason:
-// the read carries derived state (the recoverability point, the problems) that
-// is the server's to report and nobody's to send.
+// UpdateBackupConfigRequest is a change to a database's backup configuration:
+// a nil field keeps the value the database has, so setting the retention never
+// rewrites the schedule. Setting a schedule turns scheduled backups on; an
+// empty Schedule or Retention restores the platform's default for it. Separate
+// from BackupConfig for the same reason as every other change type: the read
+// carries derived state (the recoverability point, the problems) that is the
+// server's to report and nobody's to send.
 type UpdateBackupConfigRequest struct {
-	Enabled   bool   `json:"enabled"`
-	Schedule  string `json:"schedule,omitempty"`
-	Retention string `json:"retention,omitempty"`
+	Enabled   *bool   `json:"enabled,omitempty"`
+	Schedule  *string `json:"schedule,omitempty"`
+	Retention *string `json:"retention,omitempty"`
 }
 
 // BackupDestination is an opt-in, per-database external backup target (issue #130,

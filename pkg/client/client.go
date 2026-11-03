@@ -2333,9 +2333,10 @@ func (c *Client) GetBackupConfig(ctx context.Context, dbID string) (*BackupConfi
 	return &config, nil
 }
 
-// UpdateBackupConfig updates the backup configuration for a database.
+// UpdateBackupConfig changes the backup configuration of a database; a field
+// left nil in req keeps its value.
 func (c *Client) UpdateBackupConfig(ctx context.Context, dbID string, req UpdateBackupConfigRequest) error {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/databases/"+dbID+"/backup-config", req)
+	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/databases/"+dbID+"/backup-config", req)
 	if err != nil {
 		return err
 	}

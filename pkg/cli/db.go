@@ -597,9 +597,16 @@ var dbBackupConfigShowCmd = &cobra.Command{
 
 var dbBackupConfigSetCmd = &cobra.Command{
 	Use:   "set <name>",
-	Short: "Update backup configuration",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runDBBackupConfigSet,
+	Short: "Change the backup schedule or retention",
+	Long: `Change a database's backup configuration. A flag you leave out keeps its
+value, so setting the retention never touches the schedule. Setting a schedule
+turns scheduled backups on; an empty value restores the platform's default for
+that flag. "fpcloud db backup config show" prints what is set.`,
+	Example: `  fpcloud db backup config set mydb --schedule "0 3 * * 0"
+  fpcloud db backup config set mydb --retention 14d
+  fpcloud db backup config set mydb --disable`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDBBackupConfigSet,
 }
 
 func runDBBackupConfigShow(cmd *cobra.Command, args []string) error {
@@ -674,21 +681,15 @@ func runDBBackupConfigShow(cmd *cobra.Command, args []string) error {
 }
 
 func runDBBackupConfigSet(cmd *cobra.Command, args []string) error {
-	schedule, _ := cmd.Flags().GetString("schedule")
-	retention, _ := cmd.Flags().GetString("retention")
-	disabled, _ := cmd.Flags().GetBool("disable")
-
+	config, err := backupConfigChange(cmd)
+	if err != nil {
+		return err
+	}
 	c := getClient()
 	id, err := resolveDatabaseID(c, args[0])
 	if err != nil {
 		return err
 	}
-	config := client.UpdateBackupConfigRequest{
-		Enabled:   !disabled,
-		Schedule:  schedule,
-		Retention: retention,
-	}
-
 	if err := c.UpdateBackupConfig(context.Background(), id, config); err != nil {
 		return err
 	}
@@ -698,6 +699,35 @@ func runDBBackupConfigSet(cmd *cobra.Command, args []string) error {
 			" Backup configuration updated.",
 	))
 	return nil
+}
+
+// backupConfigChange turns the flags that were passed into the change to send:
+// a flag left out is nil on the wire and keeps its value, which is what makes
+// `--retention 14d` leave a weekly schedule weekly. The platform's defaults
+// live on the platform, so no flag carries one here.
+func backupConfigChange(cmd *cobra.Command) (client.UpdateBackupConfigRequest, error) {
+	var config client.UpdateBackupConfigRequest
+	flags := cmd.Flags()
+	if flags.Changed("schedule") {
+		schedule, _ := flags.GetString("schedule")
+		config.Schedule = &schedule
+	}
+	if flags.Changed("retention") {
+		retention, _ := flags.GetString("retention")
+		config.Retention = &retention
+	}
+	if flags.Changed("disable") {
+		disabled, _ := flags.GetBool("disable")
+		if disabled && config.Schedule != nil {
+			return config, fmt.Errorf("--disable turns scheduled backups off; drop it or drop --schedule")
+		}
+		enabled := !disabled
+		config.Enabled = &enabled
+	}
+	if config.Enabled == nil && config.Schedule == nil && config.Retention == nil {
+		return config, fmt.Errorf("nothing to change: set at least one of --schedule --retention --disable")
+	}
+	return config, nil
 }
 
 func validateRestoreFlags(external bool, target, pit string) error {
@@ -910,9 +940,9 @@ func addBackupExternalFlag(cmd *cobra.Command) {
 }
 
 func addBackupConfigSetFlags(cmd *cobra.Command) {
-	cmd.Flags().String("schedule", "0 3 * * *", "5-field cron schedule for automated backups (minute hour day-of-month month day-of-week)")
-	cmd.Flags().String("retention", "30d", "Backup retention period")
-	cmd.Flags().Bool("disable", false, "Disable scheduled backups")
+	cmd.Flags().String("schedule", "", "5-field cron schedule for automated backups (minute hour day-of-month month day-of-week), in UTC; setting one turns scheduled backups on")
+	cmd.Flags().String("retention", "", "How far back a restore can reach, a count and a unit (30d, 4w, 6m)")
+	cmd.Flags().Bool("disable", false, "Turn scheduled backups off; existing backups stay until retention ages them out")
 }
 
 func addBackupDestSetFlags(cmd *cobra.Command) {
