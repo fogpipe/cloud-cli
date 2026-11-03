@@ -246,6 +246,7 @@ var appCreateCmd = &cobra.Command{
 				Command:             command,
 				Args:                cmdArgs,
 				ReleaseCommand:      releaseCommand,
+				Release:             flagStr(cmd, "release"),
 				VolumeMounts:        mounts,
 				SecurityContext:     secCtx,
 				Port:                port,
@@ -1792,6 +1793,7 @@ event is the only record.
 
 func init() {
 	appCreateCmd.Flags().String("image", "", "Container image")
+	appCreateCmd.Flags().String("release", "", "Name the first revision (e.g. v1.4.0); derived from the image tag when left out, reported by `app version`, targetable by `app rollback`")
 	appCreateCmd.Flags().String("cpu", "", "CPU limit per instance, like 500m or 2 (default 500m)")
 	appCreateCmd.Flags().String("memory", "", "Memory limit per instance, like 512Mi or 2Gi (default 512Mi)")
 	estimateFlag(appCreateCmd)
@@ -1830,7 +1832,7 @@ func init() {
 	appListCmd.Flags().Bool("show-id", false, "Include the app ID column in the output")
 
 	appDeployCmd.Flags().String("image", "", "Container image (required)")
-	appDeployCmd.Flags().String("release", "", "Name this release (e.g. v1.4.0) — reported by `app version` and targetable by `app rollback`")
+	appDeployCmd.Flags().String("release", "", "Name this revision (e.g. v1.4.0); derived from the image tag when left out, reported by `app version`, targetable by `app rollback`")
 	appDeployCmd.Flags().StringArray("release-command", nil, "Release command this deploy runs, set as part of it (repeatable; pass with no value to drop the release phase). Omit to keep the app's own")
 
 	appReconcileCmd.Flags().Bool("all", false, "Reconcile every app in the current project")

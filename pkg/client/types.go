@@ -689,6 +689,12 @@ type CreateAppRequest struct {
 	HealthCheckInterval int                  `json:"health_check_interval,omitempty"`
 	HealthCheckRetries  int                  `json:"health_check_retries,omitempty"`
 	Probes              *ProbeOverrides      `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+
+	// Release names the first revision, the one `app rollback` can aim at.
+	// Left empty, the platform derives it from the image's tag (`web:v1.2.3`
+	// is `v1.2.3`; a tag that repeats on another build gets the build's short
+	// digest after it), as it does for every deploy.
+	Release string `json:"release,omitempty"`
 }
 
 // UpdateProbesRequest replaces an app's per-probe liveness/readiness/startup
@@ -701,7 +707,9 @@ type UpdateProbesRequest struct {
 // DeployRequest is the request body for deploying a new app revision.
 type DeployRequest struct {
 	Image string `json:"image"`
-	// Release names the version this deploy publishes (#471). Optional.
+	// Release names the version this deploy publishes. Left empty, the
+	// platform derives it from the image's tag, so every revision has a name
+	// `app rollback` can aim at.
 	Release string `json:"release,omitempty"`
 	// ReleaseCommand is the release command this deploy is deployed with
 	// (ADR-110). Nil leaves the app's stored command alone; non-nil sets it as
