@@ -1372,7 +1372,7 @@ var storageDuCmd = &cobra.Command{
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(map[string]any{"total_size": total, "total_objects": count})
 		}
-		fmt.Printf("%s %s objects  %s\n", fmtSize(total, true), strconv.FormatInt(count, 10), args[0])
+		fmt.Printf("%s %s %s  %s\n", fmtSize(total, true), strconv.FormatInt(count, 10), plural(int(count), "object", "objects"), args[0])
 		return nil
 	},
 }

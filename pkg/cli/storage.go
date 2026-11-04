@@ -706,7 +706,7 @@ func bucketS3Name(b *client.Bucket) string {
 func bucketUsage(b *client.Bucket) string {
 	out := storedBytes(b.UsedBytes)
 	if b.ObjectCount != nil {
-		out += fmt.Sprintf(" · %d objects", *b.ObjectCount)
+		out += fmt.Sprintf(" · %d %s", *b.ObjectCount, plural(int(*b.ObjectCount), "object", "objects"))
 	}
 	return out
 }
