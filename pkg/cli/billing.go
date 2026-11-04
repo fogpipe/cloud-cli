@@ -244,7 +244,7 @@ func costResourceID(report *client.CostReport, name string) (string, error) {
 	projects := map[string]bool{}
 	for _, r := range found {
 		projects[r.ProjectName] = true
-		fmt.Fprintf(&b, "\n  %s  %s in %s, %s %s", r.ResourceID, deletedName(r.ResourceName, r.ResourceDeleted), r.ProjectName, formatAmount(r.Amount), report.Currency)
+		fmt.Fprintf(&b, "\n  %s  %s, %s in %s, %s %s", r.ResourceID, deletedName(r.ResourceName, r.ResourceDeleted), r.Kind, r.ProjectName, formatAmount(r.Amount), report.Currency)
 	}
 	if len(projects) > 1 {
 		b.WriteString("\nor name its project with --project")

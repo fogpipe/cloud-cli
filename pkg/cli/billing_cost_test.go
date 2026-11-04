@@ -104,10 +104,10 @@ func TestCostRowsShowTheGroupingAskedFor(t *testing.T) {
 // after a delete, it cannot help.
 func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 	report := &client.CostReport{Currency: "EUR", Rows: []client.CostRow{
-		{ProjectName: "shop", ResourceID: "a1", ResourceName: "web", Amount: "1"},
-		{ProjectName: "shop", ResourceID: "d1", ResourceName: "db", Amount: "1.3904"},
-		{ProjectName: "shop", ResourceID: "d0", ResourceName: "db", ResourceDeleted: true, Amount: "0.001"},
-		{ProjectName: "blog", ResourceID: "a2", ResourceName: "web", Amount: "1"},
+		{ProjectName: "shop", ResourceID: "a1", Kind: "app", ResourceName: "web", Amount: "1"},
+		{ProjectName: "shop", ResourceID: "d1", Kind: "database", ResourceName: "db", Amount: "1.3904"},
+		{ProjectName: "shop", ResourceID: "d0", Kind: "database", ResourceName: "db", ResourceDeleted: true, Amount: "0.001"},
+		{ProjectName: "blog", ResourceID: "a2", Kind: "app", ResourceName: "web", Amount: "1"},
 		{ProjectName: "shop", Amount: "1"},
 	}}
 	if id, err := costResourceID(report, "d1"); err != nil || id != "d1" {
@@ -121,7 +121,7 @@ func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("a name two projects share resolved; want a refusal")
 	}
-	for _, want := range []string{"a1  web in shop, 1.00 EUR", "a2  web in blog, 1.00 EUR", "--project"} {
+	for _, want := range []string{"a1  web, app in shop, 1.00 EUR", "a2  web, app in blog, 1.00 EUR", "--project"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}
@@ -131,7 +131,7 @@ func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("a name one project holds twice resolved; want a refusal")
 	}
-	for _, want := range []string{"d1  db in shop, 1.39 EUR", "d0  db (deleted) in shop, 0.00 EUR"} {
+	for _, want := range []string{"d1  db, database in shop, 1.39 EUR", "d0  db (deleted), database in shop, 0.00 EUR"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}
