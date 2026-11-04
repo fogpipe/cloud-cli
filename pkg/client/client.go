@@ -2051,19 +2051,6 @@ func (c *Client) GetS3Credentials(ctx context.Context) (*S3Credentials, error) {
 	return &creds, nil
 }
 
-// SetBucketQuota updates a bucket's quotas (bytes / object count; 0 = unlimited).
-func (c *Client) SetBucketQuota(ctx context.Context, id string, maxSize, maxObjects int64) (*Bucket, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+id+"/quota", SetBucketQuotaRequest{QuotaMaxSize: maxSize, QuotaMaxObjects: maxObjects})
-	if err != nil {
-		return nil, err
-	}
-	var b Bucket
-	if err := c.do(httpReq, &b); err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
-
 // ListBucketLifecycleRules lists a bucket's object-expiry rules (#498).
 func (c *Client) ListBucketLifecycleRules(ctx context.Context, id string) ([]*BucketLifecycleRule, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/buckets/"+id+"/lifecycle", nil)

@@ -62,52 +62,6 @@ func resolveBucketID(c *client.Client, ref string) (string, error) {
 	return "", notFoundf("bucket %q not found in project %q", ref, project)
 }
 
-// parseSize parses a byte count that may carry a binary suffix (Ki/Mi/Gi/Ti).
-// An empty string returns 0, which no longer reaches the API as a quota — the
-// caller only sends a value the flag actually carried (ADR-129).
-func parseSize(s string) (int64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, nil
-	}
-	multipliers := []struct {
-		suffix string
-		factor int64
-	}{
-		{"Ti", 1 << 40},
-		{"Gi", 1 << 30},
-		{"Mi", 1 << 20},
-		{"Ki", 1 << 10},
-	}
-	for _, m := range multipliers {
-		if strings.HasSuffix(s, m.suffix) {
-			n, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(s, m.suffix)), 64)
-			if err != nil {
-				return 0, fmt.Errorf("invalid size %q: %w", s, err)
-			}
-			return int64(n * float64(m.factor)), nil
-		}
-	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid size %q: want a byte count or a Ki/Mi/Gi/Ti suffix", s)
-	}
-	return n, nil
-}
-
-// humanizeQuota renders a size bound.
-//
-// A quota is always a size (ADR-129), so a zero here is a bucket the server
-// did not report one for — "unknown", never "unlimited". The two used to
-// render alike, which is the reading that hid an unbounded bucket inside a
-// bounded-looking listing.
-func humanizeQuota(n int64) string {
-	if n <= 0 {
-		return "unknown"
-	}
-	return humanizeSize(n)
-}
-
 // humanizeSize renders a byte count with a binary suffix.
 func humanizeSize(n int64) string {
 	if n <= 0 {
@@ -148,22 +102,6 @@ var storageBucketCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// A flag left off is left off, rather than sent as a zero: absent takes
-		// the platform default, and zero is not a size and is refused
-		// (ADR-129).
-		var maxSize, maxObjects *int64
-		if cmd.Flags().Changed("quota-size") {
-			sizeStr, _ := cmd.Flags().GetString("quota-size")
-			v, err := parseSize(sizeStr)
-			if err != nil {
-				return err
-			}
-			maxSize = &v
-		}
-		if cmd.Flags().Changed("quota-objects") {
-			v, _ := cmd.Flags().GetInt64("quota-objects")
-			maxObjects = &v
-		}
 		var publicRead *bool
 		if cmd.Flags().Changed("public-read") {
 			v, _ := cmd.Flags().GetBool("public-read")
@@ -177,10 +115,8 @@ var storageBucketCreateCmd = &cobra.Command{
 		var createErr error
 		action := func() {
 			b, createErr = c.CreateBucket(context.Background(), projectID, client.CreateBucketRequest{
-				Name:            args[0],
-				QuotaMaxSize:    maxSize,
-				QuotaMaxObjects: maxObjects,
-				PublicRead:      publicRead,
+				Name:       args[0],
+				PublicRead: publicRead,
 			})
 		}
 		if !isStructured(outputFormat) {
@@ -202,7 +138,6 @@ var storageBucketCreateCmd = &cobra.Command{
 			{"S3 name", bucketS3Name(b)},
 			{"Endpoint", b.Endpoint},
 			{"Region", b.Region},
-			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
 			{"Status", renderStatus(b.Status)},
 		}
 		if len(b.Secrets) > 0 {
@@ -237,7 +172,7 @@ var storageBucketListCmd = &cobra.Command{
 			// the URL can fetch its objects.
 			rows[i] = []string{b.Name, bucketUsage(b), yesNo(b.PublicRead), dashIfEmpty(b.URL), renderStatus(b.Status)}
 		}
-		render([]string{"NAME", "USED/QUOTA", "PUBLIC", "URL", "STATUS"}, rows, buckets)
+		render([]string{"NAME", "STORED", "PUBLIC", "URL", "STATUS"}, rows, buckets)
 		return nil
 	},
 }
@@ -267,7 +202,7 @@ var storageBucketDescribeCmd = &cobra.Command{
 			{"S3 name", bucketS3Name(b)},
 			{"Endpoint", b.Endpoint},
 			{"Region", b.Region},
-			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
+			{"Stored", bucketUsage(b)},
 			{"Status", renderStatus(b.Status)},
 			{"Secrets", dashIfEmpty(ownedSecretsRow(b.Secrets))},
 			{"Used by", dashIfEmpty(strings.Join(b.UsedBy, ", "))},
@@ -365,59 +300,6 @@ var storageBucketCredentialsCmd = &cobra.Command{
 			pairs = append(pairs, []string{"Note", mutedStyle.Render(creds.Note)})
 		}
 		fmt.Println(renderInfoBox("Bucket Credentials", pairs))
-		return nil
-	},
-}
-
-var storageBucketSetQuotaCmd = &cobra.Command{
-	Use:   "set-quota <name|id>",
-	Short: "Update a bucket's size / object-count quota",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !cmd.Flags().Changed("quota-size") && !cmd.Flags().Changed("quota-objects") {
-			return fmt.Errorf("nothing to update: set --quota-size and/or --quota-objects")
-		}
-		c := getClient()
-		id, err := resolveBucketID(c, args[0])
-		if err != nil {
-			return err
-		}
-		existing, err := c.GetBucket(context.Background(), id)
-		if err != nil {
-			return err
-		}
-		maxSize := existing.QuotaMaxSize
-		if cmd.Flags().Changed("quota-size") {
-			sizeStr, _ := cmd.Flags().GetString("quota-size")
-			maxSize, err = parseSize(sizeStr)
-			if err != nil {
-				return err
-			}
-		}
-		maxObjects := existing.QuotaMaxObjects
-		if cmd.Flags().Changed("quota-objects") {
-			maxObjects, _ = cmd.Flags().GetInt64("quota-objects")
-		}
-
-		outputFormat := rootCmd.Flag("output").Value.String()
-		var b *client.Bucket
-		var setErr error
-		action := func() { b, setErr = c.SetBucketQuota(context.Background(), existing.ID, maxSize, maxObjects) }
-		if !isStructured(outputFormat) {
-			withSpinner("Updating quota...", action)
-		} else {
-			action()
-		}
-		if setErr != nil {
-			return setErr
-		}
-		if isStructured(outputFormat) {
-			return renderData(b)
-		}
-		fmt.Println(renderInfoBox("Quota Updated", [][]string{
-			{"Name", b.Name},
-			{"Quota", bucketQuota(b.QuotaMaxSize, b.QuotaMaxObjects)},
-		}))
 		return nil
 	},
 }
@@ -819,55 +701,26 @@ func bucketS3Name(b *client.Bucket) string {
 	return b.GlobalAlias
 }
 
-// bucketUsage renders what the bucket holds against its quota, with the
-// object count when the store reported one.
+// bucketUsage renders what the bucket holds, with the object count when the
+// store reported one.
 func bucketUsage(b *client.Bucket) string {
-	out := usageAgainstQuota(b.UsedBytes, b.QuotaMaxSize)
+	out := storedBytes(b.UsedBytes)
 	if b.ObjectCount != nil {
 		out += fmt.Sprintf(" · %d objects", *b.ObjectCount)
 	}
 	return out
 }
 
-// usageAgainstQuota renders used bytes against a size quota, with the share
-// of the quota consumed. A nil used count is the store not answering, shown
-// as unknown rather than as empty; a quota the server did not report has no
-// share to show.
-func usageAgainstQuota(used *int64, quota int64) string {
+// storedBytes renders what a bucket holds. A nil count is the store not
+// answering, shown as unknown rather than as empty.
+func storedBytes(used *int64) string {
 	if used == nil {
-		return "— of " + humanizeQuota(quota)
+		return "—"
 	}
-	out := humanizeSize(*used) + " of " + humanizeQuota(quota)
-	if quota > 0 {
-		out += " (" + usagePercent(*used, quota) + ")"
-	}
-	return out
-}
-
-// usagePercent rounds the share to a whole percent, except that anything
-// above zero and below one percent is "<1%" rather than a "0%" that reads
-// as empty.
-func usagePercent(used, quota int64) string {
-	pct := float64(used) * 100 / float64(quota)
-	if used > 0 && pct < 1 {
-		return "<1%"
-	}
-	return fmt.Sprintf("%.0f%%", pct)
-}
-
-// bucketQuota renders the size/object quota pair for detail views.
-
-func bucketQuota(maxSize, maxObjects int64) string {
-	objects := "unknown"
-	if maxObjects > 0 {
-		objects = strconv.FormatInt(maxObjects, 10) + " objects"
-	}
-	return humanizeQuota(maxSize) + " / " + objects
+	return humanizeSize(*used)
 }
 
 func init() {
-	storageBucketCreateCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti); unset takes the platform default. Reserved against the organization's ceiling")
-	storageBucketCreateCmd.Flags().Int64("quota-objects", 0, "Max object count; unset takes the platform default. Reserved against the organization's ceiling")
 	storageBucketCreateCmd.Flags().Bool("public-read", false, "Serve the bucket's objects to anyone, without a signature")
 	storageBucketUpdateCmd.Flags().Bool("public-read", false, "Whether the bucket's objects can be read without a signature")
 	storageBucketUpdateCmd.Flags().Bool("website", false, "Whether the bucket carries the static-website conventions")
@@ -877,9 +730,6 @@ func init() {
 	storageBucketDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	storageBucketCredentialsCmd.Flags().String("format", "table", "Output form: table | env | json")
-
-	storageBucketSetQuotaCmd.Flags().String("quota-size", "", "Max total size (bytes or Ki/Mi/Gi/Ti). Reserved against the organization's ceiling")
-	storageBucketSetQuotaCmd.Flags().Int64("quota-objects", 0, "Max object count. Reserved against the organization's ceiling")
 
 	storageBucketWebsiteEnableCmd.Flags().String("index", "", "Index document served for a directory request (default index.html)")
 	storageBucketWebsiteEnableCmd.Flags().String("error", "", "Document served on a miss (optional)")
@@ -915,7 +765,6 @@ func init() {
 		storageBucketDescribeCmd,
 		storageBucketDeleteCmd,
 		storageBucketCredentialsCmd,
-		storageBucketSetQuotaCmd,
 		storageBucketUpdateCmd,
 		storageBucketWebsiteCmd,
 		storageBucketLifecycleCmd,

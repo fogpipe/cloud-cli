@@ -277,10 +277,10 @@ func renderCeiling(p client.StatusProject) string {
 	// why, which is how object storage stayed unbounded while the org row read
 	// as the whole obligation.
 	if p.MaxObjectStorage != "" {
-		axes = append(axes, humanizeSize(p.ReservedObjectBytes)+"/"+p.MaxObjectStorage+" objects (reserved)")
+		axes = append(axes, humanizeSize(p.UsedObjectBytes)+"/"+p.MaxObjectStorage+" object storage")
 	}
 	if p.MaxObjects > 0 {
-		axes = append(axes, fmt.Sprintf("%d/%d object count (reserved)", p.ReservedObjects, p.MaxObjects))
+		axes = append(axes, fmt.Sprintf("%d/%d objects", p.UsedObjects, p.MaxObjects))
 	}
 	if p.MaxRegistryStorage != "" {
 		axes = append(axes, humanizeSize(p.UsedRegistryBytes)+"/"+p.MaxRegistryStorage+" registry"+registryAge(p))
@@ -417,7 +417,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			}
 		}
 		bucketRows = append(bucketRows, statusRow{
-			cells:   []string{bk.Name, usageAgainstQuota(bk.UsedBytes, bk.QuotaMaxSize), renderStatus(bk.Status), website},
+			cells:   []string{bk.Name, storedBytes(bk.UsedBytes), renderStatus(bk.Status), website},
 			details: httpLines(bk.HTTP, unreadHTTP(s, bk.WebsiteEnabled && loadAsked(s))),
 		})
 	}

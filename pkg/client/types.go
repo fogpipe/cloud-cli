@@ -205,9 +205,9 @@ type CapacityAxis struct {
 	// Bounded says the organization has a bound on the axis, so Allowed and
 	// Admitted exist; false on HTTP requests, which have none yet.
 	Bounded bool `json:"bounded"`
-	// Reserves says the axis has a reservation distinct from its use: limits,
-	// volume sizes, bucket quotas. False on registry and backup storage, where
-	// what is stored is what counts, and on the counts.
+	// Reserves says the axis has a reservation distinct from its use: limits
+	// and volume sizes. False on object, registry and backup storage, where what
+	// is stored is what counts, and on the counts.
 	Reserves bool `json:"reserves"`
 	// MeasuresUse says the platform reads use on this axis for at least one
 	// kind of resource on it; Unmeasured names the kinds it does not.
@@ -1001,19 +1001,17 @@ type UpdateDatabaseRequest struct {
 // Secrets names (ADR-296), referenced from an app's env or read on purpose
 // through the audited value read (ADR-281, ADR-303).
 type Bucket struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	Name            string    `json:"name"`
-	GlobalAlias     string    `json:"global_alias,omitempty"`
-	Region          string    `json:"region,omitempty"`
-	Endpoint        string    `json:"endpoint,omitempty"`
-	QuotaMaxSize    int64     `json:"quota_max_size,omitempty"`
-	QuotaMaxObjects int64     `json:"quota_max_objects,omitempty"`
-	UsedBytes       *int64    `json:"used_bytes,omitempty"`
-	ObjectCount     *int64    `json:"object_count,omitempty"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	Name        string    `json:"name"`
+	GlobalAlias string    `json:"global_alias,omitempty"`
+	Region      string    `json:"region,omitempty"`
+	Endpoint    string    `json:"endpoint,omitempty"`
+	UsedBytes   *int64    `json:"used_bytes,omitempty"`
+	ObjectCount *int64    `json:"object_count,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 
 	// PublicRead is whether the bucket's objects can be read without a
 	// signature (ADR-161). A website is a bucket that is public and carries the
@@ -1076,27 +1074,13 @@ type SetBucketURLSlugRequest struct {
 	URLSlug string `json:"url_slug"`
 }
 
-// CreateBucketRequest is the request body for creating a bucket.
-//
-// A quota field is a pointer so that absent means "take the platform default"
-// rather than colliding with a stated value. A bucket quota is a reservation
-// against the organization's ceiling, so a size it cannot hold is refused —
-// and so is zero, which is not a size (ADR-129).
+// CreateBucketRequest is the request body for creating a bucket. A bucket has
+// no size: the organization is bounded on what its buckets store.
 type CreateBucketRequest struct {
-	Name            string `json:"name"`
-	QuotaMaxSize    *int64 `json:"quota_max_size,omitempty"`
-	QuotaMaxObjects *int64 `json:"quota_max_objects,omitempty"`
+	Name string `json:"name"`
 	// PublicRead makes the bucket's objects readable without a signature from
 	// the moment it exists (ADR-161). Nil leaves it private.
 	PublicRead *bool `json:"public_read,omitempty"`
-}
-
-// SetBucketQuotaRequest is the request body for updating a bucket's quotas. It
-// states the whole quota, so both fields are required, and both are sizes above
-// zero — a bucket with no number voids its organization's ceiling (ADR-129).
-type SetBucketQuotaRequest struct {
-	QuotaMaxSize    int64 `json:"quota_max_size"`
-	QuotaMaxObjects int64 `json:"quota_max_objects"`
 }
 
 // SetBucketWebsiteRequest is the request body for toggling static-website
@@ -1515,9 +1499,8 @@ type Organization struct {
 	MaxStorage string `json:"max_storage"`
 
 	// Every metered type is bounded by the org (ADR-128), and these four are
-	// the ones Kubernetes cannot count: object storage is the sum of what the
-	// org's bucket quotas reserve, the registry and managed backups are what
-	// its projects were last measured to hold.
+	// the ones Kubernetes cannot count: object storage, the registry and managed
+	// backups are what its projects were last measured to hold.
 	//
 	// Backups are the largest of them and were the last to get an axis: the
 	// archive bucket carries no quota on purpose, its row is not in `buckets`,
@@ -2558,19 +2541,18 @@ type StatusProject struct {
 	UsedPods       int64  `json:"used_pods,omitempty"`
 	UsedStorage    string `json:"used_storage,omitempty"`
 
-	// The axes bounded in the control plane rather than by a ResourceQuota
-	// (ADR-128). Object storage is what the org's buckets have been GRANTED —
-	// a bucket quota is a reservation — where the registry is what its projects
-	// were last MEASURED to hold, which is why only that one carries the age of
-	// its reading.
-	MaxObjectStorage    string    `json:"max_object_storage,omitempty"`
-	MaxObjects          int64     `json:"max_objects,omitempty"`
-	MaxRegistryStorage  string    `json:"max_registry_storage,omitempty"`
-	MaxBackupStorage    string    `json:"max_backup_storage,omitempty"`
-	ReservedObjectBytes int64     `json:"reserved_object_bytes,omitempty"`
-	ReservedObjects     int64     `json:"reserved_objects,omitempty"`
-	UsedRegistryBytes   int64     `json:"used_registry_bytes,omitempty"`
-	RegistryMeasuredAt  time.Time `json:"registry_measured_at,omitempty"`
+	// The axes bounded in the control plane rather than by a ResourceQuota:
+	// what the org's buckets and its registry were last measured to hold, each
+	// with the time of that reading.
+	MaxObjectStorage   string    `json:"max_object_storage,omitempty"`
+	MaxObjects         int64     `json:"max_objects,omitempty"`
+	MaxRegistryStorage string    `json:"max_registry_storage,omitempty"`
+	MaxBackupStorage   string    `json:"max_backup_storage,omitempty"`
+	UsedObjectBytes    int64     `json:"used_object_bytes,omitempty"`
+	UsedObjects        int64     `json:"used_objects,omitempty"`
+	ObjectsMeasuredAt  time.Time `json:"objects_measured_at,omitempty"`
+	UsedRegistryBytes  int64     `json:"used_registry_bytes,omitempty"`
+	RegistryMeasuredAt time.Time `json:"registry_measured_at,omitempty"`
 
 	CeilingScope string `json:"ceiling_scope,omitempty"`
 }
@@ -2891,7 +2873,6 @@ type BucketStatus struct {
 	URL            string `json:"url,omitempty"`
 	UsedBytes      *int64 `json:"used_bytes,omitempty"`
 	ObjectCount    *int64 `json:"object_count,omitempty"`
-	QuotaMaxSize   int64  `json:"quota_max_size,omitempty"`
 	// HTTP is what the edge served the website over a load window, on a
 	// bucket serving one.
 	HTTP *HTTPLoad `json:"http,omitempty"`
