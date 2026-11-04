@@ -275,6 +275,9 @@ var appCreateCmd = &cobra.Command{
 		if createErr != nil {
 			return createErr
 		}
+		if app, err = deployOutcome(c, app.ID, app, outputFormat); err != nil {
+			return err
+		}
 
 		if isStructured(outputFormat) {
 			return renderData(app)
@@ -683,29 +686,8 @@ var appDeployCmd = &cobra.Command{
 			return deployErr
 		}
 
-		// A release-gated deploy returns immediately while the release command
-		// runs as a Job; follow the deployment record to its terminal status.
-		if len(app.ReleaseCommand) > 0 {
-			var dep *client.Deployment
-			wait := func() { dep, deployErr = waitForRelease(c, appID) }
-			if !isStructured(outputFormat) {
-				withSpinner("Running release command...", wait)
-			} else {
-				wait()
-			}
-			if deployErr != nil {
-				return deployErr
-			}
-			if dep.Status == "failed" {
-				msg := dep.Message
-				if logs := strings.TrimSpace(dep.ReleaseLogs); logs != "" {
-					msg += "\n\n--- release command output ---\n" + logs
-				}
-				return fmt.Errorf("%s", msg)
-			}
-			if fresh, err := c.GetApp(context.Background(), appID); err == nil {
-				app = fresh
-			}
+		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+			return err
 		}
 
 		if isStructured(outputFormat) {
@@ -1000,26 +982,92 @@ var appReconcileCmd = &cobra.Command{
 	},
 }
 
-// waitForRelease follows the newest deployment record until a release-gated
-// deploy resolves — the API's deploy call returns while the release command is
-// still running as a Job, leaving the record in 'releasing' until the gate and
-// rollout finish.
-func waitForRelease(c *client.Client, appID string) (*client.Deployment, error) {
-	deadline := timeNow().Add(30 * time.Minute)
-	for {
-		deps, err := c.ListDeployments(context.Background(), appID)
+// deployOutcome is how every call that rolls an app out ends: create, deploy,
+// rollback and upgrade. The API answers each with the app and records the
+// outcome on the app's newest deployment, so the record is followed to its
+// terminal status and a failed one is an error carrying the API's message.
+// Checking the app's own status alone is not enough in either direction: a
+// release-gated call returns while the release command still runs as a Job,
+// with the record in 'releasing', and an ungated call whose rollout the
+// cluster refused returns 200 with the app marked failed, which once rendered
+// a success box above a failed status and exited zero. The app the call
+// returned is the fallback when no record was written.
+func deployOutcome(c *client.Client, appID string, app *client.App, outputFormat string) (*client.App, error) {
+	dep, err := newestDeployment(c, appID)
+	if err != nil {
+		return nil, err
+	}
+	if dep != nil && !deploymentSettled(dep) {
+		wait := func() { dep, err = waitForDeployment(c, appID) }
+		title := "Waiting for the rollout..."
+		if len(dep.ReleaseCommand) > 0 {
+			title = "Running release command..."
+		}
+		if isStructured(outputFormat) {
+			wait()
+		} else {
+			withSpinner(title, wait)
+		}
 		if err != nil {
 			return nil, err
 		}
-		if len(deps) > 0 {
-			switch deps[0].Status {
-			case "deploying", "releasing":
-			default:
-				return deps[0], nil
-			}
+	}
+	if dep != nil && dep.Status == "failed" {
+		msg := dep.Message
+		if msg == "" {
+			msg = "the deploy failed; `fpcloud app deployments` has its record"
+		}
+		if logs := strings.TrimSpace(dep.ReleaseLogs); logs != "" {
+			msg += "\n\n--- release command output ---\n" + logs
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+	if app.Status == "failed" {
+		return nil, fmt.Errorf("the deploy failed; `fpcloud app deployments` has its record")
+	}
+	if fresh, err := c.GetApp(context.Background(), appID); err == nil {
+		app = fresh
+	}
+	return app, nil
+}
+
+// deploymentSettled says whether a deployment record has reached a terminal
+// status: anything but the two the API writes while a rollout is in flight.
+func deploymentSettled(dep *client.Deployment) bool {
+	switch dep.Status {
+	case "deploying", "releasing":
+		return false
+	}
+	return true
+}
+
+// newestDeployment reads an app's newest deployment record, nil when the app
+// has none.
+func newestDeployment(c *client.Client, appID string) (*client.Deployment, error) {
+	deps, err := c.ListDeployments(context.Background(), appID)
+	if err != nil {
+		return nil, err
+	}
+	if len(deps) == 0 {
+		return nil, nil
+	}
+	return deps[0], nil
+}
+
+// waitForDeployment follows the newest deployment record until it settles,
+// bounded by the release command's own timeout on the server.
+func waitForDeployment(c *client.Client, appID string) (*client.Deployment, error) {
+	deadline := timeNow().Add(30 * time.Minute)
+	for {
+		dep, err := newestDeployment(c, appID)
+		if err != nil {
+			return nil, err
+		}
+		if dep == nil || deploymentSettled(dep) {
+			return dep, nil
 		}
 		if timeNow().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for the release command to finish; check `fpcloud app deployments`")
+			return nil, fmt.Errorf("timed out waiting for the rollout to finish; check `fpcloud app deployments`")
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -1348,6 +1396,9 @@ var appRollbackCmd = &cobra.Command{
 		}
 		if rollbackErr != nil {
 			return rollbackErr
+		}
+		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+			return err
 		}
 
 		if isStructured(outputFormat) {
@@ -1746,6 +1797,9 @@ of its own, is refused: deploy an image instead.
 		}
 		if upgradeErr != nil {
 			return upgradeErr
+		}
+		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+			return err
 		}
 		if isStructured(outputFormat) {
 			return renderData(app)
