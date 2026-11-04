@@ -275,7 +275,7 @@ var appCreateCmd = &cobra.Command{
 		if createErr != nil {
 			return createErr
 		}
-		if app, err = deployOutcome(c, app.ID, app, outputFormat); err != nil {
+		if app, err = deployOutcome(cmd, c, app.ID, app, outputFormat); err != nil {
 			return err
 		}
 
@@ -641,8 +641,13 @@ var appDeployCmd = &cobra.Command{
 		"--release-command states the release command this deploy runs, set as part of it: the " +
 		"deploy that introduces a migration is the deploy gated on it. Omit the flag and the app's " +
 		"own release command applies, as it does to every other deploy; pass it with no value to " +
-		"drop the release phase.",
+		"drop the release phase.\n\n" +
+		"A release command is waited on, because it decides whether anything rolls out. The rollout " +
+		"after it is not, and the previous version serves until it ends: the deploy is accepted, and " +
+		"`fpcloud app deployments` says how it ended. --wait waits for that and exits non-zero if the " +
+		"rollout fails, for a CI step whose next step needs the new version.",
 	Example: "  fpcloud app deploy web --image ghcr.io/me/web:v3\n" +
+		"  fpcloud app deploy web --image ghcr.io/me/web:v3 --wait\n" +
 		"  fpcloud app deploy web --image ghcr.io/me/web:v3 --release v3 --release-command \"npm run migrate\"",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -686,7 +691,7 @@ var appDeployCmd = &cobra.Command{
 			return deployErr
 		}
 
-		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+		if app, err = deployOutcome(cmd, c, appID, app, outputFormat); err != nil {
 			return err
 		}
 
@@ -694,9 +699,13 @@ var appDeployCmd = &cobra.Command{
 			return renderData(app)
 		}
 
+		verb := "Deployed"
+		if app.Status == "deploying" {
+			verb = "Rolling out"
+		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Deployed %s to %s", image, app.URL),
+				fmt.Sprintf(" %s %s to %s", verb, image, app.URL),
 		))
 		fmt.Println()
 		fmt.Println(renderInfoBox("Deployment", [][]string{
@@ -707,6 +716,7 @@ var appDeployCmd = &cobra.Command{
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
+		printRolloutContinues(app)
 		return nil
 	},
 }
@@ -992,21 +1002,22 @@ var appReconcileCmd = &cobra.Command{
 // cluster refused returns 200 with the app marked failed, which once rendered
 // a success box above a failed status and exited zero. The app the call
 // returned is the fallback when no record was written.
-func deployOutcome(c *client.Client, appID string, app *client.App, outputFormat string) (*client.App, error) {
+func deployOutcome(cmd *cobra.Command, c *client.Client, appID string, app *client.App, outputFormat string) (*client.App, error) {
+	wait, _ := cmd.Flags().GetBool("wait")
 	dep, err := newestDeployment(c, appID)
 	if err != nil {
 		return nil, err
 	}
-	if dep != nil && !deploymentSettled(dep) {
-		wait := func() { dep, err = waitForDeployment(c, appID) }
+	if dep != nil && !deploymentSettled(dep, wait) {
+		follow := func() { dep, err = waitForDeployment(c, appID, wait) }
 		title := "Waiting for the rollout..."
-		if len(dep.ReleaseCommand) > 0 {
+		if dep.Status == "releasing" && len(dep.ReleaseCommand) > 0 {
 			title = "Running release command..."
 		}
 		if isStructured(outputFormat) {
-			wait()
+			follow()
 		} else {
-			withSpinner(title, wait)
+			withSpinner(title, follow)
 		}
 		if err != nil {
 			return nil, err
@@ -1031,12 +1042,17 @@ func deployOutcome(c *client.Client, appID string, app *client.App, outputFormat
 	return app, nil
 }
 
-// deploymentSettled says whether a deployment record has reached a terminal
-// status: anything but the two the API writes while a rollout is in flight.
-func deploymentSettled(dep *client.Deployment) bool {
+// deploymentSettled says whether a deployment record is as far as this command
+// follows it. A release command is always followed: it decides whether anything
+// rolls out, and a migration that failed is this command's to report. The rollout
+// after it, which the record also reports, is followed only when asked: the record
+// says 'deploying' until it ends, and a deploy is accepted long before that.
+func deploymentSettled(dep *client.Deployment, wait bool) bool {
 	switch dep.Status {
-	case "deploying", "releasing":
+	case "releasing":
 		return false
+	case "deploying":
+		return !wait
 	}
 	return true
 }
@@ -1054,24 +1070,28 @@ func newestDeployment(c *client.Client, appID string) (*client.Deployment, error
 	return deps[0], nil
 }
 
-// waitForDeployment follows the newest deployment record until it settles,
-// bounded by the release command's own timeout on the server.
-func waitForDeployment(c *client.Client, appID string) (*client.Deployment, error) {
+// waitForDeployment follows the newest deployment record as far as
+// deploymentSettled says, bounded here: the server ends a release command at its
+// timeout and a rollout at its progress deadline.
+func waitForDeployment(c *client.Client, appID string, wait bool) (*client.Deployment, error) {
 	deadline := timeNow().Add(30 * time.Minute)
 	for {
 		dep, err := newestDeployment(c, appID)
 		if err != nil {
 			return nil, err
 		}
-		if dep == nil || deploymentSettled(dep) {
+		if dep == nil || deploymentSettled(dep, wait) {
 			return dep, nil
 		}
 		if timeNow().After(deadline) {
 			return nil, fmt.Errorf("timed out waiting for the rollout to finish; check `fpcloud app deployments`")
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(deploymentPoll)
 	}
 }
+
+// deploymentPoll is how often a followed deployment record is read.
+var deploymentPoll = 2 * time.Second
 
 var appScaleCmd = &cobra.Command{
 	Use:   "scale <name>",
@@ -1397,7 +1417,7 @@ var appRollbackCmd = &cobra.Command{
 		if rollbackErr != nil {
 			return rollbackErr
 		}
-		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+		if app, err = deployOutcome(cmd, c, appID, app, outputFormat); err != nil {
 			return err
 		}
 
@@ -1417,6 +1437,7 @@ var appRollbackCmd = &cobra.Command{
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
+		printRolloutContinues(app)
 		return nil
 	},
 }
@@ -1798,7 +1819,7 @@ of its own, is refused: deploy an image instead.
 		if upgradeErr != nil {
 			return upgradeErr
 		}
-		if app, err = deployOutcome(c, appID, app, outputFormat); err != nil {
+		if app, err = deployOutcome(cmd, c, appID, app, outputFormat); err != nil {
 			return err
 		}
 		if isStructured(outputFormat) {
@@ -1811,6 +1832,17 @@ of its own, is refused: deploy an image instead.
 		fmt.Println("Watch it:  fpcloud project status --watch")
 		return nil
 	},
+}
+
+// printRolloutContinues says what a command that did not wait left under way. A
+// failed rollout is reported where the record is, so the command that started it
+// has no other way of saying it might still fail.
+func printRolloutContinues(app *client.App) {
+	if app.Status != "deploying" {
+		return
+	}
+	fmt.Println(mutedStyle.Render(fmt.Sprintf(
+		"The rollout continues, and the previous version serves until it ends. Follow it: fpcloud app deployments %s. Pass --wait to wait for its outcome.", app.Name)))
 }
 
 var appEventsCmd = &cobra.Command{
@@ -1846,6 +1878,9 @@ event is the only record.
 }
 
 func init() {
+	for _, c := range []*cobra.Command{appCreateCmd, appDeployCmd, appRollbackCmd, appUpgradeCmd} {
+		c.Flags().Bool("wait", false, "Wait for the rollout to end, and fail if it fails")
+	}
 	appCreateCmd.Flags().String("image", "", "Container image")
 	appCreateCmd.Flags().String("release", "", "Name the first revision (e.g. v1.4.0); derived from the image tag when left out, reported by `app version`, targetable by `app rollback`")
 	appCreateCmd.Flags().String("cpu", "", "CPU limit per instance, like 500m or 2 (default 500m)")
