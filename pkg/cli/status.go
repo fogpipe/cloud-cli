@@ -421,7 +421,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 			details: httpLines(bk.HTTP, unreadHTTP(s, bk.WebsiteEnabled && loadAsked(s))),
 		})
 	}
-	b.WriteString(renderStatusSection("BUCKETS", []string{"USED", "STATUS", "WEBSITE"}, bucketRows))
+	b.WriteString(renderStatusSection("BUCKETS", []string{"STORED", "STATUS", "WEBSITE"}, bucketRows))
 
 	runnerRows := []statusRow{}
 	if r := s.Runner; r != nil {
