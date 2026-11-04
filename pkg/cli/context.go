@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +25,10 @@ the config file, which wins over the built-in default.
 Config and Token say which files answered, so a directory that keeps its own
 state (fpcloud init) shows it. They are resolved one file at a time: a local
 config.yaml beside a global token is the ordinary case.
+
+An org or project the identity cannot reach is said to be, since every command
+under it would fail. A project that does not exist and one you hold no role on
+are the same answer.
 
   fpcloud context                     # human-readable summary
   fpcloud context -o json             # machine-readable
@@ -53,10 +60,21 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		// one and fails on every command; saying so here is the difference.
 		access := "unknown"
 		if identity != "" && org != "" {
-			access = "no"
-			if orgs, err := getClient().ListOrgs(context.Background()); err == nil && matchOrg(orgs, org) != nil {
-				access = "yes"
+			orgs, err := getClient().ListOrgs(context.Background())
+			if err == nil {
+				access = "no"
+				if matchOrg(orgs, org) != nil {
+					access = "yes"
+				}
 			}
+		}
+		// The same question of the project, asked of the read every project
+		// command starts from. Only when the org itself is reachable: a project
+		// under an org the identity is not in fails for the org's reason.
+		projectAccess := "unknown"
+		if access == "yes" && project != "" {
+			_, err := getClient().GetProject(context.Background(), project)
+			projectAccess = projectAccessOf(err)
 		}
 
 		credential, signIn := "", ""
@@ -66,15 +84,16 @@ or {identity} appears in --format, so prompt use stays fast.`,
 
 		if isStructured(rootCmd.Flag("output").Value.String()) {
 			return renderData(map[string]string{
-				"org":         org,
-				"project":     project,
-				"api_url":     apiURL,
-				"identity":    identity,
-				"credential":  credential,
-				"mfa":         signIn,
-				"org_access":  access,
-				"config_path": configPath(),
-				"token_path":  tokenCachePath(),
+				"org":            org,
+				"project":        project,
+				"api_url":        apiURL,
+				"identity":       identity,
+				"credential":     credential,
+				"mfa":            signIn,
+				"org_access":     access,
+				"project_access": projectAccess,
+				"config_path":    configPath(),
+				"token_path":     tokenCachePath(),
 			})
 		}
 
@@ -82,9 +101,13 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		if access == "no" {
 			orgShown = org + " " + mutedStyle.Render("("+identity+" is not a member; run fpcloud switch)")
 		}
+		projectShown := orDefault(project, "(unset)")
+		if projectAccess == "no" {
+			projectShown = project + " " + mutedStyle.Render("(not reachable as "+identity+"; run fpcloud project switch)")
+		}
 		rows := [][]string{
 			{"Organization", orgShown},
-			{"Project", orDefault(project, "(unset)")},
+			{"Project", projectShown},
 			{"API URL", apiURL},
 			{"Identity", orDefault(identity, "(unauthenticated)")},
 		}
@@ -101,6 +124,22 @@ or {identity} appears in --format, so prompt use stays fast.`,
 		fmt.Println(renderInfoBox("Context", rows))
 		return nil
 	},
+}
+
+// projectAccessOf reads the answer to reading the context's project. A refusal
+// and a missing project are one answer on purpose: the API does not say which,
+// so neither does this. Anything else, an unreachable control plane included,
+// says nothing about the project.
+func projectAccessOf(err error) string {
+	if err == nil {
+		return "yes"
+	}
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) &&
+		(apiErr.StatusCode == http.StatusForbidden || apiErr.StatusCode == http.StatusNotFound) {
+		return "no"
+	}
+	return "unknown"
 }
 
 // currentCredential names what authenticates the CLI right now — a static API
