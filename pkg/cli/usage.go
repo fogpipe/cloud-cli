@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"net/url"
 	"strconv"
 	"strings"
@@ -209,14 +210,17 @@ func requestRateDigits(v float64) int {
 	return 0
 }
 
-// formatQuantity renders a decimal quantity for a human. The wire value stays
-// exact — this is display only, so a float here cannot corrupt anything.
+// formatQuantity renders a decimal quantity for a human, to two places. It
+// rounds the wire's decimal exactly, halves away from zero, as the console does:
+// through a float, a quantity like 235.5349999999999998608 rounded one way here
+// and the other way there, because each surface rounded a different nearest
+// double. The wire value stays exact; this is display only.
 func formatQuantity(q string) string {
-	f, err := strconv.ParseFloat(q, 64)
-	if err != nil {
+	r, ok := new(big.Rat).SetString(q)
+	if !ok {
 		return q
 	}
-	return strconv.FormatFloat(f, 'f', 2, 64)
+	return r.FloatString(2)
 }
 
 // parseTimeRef accepts an absolute RFC3339 timestamp or a relative offset into
