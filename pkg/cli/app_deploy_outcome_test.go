@@ -82,6 +82,8 @@ func TestDeploymentSettled(t *testing.T) {
 		{"releasing", true, false},
 		{"deploying", false, true},
 		{"deploying", true, false},
+		{"waking", false, true},
+		{"waking", true, false},
 		{"active", false, true},
 		{"active", true, true},
 		{"failed", false, true},

@@ -1046,12 +1046,14 @@ func deployOutcome(cmd *cobra.Command, c *client.Client, appID string, app *clie
 // follows it. A release command is always followed: it decides whether anything
 // rolls out, and a migration that failed is this command's to report. The rollout
 // after it, which the record also reports, is followed only when asked: the record
-// says 'deploying' until it ends, and a deploy is accepted long before that.
+// says 'deploying' until it ends, and 'waking' before it while a sleeping app's
+// previous version comes up, which decides nothing; a deploy is accepted long
+// before either ends.
 func deploymentSettled(dep *client.Deployment, wait bool) bool {
 	switch dep.Status {
 	case "releasing":
 		return false
-	case "deploying":
+	case "deploying", "waking":
 		return !wait
 	}
 	return true
@@ -1629,7 +1631,7 @@ func renderDeploymentStatus(status string) string {
 	switch status {
 	case "active":
 		return renderStatus("active")
-	case "deploying", "building":
+	case "deploying", "waking", "building":
 		return renderStatus("deploying")
 	case "failed":
 		return renderStatus("failed")
