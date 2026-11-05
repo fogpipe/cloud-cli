@@ -140,3 +140,33 @@ func TestCostResourceIDResolvesANameFromTheRecord(t *testing.T) {
 		t.Errorf("refusal %q suggests --project, which cannot tell two of one project's resources apart", err)
 	}
 }
+
+// Two deleted resources of one name in a project, and two deleted projects of
+// one name, each carry the start of their id; a deleted one beside a live one
+// of the same name is told apart by "(deleted)" alone.
+func TestCostRowsTellDeletedTwinsApart(t *testing.T) {
+	r := &client.CostReport{GroupBy: []string{"project", "resource"}, Rows: []client.CostRow{
+		{ProjectID: "p1", ProjectName: "shop", ResourceID: "aaaaaaaa-1111", ResourceName: "maindb", ResourceDeleted: true, Kind: "database", Amount: "1"},
+		{ProjectID: "p1", ProjectName: "shop", ResourceID: "bbbbbbbb-2222", ResourceName: "maindb", ResourceDeleted: true, Kind: "database", Amount: "1"},
+		{ProjectID: "p1", ProjectName: "shop", ResourceID: "cccccccc-3333", ResourceName: "web", ResourceDeleted: true, Kind: "app", Amount: "1"},
+		{ProjectID: "p1", ProjectName: "shop", ResourceID: "dddddddd-4444", ResourceName: "web", Kind: "app", Amount: "1"},
+		{ProjectID: "eeeeeeee-5555", ProjectName: "old", ProjectDeleted: true, ResourceID: "r5", ResourceName: "api", ResourceDeleted: true, Kind: "app", Amount: "1"},
+		{ProjectID: "ffffffff-6666", ProjectName: "old", ProjectDeleted: true, ResourceID: "r6", ResourceName: "api", ResourceDeleted: true, Kind: "app", Amount: "1"},
+	}}
+	_, rows := costRows(r)
+	got := make([]string, len(rows))
+	for i, row := range rows {
+		got[i] = row[0] + " | " + row[1]
+	}
+	want := []string{
+		"shop | maindb aaaaaaaa (deleted)",
+		"shop | maindb bbbbbbbb (deleted)",
+		"shop | web (deleted)",
+		"shop | web",
+		"old eeeeeeee (deleted) | api (deleted)",
+		"old ffffffff (deleted) | api (deleted)",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("rows:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

@@ -331,6 +331,7 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 	}
 	headers = append(headers, "AMOUNT")
 
+	twin := deletedTwins(r.Rows)
 	rows := make([][]string, 0, len(r.Rows))
 	for _, row := range r.Rows {
 		var cells []string
@@ -346,10 +347,10 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 			}
 		}
 		if has["project"] || has["resource"] {
-			cells = append(cells, deletedName(row.ProjectName, row.ProjectDeleted))
+			cells = append(cells, deletedName(twin.project(row), row.ProjectDeleted))
 		}
 		if has["resource"] {
-			name := deletedName(row.ResourceName, row.ResourceDeleted)
+			name := deletedName(twin.resource(row), row.ResourceDeleted)
 			if row.ResourceID == "" {
 				// Usage measured on the project and no resource of it. Named,
 				// so the rows still visibly add up to the project.
@@ -367,6 +368,62 @@ func costRows(r *client.CostReport) ([]string, [][]string) {
 		rows = append(rows, append(cells, formatAmount(row.Amount)))
 	}
 	return headers, rows
+}
+
+// twins names the deleted projects, and the deleted resources within one
+// project, that share a name with another deleted one. "(deleted)" tells a
+// gone one from a live one of the same name, and nothing told two gone ones
+// apart; such a row carries the start of its id, as the console's does.
+type twins struct{ projects, resources map[string]bool }
+
+func deletedTwins(rows []client.CostRow) twins {
+	projectIDs := map[string]map[string]bool{}
+	resourceIDs := map[string]map[string]bool{}
+	add := func(m map[string]map[string]bool, key, id string) {
+		if m[key] == nil {
+			m[key] = map[string]bool{}
+		}
+		m[key][id] = true
+	}
+	for _, row := range rows {
+		if row.ProjectDeleted && row.ProjectID != "" {
+			add(projectIDs, row.ProjectName, row.ProjectID)
+		}
+		if row.ResourceDeleted && row.ResourceID != "" {
+			add(resourceIDs, row.ProjectID+"/"+row.ResourceName, row.ResourceID)
+		}
+	}
+	t := twins{projects: map[string]bool{}, resources: map[string]bool{}}
+	for name, ids := range projectIDs {
+		t.projects[name] = len(ids) > 1
+	}
+	for key, ids := range resourceIDs {
+		t.resources[key] = len(ids) > 1
+	}
+	return t
+}
+
+func (t twins) project(row client.CostRow) string {
+	if row.ProjectDeleted && t.projects[row.ProjectName] {
+		return row.ProjectName + " " + shortID(row.ProjectID)
+	}
+	return row.ProjectName
+}
+
+func (t twins) resource(row client.CostRow) string {
+	if row.ResourceDeleted && t.resources[row.ProjectID+"/"+row.ResourceName] {
+		return row.ResourceName + " " + shortID(row.ResourceID)
+	}
+	return row.ResourceName
+}
+
+// shortID is the start of an id, enough to tell two rows apart and to find
+// the whole id in -o json.
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // deletedName tags a name the record still holds for a project or resource
