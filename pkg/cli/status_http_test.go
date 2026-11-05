@@ -92,7 +92,7 @@ func TestProjectStatusRendersHTTPUnderAppsAndWebsites(t *testing.T) {
 			assert.Contains(t, lines[i+1], "http    not read — the record is unreadable")
 		}
 		if strings.Contains(l, "uploads") {
-			assert.NotContains(t, lines[i+1], "http")
+			assert.Contains(t, lines[i+1], "http    not read — the record is unreadable", "a bucket's requests are read whether or not it serves a website")
 		}
 	}
 

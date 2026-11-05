@@ -418,7 +418,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		}
 		bucketRows = append(bucketRows, statusRow{
 			cells:   []string{bk.Name, storedBytes(bk.UsedBytes), renderStatus(bk.Status), website},
-			details: httpLines(bk.HTTP, unreadHTTP(s, bk.WebsiteEnabled && loadAsked(s))),
+			details: httpLines(bk.HTTP, unreadHTTP(s, loadAsked(s))),
 		})
 	}
 	b.WriteString(renderStatusSection("BUCKETS", []string{"STORED", "STATUS", "WEBSITE"}, bucketRows))
