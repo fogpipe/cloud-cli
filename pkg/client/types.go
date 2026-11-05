@@ -2591,8 +2591,9 @@ type AppStatus struct {
 	// AsleepSince is set while the app sleeps: it runs no pod by choice, with
 	// min_scale 0, and wakes on its host's next request. Status reads `asleep`.
 	AsleepSince *time.Time `json:"asleep_since,omitempty"`
-	// RunningImage and RunningRelease are what the cluster's workload declares,
-	// which differs from Image/Release above exactly while a deploy is in flight.
+	// RunningImage and RunningRelease are what the app's newest ready pod runs, which
+	// differs from Image/Release above while a deploy is in flight. Empty when no pod
+	// is ready, or when the pods could not be read.
 	RunningImage   string `json:"running_image,omitempty"`
 	RunningRelease string `json:"running_release,omitempty"`
 	// Rollout is present only while the app is mid-deploy — its presence is the
