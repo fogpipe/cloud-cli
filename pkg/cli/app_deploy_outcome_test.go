@@ -181,3 +181,22 @@ func fakeDeployAPI(t *testing.T, deployments []*client.Deployment) (*client.Clie
 	t.Cleanup(srv.Close)
 	return client.New(srv.URL, "fp-test"), &reads
 }
+
+func TestRolloutContinues(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		wait bool
+		app  client.App
+		want bool
+	}{
+		{"not asked to wait, rolling out", false, client.App{Status: "deploying"}, true},
+		{"waited, and an asleep app still reads deploying", true, client.App{Status: "deploying"}, false},
+		{"running", false, client.App{Status: "running"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := rolloutContinues(waitFlag(c.wait), &c.app); got != c.want {
+				t.Errorf("rolloutContinues = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

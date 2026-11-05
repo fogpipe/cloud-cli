@@ -716,7 +716,7 @@ var appDeployCmd = &cobra.Command{
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
-		printRolloutContinues(app)
+		printRolloutContinues(cmd, app)
 		return nil
 	},
 }
@@ -1437,7 +1437,7 @@ var appRollbackCmd = &cobra.Command{
 			{"Status", renderStatus(app.Status)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
-		printRolloutContinues(app)
+		printRolloutContinues(cmd, app)
 		return nil
 	},
 }
@@ -1837,12 +1837,20 @@ of its own, is refused: deploy an image instead.
 // printRolloutContinues says what a command that did not wait left under way. A
 // failed rollout is reported where the record is, so the command that started it
 // has no other way of saying it might still fail.
-func printRolloutContinues(app *client.App) {
-	if app.Status != "deploying" {
+func printRolloutContinues(cmd *cobra.Command, app *client.App) {
+	if !rolloutContinues(cmd, app) {
 		return
 	}
 	fmt.Println(mutedStyle.Render(fmt.Sprintf(
 		"The rollout continues, and the previous version serves until it ends. Follow it: fpcloud app deployments %s. Pass --wait to wait for its outcome.", app.Name)))
+}
+
+// rolloutContinues says whether a command left a rollout under way. One that waited
+// did not, whatever the app's status reads: an asleep app reads deploying with its
+// record already active.
+func rolloutContinues(cmd *cobra.Command, app *client.App) bool {
+	wait, _ := cmd.Flags().GetBool("wait")
+	return !wait && app.Status == "deploying"
 }
 
 var appEventsCmd = &cobra.Command{
