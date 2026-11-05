@@ -716,21 +716,27 @@ func unreadHTTP(s *client.ProjectStatus, expected bool) []client.UncheckedStatus
 	return s.Unchecked
 }
 
-// runningImage is what the cluster actually reports, falling back to what the
-// control plane asked for when there is no live workload to read (db-only mode,
-// or an app that has never rolled out). Showing the desired image while a
-// different one is serving is how a deploy looks like nothing happening.
+// runningImage is what the app's newest ready pod runs, falling back to what the
+// control plane asked for when nothing is ready to report it (db-only mode, a first
+// rollout, a crash loop). Ready pods with no image are pods that could not be read,
+// and what was asked for may not be what they run, mid-rollout least of all.
 func runningImage(a client.AppStatus) string {
 	if a.RunningImage != "" {
 		return a.RunningImage
 	}
+	if a.Ready > 0 {
+		return notRead
+	}
 	return a.Image
 }
 
-// releaseLabel is the release the workload carries, falling back to the control
-// plane's. Mid-rollout the two differ and the live one is the honest answer.
+// releaseLabel is the release the newest ready pod runs, falling back as runningImage
+// does. Mid-rollout the two differ and the live one is the honest answer.
 func releaseLabel(a client.AppStatus) string {
 	release := a.RunningRelease
+	if a.RunningImage == "" && a.Ready > 0 {
+		return mutedStyle.Render(notRead)
+	}
 	if release == "" {
 		release = a.Release
 	}
@@ -739,6 +745,9 @@ func releaseLabel(a client.AppStatus) string {
 	}
 	return release
 }
+
+// notRead is what a table says of ready pods whose version could not be read.
+const notRead = "not read"
 
 // rolloutKey collapses a rollout into a comparable token, so --watch can tell
 // "still rolling, same step" from "moved". Nil (settled) is its own value, which
