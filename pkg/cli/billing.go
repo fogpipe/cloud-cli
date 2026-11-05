@@ -128,8 +128,11 @@ on the project, and is priced at the organization's real rates.
 			return err
 		}
 
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(report)
+		}
 		headers, rows := costRows(report)
-		render(headers, rows, report)
+		renderTable(headers, rows)
 
 		fmt.Printf("\n  Total: %s %s\n", report.Total, report.Currency)
 		// A credit is taken off the month's invoice, never off the usage
@@ -636,6 +639,9 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 	if err != nil {
 		return err
 	}
+	if isStructured(rootCmd.Flag("output").Value.String()) {
+		return renderData(inv)
+	}
 
 	rows := make([][]string, len(inv.Lines))
 	for i, l := range inv.Lines {
@@ -659,7 +665,7 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 	// resource twice, once per rate. MONTH is the month the usage belongs
 	// to, which differs from the invoice's own for usage that arrived after
 	// its month was invoiced (ADR-269).
-	render([]string{"MONTH", "PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows, inv)
+	renderTable([]string{"MONTH", "PROJECT", "RESOURCE", "QUANTITY", "UNIT", "UNIT PRICE", "AMOUNT"}, rows)
 
 	fmt.Printf("\n  %s — %s\n", inv.PeriodStart.UTC().Format("2006-01-02"), inv.PeriodEnd.UTC().Format("2006-01-02"))
 	fmt.Printf("  Total: %s %s (%s)\n", inv.Total, inv.Currency, inv.Status)
@@ -682,8 +688,11 @@ func showInvoiceUsage(cmd *cobra.Command, c *client.Client, orgID, invoiceID, by
 	if err != nil {
 		return err
 	}
+	if isStructured(rootCmd.Flag("output").Value.String()) {
+		return renderData(report)
+	}
 	headers, rows := costRows(report)
-	render(headers, rows, report)
+	renderTable(headers, rows)
 	fmt.Printf("\n  Usage: %s %s, as billed on this invoice\n", report.Total, report.Currency)
 	return nil
 }
