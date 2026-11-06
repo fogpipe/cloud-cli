@@ -1697,7 +1697,7 @@ record, and the last one, source "summary", carries those two counts.`,
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
 		}
-		asJSON, err := logsAsJSON()
+		format, err := logsFormat()
 		if err != nil {
 			return err
 		}
@@ -1707,9 +1707,9 @@ record, and the last one, source "summary", carries those two counts.`,
 		if err != nil {
 			return err
 		}
-		body, err := c.GetAppLogs(context.Background(), appID, client.LogsRequest{
+		body, err := c.GetAppLogs(context.Background(), appID, client.LogsQuery{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Prefix: prefix, Pod: pod, Source: source, Status: status, JSON: asJSON,
+			Prefix: prefix, Pod: pod, Source: source, Status: status, Format: format,
 		})
 		if err != nil {
 			return err
@@ -1724,17 +1724,17 @@ record, and the last one, source "summary", carries those two counts.`,
 	},
 }
 
-// logsAsJSON is whether -o asks for one JSON record per line. A stream has no
+// logsFormat is whether -o asks for one JSON record per line. A stream has no
 // document to render as YAML, so that format is refused rather than answered
 // with JSON under another name.
-func logsAsJSON() (bool, error) {
+func logsFormat() (string, error) {
 	switch format := rootCmd.Flag("output").Value.String(); format {
 	case "json":
-		return true, nil
+		return "json", nil
 	case "yaml", "yml":
-		return false, fmt.Errorf("logs are a stream of lines, printed as text or as JSON records (-o json); there is no YAML form")
+		return "", fmt.Errorf("logs are a stream of lines, printed as text or as JSON records (-o json); there is no YAML form")
 	}
-	return false, nil
+	return "", nil
 }
 
 // printEmptyLogsHint explains an empty log window when the app has warning

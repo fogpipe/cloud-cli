@@ -2,7 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"net/url"
+	"strconv"
 
 	"github.com/fogpipe/cloud-cli/pkg/client"
 	"github.com/spf13/cobra"
@@ -17,18 +17,16 @@ var auditLogCmd = &cobra.Command{
 	Use:   "log",
 	Short: "Show recent audit log entries (who did what, when)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		q := url.Values{}
-		if v, _ := cmd.Flags().GetString("resource-type"); v != "" {
-			q.Set("resource_type", v)
-		}
-		if v, _ := cmd.Flags().GetString("resource-id"); v != "" {
-			q.Set("resource_id", v)
-		}
-		if v, _ := cmd.Flags().GetString("actor"); v != "" {
-			q.Set("actor", v)
-		}
+		var q client.AuditQuery
+		q.ResourceType, _ = cmd.Flags().GetString("resource-type")
+		q.ResourceID, _ = cmd.Flags().GetString("resource-id")
+		q.Actor, _ = cmd.Flags().GetString("actor")
 		if v, _ := cmd.Flags().GetString("limit"); v != "" {
-			q.Set("limit", v)
+			limit, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("--limit: %q is not a whole number", v)
+			}
+			q.Limit = limit
 		}
 
 		c := getClient()
@@ -44,7 +42,7 @@ var auditLogCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			read = func() ([]*client.AuditEntry, error) { return c.OrgAudit(cmd.Context(), orgID, q.Encode()) }
+			read = func() ([]*client.AuditEntry, error) { return c.OrgAudit(cmd.Context(), orgID, q) }
 		case "project":
 			ref, err := requireProject()
 			if err != nil {
@@ -54,9 +52,9 @@ var auditLogCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			read = func() ([]*client.AuditEntry, error) { return c.ProjectAudit(cmd.Context(), project.ID, q.Encode()) }
+			read = func() ([]*client.AuditEntry, error) { return c.ProjectAudit(cmd.Context(), project.ID, q) }
 		case "me":
-			read = func() ([]*client.AuditEntry, error) { return c.MyAudit(cmd.Context(), q.Encode()) }
+			read = func() ([]*client.AuditEntry, error) { return c.MyAudit(cmd.Context(), q) }
 		default:
 			return fmt.Errorf("--scope must be org, project or me, got %q", scope)
 		}

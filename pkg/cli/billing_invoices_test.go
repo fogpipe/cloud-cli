@@ -94,9 +94,9 @@ func TestBillingInvoicesByReadsTheInvoicesUsage(t *testing.T) {
 	}
 
 	require.NoError(t, run("billing", "invoices", invoice, "--by", "resource,month"))
-	assert.Equal(t, []string{"/api/v1/orgs/" + org + "/billing/invoices/" + invoice + "/usage?group_by=resource,month"}, requested)
+	assert.Equal(t, []string{"/api/v1/orgs/" + org + "/billing/invoices/" + invoice + "/usage?group_by=resource%2Cmonth"}, requested)
 	require.NoError(t, run("billing", "invoices", invoice, "--by", "project,resource,type"), "the tree's read: every entity axis in one key")
-	assert.Equal(t, "/api/v1/orgs/"+org+"/billing/invoices/"+invoice+"/usage?group_by=project,resource,resource_type", requested[1])
+	assert.Equal(t, "/api/v1/orgs/"+org+"/billing/invoices/"+invoice+"/usage?group_by=project%2Cresource%2Cresource_type", requested[1])
 
 	assert.Error(t, run("billing", "invoices", "--by", "resource"), "the list has no usage to read")
 	assert.Error(t, run("billing", "invoices", invoice, "--by", "week"), "a word the API has no axis for is refused before the request")

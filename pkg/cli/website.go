@@ -644,7 +644,7 @@ those two counts.`,
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
 		}
-		asJSON, err := logsAsJSON()
+		format, err := logsFormat()
 		if err != nil {
 			return err
 		}
@@ -654,9 +654,9 @@ those two counts.`,
 		if err != nil {
 			return err
 		}
-		body, err := c.GetWebsiteLogs(context.Background(), b.ID, client.LogsRequest{
+		body, err := c.GetWebsiteLogs(context.Background(), b.ID, client.LogsQuery{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Status: status, JSON: asJSON,
+			Status: status, Format: format,
 		})
 		if err != nil {
 			return err

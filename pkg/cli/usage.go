@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -42,23 +41,26 @@ the platform read.
   fpcloud usage -o json             every figure, with each dimension's series`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		q := url.Values{}
-		for _, f := range []string{"from", "to"} {
-			raw, _ := cmd.Flags().GetString(f)
+		var q client.CapacityQuery
+		for _, f := range []struct {
+			flag string
+			into *string
+		}{{"from", &q.From}, {"to", &q.To}} {
+			raw, _ := cmd.Flags().GetString(f.flag)
 			if raw == "" {
 				continue
 			}
 			ts, err := parseTimeRef(raw)
 			if err != nil {
-				return fmt.Errorf("--%s: %w", f, err)
+				return fmt.Errorf("--%s: %w", f.flag, err)
 			}
-			q.Set(f, ts.UTC().Format(time.RFC3339))
+			*f.into = ts.UTC().Format(time.RFC3339)
 		}
 		if step, _ := cmd.Flags().GetString("step"); step != "" {
 			if step != "hour" && step != "day" {
 				return fmt.Errorf("--step is hour or day")
 			}
-			q.Set("step", step)
+			q.Step = step
 		}
 		orgWide, _ := cmd.Flags().GetBool("org-wide")
 		withRows, _ := cmd.Flags().GetBool("rows")
@@ -72,7 +74,7 @@ the platform read.
 				return oerr
 			}
 			withSpinner("Reading usage...", func() {
-				report, err = c.OrgCapacity(cmd.Context(), orgID, q.Encode())
+				report, err = c.OrgCapacity(cmd.Context(), orgID, q)
 			})
 		} else {
 			project, perr := requireProject()
@@ -80,7 +82,7 @@ the platform read.
 				return perr
 			}
 			withSpinner("Reading usage...", func() {
-				report, err = c.ProjectCapacity(cmd.Context(), project, q.Encode())
+				report, err = c.ProjectCapacity(cmd.Context(), project, q)
 			})
 		}
 		if err != nil {

@@ -730,29 +730,29 @@ type DeployRequest struct {
 // RFC3339 timestamp. Empty Since reaches as far back as the store retains;
 // empty Until means now. Zero Tail leaves the count to the server, which also
 // bounds it.
-type LogsRequest struct {
-	Follow     bool
-	Tail       int
-	Since      string
-	Until      string
-	Timestamps bool
+type LogsQuery struct {
+	Follow     bool   `query:"follow"`
+	Tail       int    `query:"tail"`
+	Since      string `query:"since"`
+	Until      string `query:"until"`
+	Timestamps bool   `query:"timestamps"`
 	// Prefix names the replica that printed each line, and Pod narrows the
 	// read to one replica: every read merges every replica, so these are how a
 	// tenant tells which of them printed what.
-	Prefix bool
-	Pod    string
+	Prefix bool   `query:"prefix"`
+	Pod    string `query:"pod"`
 	// A web app's request lines are read beside its own (ADR-300 §7):
 	// Source narrows to one kind ("app" or "requests"; empty is both), and
 	// Status to the request lines carrying a code ("500") or a class ("5xx"),
 	// which is refused with Source "app". A website has request lines only,
 	// so GetWebsiteLogs takes no Source.
-	Source string
-	Status string
-	// JSON asks for one JSON record per line (application/x-ndjson) in
+	Source string `query:"source"`
+	Status string `query:"status"`
+	// Format "json" asks for one JSON record per line (application/x-ndjson) in
 	// place of text: an app line carries at, source, pod and line; a request
 	// line its fields; and the last record, source "summary", how many
 	// requests the edge served against how many lines the store holds.
-	JSON bool
+	Format string `query:"format"`
 }
 
 // ScaleRequest is the request body for scaling an app. A nil bound keeps the
@@ -2779,12 +2779,12 @@ type LoadAxis struct {
 // 6h, 3d, 2w — five minutes to a year; Percentile, 1 to 99, adds that level
 // on each axis.
 type LoadQuery struct {
-	Window     string
-	Percentile int
+	Window     string `query:"load"`
+	Percentile int    `query:"percentile"`
 	// Suggest asks for the limit each reading argues for.
-	Suggest bool
+	Suggest bool `query:"suggest"`
 	// Series asks for each reading's points over the window (Load.Series).
-	Series bool
+	Series bool `query:"series"`
 }
 
 // PodPhases is how many of an app's pods are running, starting and terminating,

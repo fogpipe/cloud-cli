@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/big"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -58,9 +57,12 @@ on the project, and is priced at the organization's real rates.
   fpcloud billing cost --from 2026-07-01T00:00:00Z --to 2026-08-01T00:00:00Z`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		q := url.Values{}
-		for _, f := range []string{"from", "to"} {
-			raw, _ := cmd.Flags().GetString(f)
+		var q client.CostQuery
+		for _, f := range []struct {
+			flag string
+			into *string
+		}{{"from", &q.From}, {"to", &q.To}} {
+			raw, _ := cmd.Flags().GetString(f.flag)
 			if raw == "" {
 				continue
 			}
@@ -68,50 +70,47 @@ on the project, and is priced at the organization's real rates.
 			if err != nil {
 				return err
 			}
-			q.Set(f, ts.UTC().Format(time.RFC3339))
+			*f.into = ts.UTC().Format(time.RFC3339)
 		}
 		// Both or neither: a half-specified period would silently answer a
 		// different question than the one asked.
-		if len(q) == 1 {
+		if (q.From == "") != (q.To == "") {
 			return fmt.Errorf("give both --from and --to, or neither")
 		}
 		groupBy, err := costGroupBy(cmd)
 		if err != nil {
 			return err
 		}
-		q.Set("group_by", strings.Join(groupBy, ","))
+		q.GroupBy = strings.Join(groupBy, ",")
 
 		c := getClient()
 		// The org by default, which is what this command has always shown. A
 		// project only when one is named on the command line: the current
 		// project from config is the default for commands about a project, and
 		// would otherwise turn the org's cost into one project's unasked.
-		var read func(url.Values) (*client.CostReport, error)
+		var read func(client.CostQuery) (*client.CostReport, error)
 		if cmd.Flag("project").Changed {
 			project, perr := requireProject()
 			if perr != nil {
 				return perr
 			}
-			read = func(v url.Values) (*client.CostReport, error) {
-				return c.ProjectCost(cmd.Context(), project, v.Encode())
+			read = func(v client.CostQuery) (*client.CostReport, error) {
+				return c.ProjectCost(cmd.Context(), project, v)
 			}
 		} else {
 			orgID, oerr := resolveOrgID(cmd)
 			if oerr != nil {
 				return oerr
 			}
-			read = func(v url.Values) (*client.CostReport, error) { return c.OrgCost(cmd.Context(), orgID, v.Encode()) }
+			read = func(v client.CostQuery) (*client.CostReport, error) { return c.OrgCost(cmd.Context(), orgID, v) }
 		}
 		var report *client.CostReport
 		withSpinner("Calculating cost...", func() {
 			// A resource is named the way the record names it: read the period
 			// by resource first, so one deleted since still resolves.
 			if name, _ := cmd.Flags().GetString("resource"); name != "" {
-				byResource := url.Values{}
-				for k, v := range q {
-					byResource[k] = v
-				}
-				byResource.Set("group_by", "resource")
+				byResource := q
+				byResource.GroupBy = "resource"
 				var all *client.CostReport
 				if all, err = read(byResource); err != nil {
 					return
@@ -120,7 +119,7 @@ on the project, and is priced at the organization's real rates.
 				if id, err = costResourceID(all, name); err != nil {
 					return
 				}
-				q.Set("resource", id)
+				q.Resource = id
 			}
 			report, err = read(q)
 		})
@@ -740,7 +739,7 @@ func showInvoiceUsage(cmd *cobra.Command, c *client.Client, orgID, invoiceID, by
 	}
 	var report *client.CostReport
 	withSpinner("Fetching invoice...", func() {
-		report, err = c.InvoiceUsage(cmd.Context(), orgID, invoiceID, "group_by="+strings.Join(axes, ","))
+		report, err = c.InvoiceUsage(cmd.Context(), orgID, invoiceID, client.InvoiceUsageQuery{GroupBy: strings.Join(axes, ",")})
 	})
 	if err != nil {
 		return err

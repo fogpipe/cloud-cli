@@ -578,7 +578,7 @@ func (c *Client) ListRegistryRepositories(ctx context.Context, projectID string)
 // ListRegistryTags lists the tags of one repository (project-relative name).
 func (c *Client) ListRegistryTags(ctx context.Context, projectID, repo string) (*RegistryTagList, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet,
-		"/api/v1/projects/"+projectID+"/repositories/tags?repo="+url.QueryEscape(repo), nil)
+		"/api/v1/projects/"+projectID+"/repositories/tags"+encodeQuery(RepositoryQuery{Repo: repo}), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +593,7 @@ func (c *Client) ListRegistryTags(ctx context.Context, projectID, repo string) (
 // (project-relative repository name and tag).
 func (c *Client) ListRegistryCVEs(ctx context.Context, projectID, repo, tag string) (*RegistryCVEList, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet,
-		"/api/v1/projects/"+projectID+"/repositories/cves?repo="+url.QueryEscape(repo)+"&tag="+url.QueryEscape(tag), nil)
+		"/api/v1/projects/"+projectID+"/repositories/cves"+encodeQuery(RepositoryTagQuery{Repo: repo, Tag: tag}), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +612,7 @@ func (c *Client) ListRegistryCVEs(ctx context.Context, projectID, repo, tag stri
 // with ListRegistryCVEs afterwards.
 func (c *Client) ScanImage(ctx context.Context, projectID, repo, ref string) (*ScanDispatch, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost,
-		"/api/v1/projects/"+projectID+"/repositories/scan?repo="+url.QueryEscape(repo)+"&ref="+url.QueryEscape(ref), nil)
+		"/api/v1/projects/"+projectID+"/repositories/scan"+encodeQuery(RepositoryScanQuery{Repo: repo, Ref: ref}), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -626,7 +626,7 @@ func (c *Client) ScanImage(ctx context.Context, projectID, repo, ref string) (*S
 // DeleteRegistryTag deletes one tag from a repository (project-relative name).
 func (c *Client) DeleteRegistryTag(ctx context.Context, projectID, repo, tag string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete,
-		"/api/v1/projects/"+projectID+"/repositories/tags?repo="+url.QueryEscape(repo)+"&tag="+url.QueryEscape(tag), nil)
+		"/api/v1/projects/"+projectID+"/repositories/tags"+encodeQuery(RepositoryTagQuery{Repo: repo, Tag: tag}), nil)
 	if err != nil {
 		return err
 	}
@@ -662,7 +662,7 @@ func (c *Client) SetRetentionPolicy(ctx context.Context, projectID string, req S
 // DeleteRetentionPolicy removes a retention policy (empty repo = project default).
 func (c *Client) DeleteRetentionPolicy(ctx context.Context, projectID, repo string) error {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete,
-		"/api/v1/projects/"+projectID+"/repositories/retention?repo="+url.QueryEscape(repo), nil)
+		"/api/v1/projects/"+projectID+"/repositories/retention"+encodeQuery(RepositoryQuery{Repo: repo}), nil)
 	if err != nil {
 		return err
 	}
@@ -807,11 +807,9 @@ func (c *Client) UpdateProjectEgress(ctx context.Context, id, egress string) (*P
 // OrgAudit reads an organization's audit trail: every entry recorded in the
 // organization's own scope and in any of its projects, deleted ones included.
 // query takes resource_type, resource_id, actor, limit and offset.
-func (c *Client) OrgAudit(ctx context.Context, orgID, query string) ([]*AuditEntry, error) {
+func (c *Client) OrgAudit(ctx context.Context, orgID string, query AuditQuery) ([]*AuditEntry, error) {
 	path := "/api/v1/orgs/" + orgID + "/audit"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -824,11 +822,9 @@ func (c *Client) OrgAudit(ctx context.Context, orgID, query string) ([]*AuditEnt
 }
 
 // ProjectAudit reads one project's audit trail. query as for OrgAudit.
-func (c *Client) ProjectAudit(ctx context.Context, projectID, query string) ([]*AuditEntry, error) {
+func (c *Client) ProjectAudit(ctx context.Context, projectID string, query AuditQuery) ([]*AuditEntry, error) {
 	path := "/api/v1/projects/" + projectID + "/audit"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -843,11 +839,9 @@ func (c *Client) ProjectAudit(ctx context.Context, projectID, query string) ([]*
 // MyAudit reads the caller's own entries, in every scope they were recorded
 // in. query takes resource_type, resource_id, limit and offset; actor is the
 // caller and is not a filter here.
-func (c *Client) MyAudit(ctx context.Context, query string) ([]*AuditEntry, error) {
+func (c *Client) MyAudit(ctx context.Context, query AuditQuery) ([]*AuditEntry, error) {
 	path := "/api/v1/auth/me/audit"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -866,11 +860,9 @@ func (c *Client) MyAudit(ctx context.Context, query string) ([]*AuditEntry, erro
 //
 // Gated on the billing axis: a caller who can read the org's usage may still be
 // refused here.
-func (c *Client) OrgCost(ctx context.Context, orgID, query string) (*CostReport, error) {
+func (c *Client) OrgCost(ctx context.Context, orgID string, query CostQuery) (*CostReport, error) {
 	path := "/api/v1/orgs/" + orgID + "/cost"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -885,11 +877,9 @@ func (c *Client) OrgCost(ctx context.Context, orgID, query string) (*CostReport,
 // ProjectCost reads what one project cost over a window, at its org's real
 // rates (ADR-273). query is OrgCost's. Needs read on the project, or a billing
 // role on its org.
-func (c *Client) ProjectCost(ctx context.Context, projectID, query string) (*CostReport, error) {
+func (c *Client) ProjectCost(ctx context.Context, projectID string, query CostQuery) (*CostReport, error) {
 	path := "/api/v1/projects/" + projectID + "/cost"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -904,11 +894,9 @@ func (c *Client) ProjectCost(ctx context.Context, projectID, query string) (*Cos
 // OrgCapacity reads what an org holds against what it may hold, per axis
 // (ADR-279). query takes from/to (RFC3339) and step (hour or day); empty means
 // the last 30 days, by day. Needs read on the org.
-func (c *Client) OrgCapacity(ctx context.Context, orgID, query string) (*CapacityReport, error) {
+func (c *Client) OrgCapacity(ctx context.Context, orgID string, query CapacityQuery) (*CapacityReport, error) {
 	path := "/api/v1/orgs/" + orgID + "/capacity"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -922,11 +910,9 @@ func (c *Client) OrgCapacity(ctx context.Context, orgID, query string) (*Capacit
 
 // ProjectCapacity reads what one project holds, beside its org's bound on each
 // axis (ADR-279). query is OrgCapacity's. Needs read on the project.
-func (c *Client) ProjectCapacity(ctx context.Context, projectID, query string) (*CapacityReport, error) {
+func (c *Client) ProjectCapacity(ctx context.Context, projectID string, query CapacityQuery) (*CapacityReport, error) {
 	path := "/api/v1/projects/" + projectID + "/capacity"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -967,17 +953,7 @@ func (c *Client) ListPrices(ctx context.Context) ([]*Price, error) {
 // published fact, and the caller deciding whether to install the product has no
 // account yet (fogpipe/cloud-workspace#1045).
 func (c *Client) Changelog(ctx context.Context, limit int, before string) (*Changelog, error) {
-	q := url.Values{}
-	if limit > 0 {
-		q.Set("limit", strconv.Itoa(limit))
-	}
-	if before != "" {
-		q.Set("before", before)
-	}
-	path := "/api/v1/changelog"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
+	path := "/api/v1/changelog" + encodeQuery(ChangelogQuery{Limit: limit, Before: before})
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -1057,11 +1033,9 @@ func (c *Client) GetInvoice(ctx context.Context, orgID, invoiceID string) (*Invo
 // The invoice's lines are per project and meter and stay the bill; this is
 // the same rows at the ledger's grain, usage from an earlier month the
 // invoice billed late included. Gated as the invoice is.
-func (c *Client) InvoiceUsage(ctx context.Context, orgID, invoiceID, query string) (*CostReport, error) {
+func (c *Client) InvoiceUsage(ctx context.Context, orgID, invoiceID string, query InvoiceUsageQuery) (*CostReport, error) {
 	path := "/api/v1/orgs/" + orgID + "/billing/invoices/" + invoiceID + "/usage"
-	if query != "" {
-		path += "?" + query
-	}
+	path += encodeQuery(query)
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -1657,53 +1631,20 @@ func (c *Client) DeleteApp(ctx context.Context, id string) error {
 // GetAppLogs retrieves logs for an app: its own lines and its request lines
 // merged by time. If req.Follow is true, the returned ReadCloser streams logs
 // until closed.
-func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsRequest) (io.ReadCloser, error) {
+func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsQuery) (io.ReadCloser, error) {
 	return c.readLogs(ctx, "/api/v1/apps/"+id+"/logs", req)
 }
 
 // GetWebsiteLogs retrieves a website's request lines, under the bucket's
 // read (ADR-300 §7). req.Source, Prefix and Pod do not apply and are refused
 // by the API.
-func (c *Client) GetWebsiteLogs(ctx context.Context, bucketID string, req LogsRequest) (io.ReadCloser, error) {
+func (c *Client) GetWebsiteLogs(ctx context.Context, bucketID string, req LogsQuery) (io.ReadCloser, error) {
 	return c.readLogs(ctx, "/api/v1/buckets/"+bucketID+"/website/logs", req)
 }
 
 // readLogs is one log read, history or follow, as a stream of lines.
-func (c *Client) readLogs(ctx context.Context, path string, req LogsRequest) (io.ReadCloser, error) {
-	q := url.Values{}
-	if req.Follow {
-		q.Set("follow", "true")
-	}
-	if req.Tail > 0 {
-		q.Set("tail", strconv.Itoa(req.Tail))
-	}
-	if req.Since != "" {
-		q.Set("since", req.Since)
-	}
-	if req.Until != "" {
-		q.Set("until", req.Until)
-	}
-	if req.Timestamps {
-		q.Set("timestamps", "true")
-	}
-	if req.Prefix {
-		q.Set("prefix", "true")
-	}
-	if req.Pod != "" {
-		q.Set("pod", req.Pod)
-	}
-	if req.Source != "" {
-		q.Set("source", req.Source)
-	}
-	if req.Status != "" {
-		q.Set("status", req.Status)
-	}
-	if req.JSON {
-		q.Set("format", "json")
-	}
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
+func (c *Client) readLogs(ctx context.Context, path string, req LogsQuery) (io.ReadCloser, error) {
+	path += encodeQuery(req)
 
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -1768,10 +1709,7 @@ func (c *Client) GetReadOnlyDatabaseConnection(ctx context.Context, id string) (
 }
 
 func (c *Client) databaseConnection(ctx context.Context, id string, readOnly bool) (*DatabaseConnection, error) {
-	path := "/api/v1/databases/" + id + "/connection"
-	if readOnly {
-		path += "?read_only=true"
-	}
+	path := "/api/v1/databases/" + id + "/connection" + encodeQuery(DatabaseConnectionQuery{ReadOnly: readOnly})
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -1791,20 +1729,7 @@ func (c *Client) databaseConnection(ctx context.Context, id string, readOnly boo
 // database writes these records — the control plane records that a session
 // happened, never what was said inside it.
 func (c *Client) DatabaseAuditLog(ctx context.Context, id, since, until string, limit int) ([]DatabaseAuditEntry, error) {
-	q := url.Values{}
-	if since != "" {
-		q.Set("since", since)
-	}
-	if until != "" {
-		q.Set("until", until)
-	}
-	if limit > 0 {
-		q.Set("limit", strconv.Itoa(limit))
-	}
-	path := "/api/v1/databases/" + id + "/audit"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
+	path := "/api/v1/databases/" + id + "/audit" + encodeQuery(DatabaseAuditQuery{Since: since, Until: until, Limit: limit})
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -1862,10 +1787,7 @@ func (c *Client) DialReplicaTunnel(ctx context.Context, databaseID string) (*web
 
 func (c *Client) dialTunnel(ctx context.Context, databaseID string, replica bool) (*websocket.Conn, error) {
 	wsURL := strings.Replace(strings.Replace(c.BaseURL, "https://", "wss://", 1), "http://", "ws://", 1)
-	wsURL += "/api/v1/databases/" + databaseID + "/tunnel"
-	if replica {
-		wsURL += "?replica=true"
-	}
+	wsURL += "/api/v1/databases/" + databaseID + "/tunnel" + encodeQuery(DatabaseTunnelQuery{Replica: replica})
 
 	header := http.Header{}
 	if c.APIKey != "" {
@@ -1901,17 +1823,7 @@ func (c *Client) dialTunnel(ctx context.Context, databaseID string, replica bool
 // does.
 func (c *Client) DialAppExec(ctx context.Context, appID string, command []string, container string, tty bool) (*websocket.Conn, error) {
 	wsURL := strings.Replace(strings.Replace(c.BaseURL, "https://", "wss://", 1), "http://", "ws://", 1)
-	q := url.Values{}
-	for _, arg := range command {
-		q.Add("cmd", arg)
-	}
-	if container != "" {
-		q.Set("container", container)
-	}
-	if tty {
-		q.Set("tty", "true")
-	}
-	wsURL += "/api/v1/apps/" + appID + "/exec?" + q.Encode()
+	wsURL += "/api/v1/apps/" + appID + "/exec" + encodeQuery(ExecQuery{Cmd: command, Container: container, TTY: tty})
 
 	header := http.Header{}
 	if c.APIKey != "" {
@@ -2081,8 +1993,7 @@ func (c *Client) SetBucketLifecycleRule(ctx context.Context, id string, req SetB
 // DeleteBucketLifecycleRule removes the rule for one prefix (the empty prefix is
 // the whole-bucket rule). Dropping every rule is ClearBucketLifecycleRules.
 func (c *Client) DeleteBucketLifecycleRule(ctx context.Context, id, prefix string) error {
-	q := url.Values{"prefix": {prefix}}
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+id+"/lifecycle?"+q.Encode(), nil)
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+id+"/lifecycle"+encodeQuery(BucketLifecycleRuleQuery{Prefix: &prefix}), nil)
 	if err != nil {
 		return err
 	}
@@ -2266,10 +2177,7 @@ func (c *Client) UpdateBucketKeyPermissions(ctx context.Context, bucketID, acces
 // ListBucketObjects lists a bucket's objects under prefix, grouping folders at
 // "/" (in-browser object browser, #268). An empty prefix lists the root.
 func (c *Client) ListBucketObjects(ctx context.Context, bucketID, prefix string) (*ObjectListing, error) {
-	path := "/api/v1/buckets/" + bucketID + "/objects?delimiter=" + url.QueryEscape("/")
-	if prefix != "" {
-		path += "&prefix=" + url.QueryEscape(prefix)
-	}
+	path := "/api/v1/buckets/" + bucketID + "/objects" + encodeQuery(BucketObjectsQuery{Prefix: prefix, Delimiter: "/"})
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -2297,7 +2205,7 @@ func (c *Client) PresignBucketObject(ctx context.Context, bucketID string, req P
 
 // DeleteBucketObject deletes a single object from a bucket (#268).
 func (c *Client) DeleteBucketObject(ctx context.Context, bucketID, key string) error {
-	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/objects?key="+url.QueryEscape(key), nil)
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/objects"+encodeQuery(BucketObjectQuery{Key: key}), nil)
 	if err != nil {
 		return err
 	}
@@ -3109,10 +3017,7 @@ func (c *Client) ListJobRuns(ctx context.Context, id string) ([]*JobRun, error) 
 // GetJobLogs returns the output of one run, defaulting to the most recent when
 // runName is empty.
 func (c *Client) GetJobLogs(ctx context.Context, id, runName string) (string, error) {
-	path := "/api/v1/jobs/" + id + "/logs"
-	if runName != "" {
-		path += "?run=" + url.QueryEscape(runName)
-	}
+	path := "/api/v1/jobs/" + id + "/logs" + encodeQuery(JobLogsQuery{Run: runName})
 	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return "", err
@@ -3241,10 +3146,7 @@ func (c *Client) DeleteRunner(ctx context.Context, projectID string) error {
 // several accounts with the app installed; it selects within what GitHub
 // confirms and can never widen it.
 func (c *Client) StartGitHubConnect(ctx context.Context, projectID, account string) (*GitHubConnectStart, error) {
-	path := "/api/v1/projects/" + projectID + "/github/connect"
-	if account != "" {
-		path += "?account=" + url.QueryEscape(account)
-	}
+	path := "/api/v1/projects/" + projectID + "/github/connect" + encodeQuery(GitHubConnectQuery{Account: account})
 	httpReq, err := c.newRequest(ctx, http.MethodPost, path, nil)
 	if err != nil {
 		return nil, err
@@ -3296,18 +3198,7 @@ func (c *Client) DisconnectGitHub(ctx context.Context, projectID string) error {
 func (c *Client) ProjectStatus(ctx context.Context, projectID, ifNoneMatch string, load LoadQuery) (*ProjectStatus, string, error) {
 	path := "/api/v1/projects/" + projectID + "/status"
 	if load.Window != "" {
-		q := url.Values{}
-		q.Set("load", load.Window)
-		if load.Percentile > 0 {
-			q.Set("percentile", strconv.Itoa(load.Percentile))
-		}
-		if load.Suggest {
-			q.Set("suggest", "true")
-		}
-		if load.Series {
-			q.Set("series", "true")
-		}
-		path += "?" + q.Encode()
+		path += encodeQuery(load)
 	}
 	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {

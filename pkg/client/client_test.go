@@ -328,19 +328,19 @@ func TestAPIError_UnmarshalJSON(t *testing.T) {
 func TestClientGetAppLogs_Query(t *testing.T) {
 	cases := []struct {
 		name string
-		req  LogsRequest
+		req  LogsQuery
 		want string
 	}{
-		{"default", LogsRequest{}, ""},
-		{"follow", LogsRequest{Follow: true}, "follow=true"},
-		{"tail", LogsRequest{Tail: 500}, "tail=500"},
-		{"both", LogsRequest{Follow: true, Tail: 500}, "follow=true&tail=500"},
-		{"window", LogsRequest{Since: "24h", Until: "1h"}, "since=24h&until=1h"},
-		{"absolute window", LogsRequest{Since: "2026-08-20T00:00:00Z"}, "since=2026-08-20T00%3A00%3A00Z"},
-		{"timestamps", LogsRequest{Timestamps: true}, "timestamps=true"},
-		{"one replica, named", LogsRequest{Pod: "web-7c9-abc", Prefix: true}, "pod=web-7c9-abc&prefix=true"},
-		{"the requests answered 5xx", LogsRequest{Source: "requests", Status: "5xx"}, "source=requests&status=5xx"},
-		{"json records", LogsRequest{JSON: true}, "format=json"},
+		{"default", LogsQuery{}, ""},
+		{"follow", LogsQuery{Follow: true}, "follow=true"},
+		{"tail", LogsQuery{Tail: 500}, "tail=500"},
+		{"both", LogsQuery{Follow: true, Tail: 500}, "follow=true&tail=500"},
+		{"window", LogsQuery{Since: "24h", Until: "1h"}, "since=24h&until=1h"},
+		{"absolute window", LogsQuery{Since: "2026-08-20T00:00:00Z"}, "since=2026-08-20T00%3A00%3A00Z"},
+		{"timestamps", LogsQuery{Timestamps: true}, "timestamps=true"},
+		{"one replica, named", LogsQuery{Pod: "web-7c9-abc", Prefix: true}, "pod=web-7c9-abc&prefix=true"},
+		{"the requests answered 5xx", LogsQuery{Source: "requests", Status: "5xx"}, "source=requests&status=5xx"},
+		{"json records", LogsQuery{Format: "json"}, "format=json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,7 +370,7 @@ func TestClientGetWebsiteLogs_Path(t *testing.T) {
 	}))
 	defer server.Close()
 
-	body, err := New(server.URL, "test-key").GetWebsiteLogs(context.Background(), "b-1", LogsRequest{Since: "1h", Status: "404"})
+	body, err := New(server.URL, "test-key").GetWebsiteLogs(context.Background(), "b-1", LogsQuery{Since: "1h", Status: "404"})
 	require.NoError(t, err)
 	defer body.Close()
 	out, err := io.ReadAll(body)
@@ -419,7 +419,7 @@ func TestClientFollowEndsWithTheCallersContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	body, err := New(server.URL, "k").GetAppLogs(ctx, "app", LogsRequest{Follow: true})
+	body, err := New(server.URL, "k").GetAppLogs(ctx, "app", LogsQuery{Follow: true})
 	require.NoError(t, err)
 	defer body.Close()
 
