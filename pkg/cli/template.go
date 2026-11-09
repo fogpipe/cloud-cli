@@ -45,7 +45,7 @@ var templateListCmd = &cobra.Command{
 		book, prices := templateRates(cmd, c)
 		rows := make([][]string, 0, len(templates))
 		for _, t := range templates {
-			cost, ok := monthlyCost(t.Reserved, prices)
+			cost, ok := templateCost(t, prices)
 			if !ok {
 				cost = "—"
 			}
@@ -53,7 +53,7 @@ var templateListCmd = &cobra.Command{
 		}
 		renderTable([]string{"NAME", "VERSION", "CREATES", "PER MONTH", "SUMMARY"}, rows)
 		if book != "" {
-			fmt.Println(mutedStyle.Render("  Per month at the " + book + " rates, always on; bucket and backup storage are billed by use. Rates: fpcloud billing prices"))
+			fmt.Println(mutedStyle.Render("  Per month at the " + book + " rates, always on, from idle to every core busy; bucket and backup storage are billed by use. Rates: fpcloud billing prices"))
 		}
 		return nil
 	},
@@ -95,8 +95,8 @@ var templateGetCmd = &cobra.Command{
 		}
 		fmt.Printf("Creates:   %s\n", templateNeeds(*t))
 		if book, prices := templateRates(cmd, c); book != "" {
-			if cost, ok := monthlyCost(t.Reserved, prices); ok {
-				fmt.Printf("Per month: %s at the %s rates, always on; bucket and backup storage are billed by use\n", cost, book)
+			if cost, ok := templateCost(*t, prices); ok {
+				fmt.Printf("Per month: %s at the %s rates, always on, from idle to every core busy; bucket and backup storage are billed by use\n", cost, book)
 			}
 		}
 		if len(t.Inputs) > 0 {
@@ -220,32 +220,51 @@ func templateRates(cmd *cobra.Command, c *client.Client) (string, []*client.Pric
 	return "list (published)", prices
 }
 
-// monthlyCost is what a template's reservation costs for a month at the given
-// rates. A resource type with no rate, or rates in two currencies, is no
-// answer: pricing it at zero would read as free.
-func monthlyCost(reserved map[string]string, prices []*client.Price) (string, bool) {
+// templateCost is what an entry costs a month at the organization's rates,
+// always on: from its floor, the least it is billed an hour, to its
+// reservation, the most. One number when the two agree. A type with no rate,
+// or two currencies, is no answer, since pricing a missing rate at zero would
+// read as free.
+func templateCost(t client.Template, prices []*client.Price) (string, bool) {
+	hi, currency, ok := monthlyTotal(t.Reserved, prices)
+	if !ok {
+		return "", false
+	}
+	floor := t.Floor
+	if floor == nil {
+		floor = t.Reserved
+	}
+	lo, _, ok := monthlyTotal(floor, prices)
+	if !ok {
+		return "", false
+	}
+	if fmt.Sprintf("%.2f", lo) == fmt.Sprintf("%.2f", hi) {
+		return fmt.Sprintf("%.2f %s", hi, currency), true
+	}
+	return fmt.Sprintf("%.2f – %.2f %s", lo, hi, currency), true
+}
+
+// monthlyTotal prices quantities an hour for a month at the rates given.
+func monthlyTotal(quantities map[string]string, prices []*client.Price) (float64, string, bool) {
 	rates := make(map[string]*client.Price, len(prices))
 	for _, p := range prices {
 		rates[p.ResourceType] = p
 	}
 	total, currency := 0.0, ""
-	for resourceType, quantity := range reserved {
+	for resourceType, quantity := range quantities {
 		p, ok := rates[resourceType]
 		if !ok || (currency != "" && p.Currency != currency) {
-			return "", false
+			return 0, "", false
 		}
 		q, qerr := strconv.ParseFloat(quantity, 64)
 		r, rerr := strconv.ParseFloat(p.UnitPrice, 64)
 		if qerr != nil || rerr != nil {
-			return "", false
+			return 0, "", false
 		}
 		total += q * r * hoursPerMonth
 		currency = p.Currency
 	}
-	if currency == "" {
-		return "", false
-	}
-	return fmt.Sprintf("%.2f %s", total, currency), true
+	return total, currency, currency != ""
 }
 
 func init() {
