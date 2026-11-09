@@ -159,7 +159,7 @@ var appCreateCmd = &cobra.Command{
 				}))
 			}
 			if image == "" {
-				fields = append(fields, huh.NewInput().Title("Container image").Description("e.g. nginx:latest, ghcr.io/user/app:v1").Value(&image).Validate(func(s string) error {
+				fields = append(fields, huh.NewInput().Title("Container image").Description("e.g. nginxinc/nginx-unprivileged:latest, ghcr.io/user/app:v1").Value(&image).Validate(func(s string) error {
 					if s == "" {
 						return fmt.Errorf("image is required")
 					}
@@ -1905,7 +1905,7 @@ func init() {
 	appCreateCmd.Flags().String("cpu", "", "CPU limit per instance, like 500m or 2 (default 500m)")
 	appCreateCmd.Flags().String("memory", "", "Memory limit per instance, like 512Mi or 2Gi (default 512Mi)")
 	estimateFlag(appCreateCmd)
-	appCreateCmd.Flags().Int("port", 8080, "Container port (default 8080, use 80 for nginx)")
+	appCreateCmd.Flags().Int("port", 8080, "Port the container listens on")
 	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1); 0 lets a web app sleep after 15 minutes without a request and wake on the next one")
 	appCreateCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load (default 1: a fixed size; equal to --min-scale is fixed, above it autoscales)")
 	appCreateCmd.Flags().String("ingress", "internal", "Ingress setting: 'all' (public) or 'internal' (default)")
