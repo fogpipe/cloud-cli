@@ -59,14 +59,25 @@ func TestDeployOutcome_ActiveRecordReturnsTheFreshApp(t *testing.T) {
 
 func waitFlag(wait bool) *cobra.Command {
 	cmd := &cobra.Command{}
-	cmd.Flags().Bool("wait", wait, "")
+	cmd.Flags().Bool("no-wait", !wait, "")
 	return cmd
 }
 
-// A deploy is accepted long before its rollout ends. A command returns once the
-// record says the rollout has started, saying it continues; a rollout that later
-// fails is on the record.
-func TestDeployOutcome_ARolloutIsNotWaitedOnUnlessAsked(t *testing.T) {
+// Every command that rolls an app out waits for the rollout unless told not to,
+// and --no-wait is the one spelling of that.
+func TestEveryRolloutCommandWaitsUnlessToldNotTo(t *testing.T) {
+	for _, c := range []*cobra.Command{appCreateCmd, appDeployCmd, appRollbackCmd, appUpgradeCmd} {
+		f := c.Flags().Lookup("no-wait")
+		require.NotNil(t, f, c.Name())
+		assert.Equal(t, "false", f.DefValue, c.Name())
+		assert.Nil(t, c.Flags().Lookup("wait"), c.Name())
+		assert.True(t, waitsForRollout(c), c.Name())
+	}
+}
+
+// Told not to wait, a command returns once the record says the rollout has
+// started, saying it continues; a rollout that later fails is on the record.
+func TestDeployOutcome_ARolloutIsNotWaitedOnWhenToldNotTo(t *testing.T) {
 	c, _ := fakeDeployAPI(t, []*client.Deployment{{ID: "dep-1", AppID: "app-1", Status: "deploying"}})
 	app, err := deployOutcome(waitFlag(false), c, "app-1", &client.App{ID: "app-1", Status: "deploying"}, "json")
 	require.NoError(t, err)
@@ -94,7 +105,7 @@ func TestDeploymentSettled(t *testing.T) {
 	}
 }
 
-// Asked to wait, a command follows the record to its verdict and carries it: the
+// By default a command follows the record to its verdict and carries it: the
 // reason a rollout failed is the API's own, and the exit code is CI's to read.
 func TestDeployOutcome_WaitingFollowsTheRolloutToItsVerdict(t *testing.T) {
 	useFastPolling(t)
@@ -191,7 +202,7 @@ func TestRolloutContinues(t *testing.T) {
 		app  client.App
 		want bool
 	}{
-		{"not asked to wait, rolling out", false, client.App{Status: "deploying"}, true},
+		{"told not to wait, rolling out", false, client.App{Status: "deploying"}, true},
 		{"waited, and an asleep app still reads deploying", true, client.App{Status: "deploying"}, false},
 		{"running", false, client.App{Status: "running"}, false},
 	} {
