@@ -19,7 +19,7 @@ func TestCapacityRowsSayWhatEachDimensionHolds(t *testing.T) {
 		{Axis: "cpu", Bounded: true, Unit: "core", Reserves: true, MeasuresUse: true, Allowed: f(8), Admitted: f(2.5), Reserved: f(1), Used: f(0.016), Unmeasured: []string{"job", "runner"}},
 		{Axis: "memory", Bounded: true, Unit: "byte", Reserves: true, MeasuresUse: true, Allowed: f(16 << 30), Admitted: nil, Reserved: f(2 << 30), Used: nil},
 		{Axis: "backup_storage", Bounded: true, Unit: "byte", MeasuresUse: true, Allowed: f(80 << 30), Admitted: f(0), Used: f(0)},
-		{Axis: "log_rate", Bounded: true, Unit: "byte_per_second", MeasuresUse: true, Allowed: f(20480), Admitted: f(1536), Used: f(1536)},
+		{Axis: "log_bytes_per_second", Bounded: true, Unit: "byte_per_second", MeasuresUse: true, Allowed: f(20480), Admitted: f(1536), Used: f(1536)},
 		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(1204.4)},
 		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(0.42)},
 		{Axis: "pods", Bounded: true, Unit: "count", Allowed: f(20), Admitted: f(3)},

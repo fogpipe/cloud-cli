@@ -110,7 +110,7 @@ the platform read.
 // axis not named here prints as the API spells it.
 var capacityAxisLabels = map[string]string{
 	"cpu": "CPU", "memory": "Memory", "storage": "Storage", "object_storage": "Object storage",
-	"registry_storage": "Registry", "backup_storage": "Backups", "log_rate": "Logs", "http_requests": "HTTP requests",
+	"registry_storage": "Registry", "backup_storage": "Backups", "log_bytes_per_second": "Logs", "http_requests": "HTTP requests",
 	"pods": "Instances", "objects": "Objects",
 }
 
