@@ -110,7 +110,7 @@ the platform read.
 // axis not named here prints as the API spells it.
 var capacityAxisLabels = map[string]string{
 	"cpu": "CPU", "memory": "Memory", "storage": "Storage", "object_storage": "Object storage",
-	"registry_storage": "Registry", "backup_storage": "Backups", "http_requests": "HTTP requests",
+	"registry_storage": "Registry", "backup_storage": "Backups", "log_rate": "Logs", "http_requests": "HTTP requests",
 	"pods": "Instances", "objects": "Objects",
 }
 
@@ -138,6 +138,8 @@ func capacityFigure(v *float64, unit string) string {
 		return formatMillicores(int64(math.Round(*v * 1000)))
 	case "byte":
 		return humanizeSize(int64(math.Round(*v)))
+	case "byte_per_second":
+		return humanizeSize(int64(math.Round(*v))) + "/s"
 	case "count":
 		return strconv.FormatInt(int64(math.Round(*v)), 10)
 	case "request_per_hour":

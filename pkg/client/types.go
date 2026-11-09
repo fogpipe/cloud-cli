@@ -195,12 +195,15 @@ type CapacityReport struct {
 // A zero is a measured zero.
 type CapacityAxis struct {
 	// Axis is the dimension: cpu, memory, storage, object_storage,
-	// registry_storage, backup_storage, http_requests, pods or objects.
+	// registry_storage, backup_storage, log_rate, http_requests, pods or
+	// objects.
 	Axis string `json:"axis"`
-	// Unit is "core", "byte", "count" or "request_per_hour". A count (pods,
-	// objects) has a bound and an admitted figure and nothing else; HTTP
-	// requests are used only, an hour's requests averaged over the hours the
-	// platform read.
+	// Unit is "core", "byte", "byte_per_second", "count" or
+	// "request_per_hour". A count (pods, objects) has a bound and an admitted
+	// figure and nothing else; HTTP requests are used only, an hour's requests
+	// averaged over the hours the platform read; log_rate is what apps and
+	// jobs wrote to their logs, as bytes a second averaged over each hour,
+	// against the rate the log store refuses lines over.
 	Unit string `json:"unit"`
 	// Bounded says the organization has a bound on the axis, so Allowed and
 	// Admitted exist; false on HTTP requests, which have none yet.
@@ -1510,6 +1513,11 @@ type Organization struct {
 	MaxObjects         int64  `json:"max_objects"`
 	MaxRegistryStorage string `json:"max_registry_storage"`
 	MaxBackupStorage   string `json:"max_backup_storage"`
+
+	// MaxLogRate is the bytes a second the organization's apps and jobs may
+	// write to their logs, enforced by the log store: a line over it is
+	// refused and not billed. Capacity reports it as the log_rate dimension.
+	MaxLogRate int64 `json:"max_log_rate"`
 
 	// UsedRegistryBytes is what the org's projects were last measured to hold
 	// in the registry, beside the ceiling it is refused against (ADR-128,
