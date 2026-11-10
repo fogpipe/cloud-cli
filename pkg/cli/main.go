@@ -203,11 +203,19 @@ func Execute() {
 		}
 		// The API can only report the header it did not get; it cannot know we
 		// never found a credential to put there. Say so, or a caller reads a
-		// rejected request as a malformed one.
+		// rejected request as a malformed one. A saved session that could not
+		// be refreshed is a different answer: there is a credential, and the
+		// fix is signing in again, not setting a key.
 		var apiErr *client.APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && resolveAPIKey() == "" {
-			fmt.Fprintln(os.Stderr, "No credential found — run `fpcloud login`, or set FPCLOUD_API_KEY (in CI, from the `fogpipe/cloud-actions/auth` step).")
-			os.Exit(exitCode(err))
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
+			if key, credErr := resolveCredential(); key == "" {
+				if credErr != nil {
+					fmt.Fprintln(os.Stderr, credErr)
+				} else {
+					fmt.Fprintln(os.Stderr, "No credential found — run `fpcloud login`, or set FPCLOUD_API_KEY (in CI, from the `fogpipe/cloud-actions/auth` step).")
+				}
+				os.Exit(exitCode(err))
+			}
 		}
 		if isUsageError(err) {
 			fmt.Fprintln(os.Stderr, errorHelpHint)

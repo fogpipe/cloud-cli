@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -169,23 +171,37 @@ func resolveAPIURL() string {
 // login`, so interactive use needs no separate key (gcloud-style). Returns ""
 // when nothing static authenticates the caller.
 func resolveAPIKey() string {
+	key, _ := resolveCredential()
+	return key
+}
+
+// resolveCredential is resolveAPIKey with the reason a saved session could
+// not be used: nil when a credential was found or no session is saved, and
+// the refresh or issuer error otherwise. A caller that is told only "no
+// credential" after a refresh was refused goes looking for an API key it
+// never set; the error names the session and says to sign in again.
+func resolveCredential() (string, error) {
 	flag := rootCmd.Flag("api-key")
 	if flag.Changed {
-		return flag.Value.String()
+		return flag.Value.String(), nil
 	}
 	if key := envAPIKey(); key != "" {
-		return key
+		return key, nil
 	}
 	if podIdentityFile() != "" {
-		return ""
+		return "", nil
 	}
 	if key := flag.Value.String(); key != "" {
-		return key
+		return key, nil
 	}
-	if token, err := currentIDToken(); err == nil {
-		return token
+	token, err := currentIDToken()
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
 	}
-	return ""
+	return token, nil
 }
 
 // envAPIKey is client.EnvAPIKey for a command. A key file that is named and
