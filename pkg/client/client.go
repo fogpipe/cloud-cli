@@ -1635,6 +1635,18 @@ func (c *Client) GetAppLogs(ctx context.Context, id string, req LogsQuery) (io.R
 	return c.readLogs(ctx, "/api/v1/apps/"+id+"/logs", req)
 }
 
+// GetReleaseLogs reads what a deploy's release command printed, from the log
+// store, over the window since the deploy started.
+func (c *Client) GetReleaseLogs(ctx context.Context, dep *Deployment) (string, error) {
+	body, err := c.GetAppLogs(ctx, dep.AppID, LogsQuery{Source: "release", Deployment: dep.ID, Since: dep.StartedAt, Tail: 5000})
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
+	out, err := io.ReadAll(body)
+	return string(out), err
+}
+
 // GetWebsiteLogs retrieves a website's request lines, under the bucket's
 // read (ADR-300 §7). req.Source, Prefix and Pod do not apply and are refused
 // by the API.

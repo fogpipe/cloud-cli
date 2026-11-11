@@ -1028,8 +1028,14 @@ func deployOutcome(cmd *cobra.Command, c *client.Client, appID string, app *clie
 		if msg == "" {
 			msg = "the deploy failed; `fpcloud app deployments` has its record"
 		}
-		if logs := strings.TrimSpace(dep.ReleaseLogs); logs != "" {
-			msg += "\n\n--- release command output ---\n" + logs
+		if len(dep.ReleaseCommand) > 0 {
+			logs, err := c.GetReleaseLogs(context.Background(), dep)
+			switch {
+			case err != nil:
+				msg += "\n\nthe release command's output could not be read: " + err.Error()
+			case strings.TrimSpace(logs) != "":
+				msg += "\n\n--- release command output ---\n" + strings.TrimSpace(logs)
+			}
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}
@@ -1660,6 +1666,7 @@ timeline.
   fpcloud app logs web --pod web-7c9d8b6f5-x2k4q
   fpcloud app logs web --status 5xx --since 1h
   fpcloud app logs web --source app
+  fpcloud app logs web --source release --deployment <id>
 
 A web app's requests are printed among its own lines, one per request as the
 platform answered it: method, host and path, status, how long the app took
@@ -1668,6 +1675,10 @@ reached the app has no app time, printed as "-". --source reads one kind
 alone, and --status reads the requests answered with a code (500) or a class
 (5xx). The platform keeps no client address and no query string, so a line
 never holds either. A worker has no request lines.
+
+--source release reads what the release command printed, which neither
+default kind includes, and --deployment narrows any read to one deploy: its
+replicas, or its release command. The ids are what ` + "`fpcloud app deployments`" + ` lists.
 
 --follow replays the window, then keeps printing. A restart is a gap in the
 output rather than the end of it. --until has no meaning while following and is
@@ -1692,6 +1703,7 @@ record, and the last one, source "summary", carries those two counts.`,
 		pod, _ := cmd.Flags().GetString("pod")
 		source, _ := cmd.Flags().GetString("source")
 		status, _ := cmd.Flags().GetString("status")
+		deployment, _ := cmd.Flags().GetString("deployment")
 
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
@@ -1708,7 +1720,7 @@ record, and the last one, source "summary", carries those two counts.`,
 		}
 		body, err := c.GetAppLogs(context.Background(), appID, client.LogsQuery{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Prefix: prefix, Pod: pod, Source: source, Status: status, Format: format,
+			Prefix: prefix, Pod: pod, Source: source, Status: status, Deployment: deployment, Format: format,
 		})
 		if err != nil {
 			return err
@@ -1959,7 +1971,8 @@ func init() {
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 	appLogsCmd.Flags().Bool("prefix", false, "Prefix each line with the replica that printed it")
 	appLogsCmd.Flags().String("pod", "", "Read one replica's lines only, by the name --prefix prints")
-	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed) or requests (what it was served)")
+	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed), requests (what it was served) or release (what its release command printed)")
+	appLogsCmd.Flags().String("deployment", "", "Read the lines of one deploy only, by the id app deployments lists")
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
 	appScaleCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs; 0 lets a web app sleep after 15 minutes without a request and wake on the next one")

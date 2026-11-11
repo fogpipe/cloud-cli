@@ -747,10 +747,15 @@ type LogsQuery struct {
 	// A web app's request lines are read beside its own (ADR-300 §7):
 	// Source narrows to one kind ("app" or "requests"; empty is both), and
 	// Status to the request lines carrying a code ("500") or a class ("5xx"),
-	// which is refused with Source "app". A website has request lines only,
-	// so GetWebsiteLogs takes no Source.
+	// which is refused with Source "app". Source "release" reads what the
+	// app's release command printed instead, which neither default kind
+	// includes. A website has request lines only, so GetWebsiteLogs takes no
+	// Source.
 	Source string `query:"source"`
 	Status string `query:"status"`
+	// Deployment narrows the read to the pods one deploy started: its serving
+	// replicas, or with Source "release" its release command.
+	Deployment string `query:"deployment"`
 	// Format "json" asks for one JSON record per line (application/x-ndjson) in
 	// place of text: an app line carries at, source, pod and line; a request
 	// line its fields; and the last record, source "summary", how many
@@ -1948,12 +1953,8 @@ type Deployment struct {
 	Trigger        string   `json:"trigger"`
 	CommitSHA      string   `json:"commit_sha,omitempty"`
 	Message        string   `json:"message,omitempty"`
-	// ReleaseLogs is the release-command Job's output for this deploy, read by the
-	// API from the log store rather than stored on the record. Empty once the
-	// store's retention has passed, or before it has ingested the last lines.
-	ReleaseLogs string  `json:"release_logs,omitempty"`
-	StartedAt   string  `json:"started_at"`
-	FinishedAt  *string `json:"finished_at,omitempty"`
+	StartedAt      string   `json:"started_at"`
+	FinishedAt     *string  `json:"finished_at,omitempty"`
 	// CreatedBy is the email of the person or service account that made the
 	// deployment, as the audit trail records it.
 	CreatedBy string `json:"created_by,omitempty"`
