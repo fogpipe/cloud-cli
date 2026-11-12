@@ -1524,12 +1524,6 @@ type Organization struct {
 	// refused and not billed. Capacity reports it as the log_bytes_per_second dimension.
 	MaxLogBytesPerSecond int64 `json:"max_log_bytes_per_second"`
 
-	// MaxHosts is how many hosts the organization may hold: every app's host,
-	// every bucket's website host and every custom domain. A host that was
-	// removed goes on counting for seven days. Capacity reports it as the
-	// hosts dimension.
-	MaxHosts int64 `json:"max_hosts"`
-
 	// UsedRegistryBytes is what the org's projects were last measured to hold
 	// in the registry, beside the ceiling it is refused against (ADR-128,
 	// fogpipe/cloud-workspace#284). RegistryMeasuredAt is when; zero means no
