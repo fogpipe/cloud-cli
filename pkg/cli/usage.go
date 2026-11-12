@@ -111,7 +111,7 @@ the platform read.
 var capacityAxisLabels = map[string]string{
 	"cpu": "CPU", "memory": "Memory", "storage": "Storage", "object_storage": "Object storage",
 	"registry_storage": "Registry", "backup_storage": "Backups", "log_bytes_per_second": "Logs", "http_requests": "HTTP requests",
-	"pods": "Instances", "objects": "Objects",
+	"pods": "Instances", "objects": "Objects", "hosts": "Hosts",
 }
 
 // capacityUnmeasuredWords are what NOT MEASURED calls each kind; a kind not
