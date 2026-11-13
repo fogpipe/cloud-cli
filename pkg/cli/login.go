@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -217,7 +219,12 @@ var loginCmd = &cobra.Command{
 			return err
 		}
 		account, _ := cmd.Flags().GetString("account")
-		return runLogin(context.Background(), port, account)
+		ctx := context.Background()
+		if err := runLogin(ctx, os.Stdout, port, account); err != nil {
+			return err
+		}
+		seedContext(ctx)
+		return nil
 	},
 }
 
@@ -317,7 +324,7 @@ var logoutCmd = &cobra.Command{
 	},
 }
 
-func runLogin(ctx context.Context, port int, account string) error {
+func runLogin(ctx context.Context, out io.Writer, port int, account string) error {
 	ln, redirectURL, err := listenLoopback(port)
 	if err != nil {
 		return err
@@ -356,8 +363,8 @@ func runLogin(ctx context.Context, port int, account string) error {
 	defer srv.Close()
 
 	authURL := conf.AuthCodeURL(state, append(authOptions(idp, account), oauth2.S256ChallengeOption(verifier))...)
-	fmt.Println("Opening your browser to sign in…")
-	fmt.Println(mutedStyle.Render("  If it doesn't open, visit:\n  " + authURL))
+	fmt.Fprintln(out, "Opening your browser to sign in…")
+	fmt.Fprintln(out, mutedStyle.Render("  If it doesn't open, visit:\n  "+authURL))
 	_ = openBrowser(authURL)
 
 	var code string
@@ -387,7 +394,7 @@ func runLogin(ctx context.Context, port int, account string) error {
 			if err := saveConfig(cfg); err != nil {
 				return fmt.Errorf("clear the previous identity's context: %w", err)
 			}
-			fmt.Println(mutedStyle.Render("  Signed in as a different identity; the previous context was cleared."))
+			fmt.Fprintln(out, mutedStyle.Render("  Signed in as a different identity; the previous context was cleared."))
 		}
 	}
 	if err := saveToken(&cachedToken{
@@ -404,9 +411,8 @@ func runLogin(ctx context.Context, port int, account string) error {
 	if err := clearStorageCreds(); err != nil {
 		return fmt.Errorf("clear the cached object-store credential: %w", err)
 	}
-	fmt.Println()
-	fmt.Println(successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
-	seedContext(ctx)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, successBox.Render(fmt.Sprintf("✓ Logged in as %s", emailFromIDToken(idToken))))
 	return nil
 }
 
@@ -424,6 +430,26 @@ func currentIDToken() (string, error) {
 // and re-mints registry tokens with it until the last manifest lands
 // (fogpipe/cloud-workspace#285).
 func idTokenValidFor(horizon time.Duration) (string, error) {
+	token, err := refreshedIDToken(horizon)
+	var dead *deadSessionError
+	if !errors.As(err, &dead) {
+		return token, err
+	}
+	return signInAgain(horizon, dead)
+}
+
+type deadSessionError struct {
+	reason error
+	email  string
+}
+
+func (e *deadSessionError) Error() string {
+	return e.reason.Error() + " — run `fpcloud login`"
+}
+
+func (e *deadSessionError) Unwrap() error { return e.reason }
+
+func refreshedIDToken(horizon time.Duration) (string, error) {
 	t, err := loadToken()
 	if err != nil {
 		return "", fmt.Errorf("not logged in — run `fpcloud login`: %w", err)
@@ -436,8 +462,9 @@ func idTokenValidFor(horizon time.Duration) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		email, _ := parseJWTClaims(t.IDToken)["email"].(string)
 		if t.Issuer != idp.Issuer {
-			return "", fmt.Errorf("your session is from %s, not from %s — run `fpcloud login`", firstNonEmpty(t.Issuer, "an earlier identity provider"), idp.Issuer)
+			return "", &deadSessionError{fmt.Errorf("your session is from %s, not from %s", firstNonEmpty(t.Issuer, "an earlier identity provider"), idp.Issuer), email}
 		}
 		// A refresh grant carries no redirect_uri — there is no callback to come back to.
 		src := oauthConfig(idp, "").TokenSource(ctx, &oauth2.Token{
@@ -445,8 +472,12 @@ func idTokenValidFor(horizon time.Duration) (string, error) {
 			Expiry:       time.Now().Add(-time.Hour),
 		})
 		newTok, err := src.Token()
+		var refused *oauth2.RetrieveError
+		if errors.As(err, &refused) {
+			return "", &deadSessionError{fmt.Errorf("token refresh failed: %w", err), email}
+		}
 		if err != nil {
-			return "", fmt.Errorf("token refresh failed — run `fpcloud login`: %w", err)
+			return "", fmt.Errorf("token refresh failed: %w", err)
 		}
 		if nid, _ := newTok.Extra("id_token").(string); nid != "" {
 			idToken = nid
@@ -464,6 +495,42 @@ func idTokenValidFor(horizon time.Duration) (string, error) {
 		}
 	}
 	return idToken, nil
+}
+
+func signInAgain(horizon time.Duration, dead *deadSessionError) (string, error) {
+	if browserCommand("").Err != nil {
+		return "", dead
+	}
+	unlock, err := lockLogin()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	token, err := refreshedIDToken(horizon)
+	if !errors.As(err, &dead) {
+		return token, err
+	}
+	fmt.Fprintf(os.Stderr, "%s — signing in again.\n", dead.reason)
+	if err := runLogin(context.Background(), os.Stderr, 0, dead.email); err != nil {
+		return "", fmt.Errorf("sign in again: %w", err)
+	}
+	return refreshedIDToken(horizon)
+}
+
+func lockLogin() (func(), error) {
+	dir := stateDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "login.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("wait for another login: %w", err)
+	}
+	return func() { f.Close() }, nil
 }
 
 var getTokenCmd = &cobra.Command{
@@ -488,13 +555,17 @@ var getTokenCmd = &cobra.Command{
 }
 
 func openBrowser(url string) error {
+	return browserCommand(url).Start()
+}
+
+var browserCommand = func(url string) *exec.Cmd {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Start()
+		return exec.Command("open", url)
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		return exec.Command("xdg-open", url).Start()
+		return exec.Command("xdg-open", url)
 	}
 }
 

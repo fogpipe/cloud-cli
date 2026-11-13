@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -166,9 +169,111 @@ func TestCurrentIDToken_RefusesAnotherIssuersSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	withoutBrowser(t)
+
 	_, err := currentIDToken()
 	if err == nil || !strings.Contains(err.Error(), "fpcloud login") {
 		t.Fatalf("expected a refusal pointing at fpcloud login, got %v", err)
+	}
+}
+
+func withoutBrowser(t *testing.T) {
+	t.Helper()
+	previous := browserCommand
+	browserCommand = func(string) *exec.Cmd { return &exec.Cmd{Err: errors.New("no browser")} }
+	t.Cleanup(func() { browserCommand = previous })
+}
+
+func revokingIssuer(t *testing.T, fresh string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 srv.URL,
+			"authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint":         srv.URL + "/token",
+			"jwks_uri":               srv.URL + "/keys",
+			"scopes_supported":       []string{"openid", "offline_access"},
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		w.Header().Set("Content-Type", "application/json")
+		if r.Form.Get("grant_type") == "refresh_token" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_request", "error_description": "Errors.OIDCSession.RefreshTokenInvalid"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "at", "refresh_token": "new", "id_token": fresh, "token_type": "Bearer", "expires_in": 3600,
+		})
+	})
+	return srv
+}
+
+func TestCurrentIDToken_SignsInAgainWhenTheIssuerRefusesTheRefresh(t *testing.T) {
+	fresh := unsignedJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "email": "a@example.com"})
+	issuer := revokingIssuer(t, fresh)
+	isolateState(t)
+	t.Setenv("FPCLOUD_OIDC_ISSUER", issuer.URL)
+	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "cli")
+	expired := unsignedJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix(), "email": "a@example.com"})
+	if err := saveToken(&cachedToken{Issuer: issuer.URL, IDToken: expired, RefreshToken: "revoked"}); err != nil {
+		t.Fatal(err)
+	}
+	hints := make(chan string, 1)
+	previous := browserCommand
+	browserCommand = func(authURL string) *exec.Cmd {
+		if authURL != "" {
+			u, _ := url.Parse(authURL)
+			q := u.Query()
+			hints <- q.Get("login_hint")
+			go func() {
+				resp, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state")))
+				if err == nil {
+					resp.Body.Close()
+				}
+			}()
+		}
+		return exec.Command("true")
+	}
+	t.Cleanup(func() { browserCommand = previous })
+
+	got, err := currentIDToken()
+	if err != nil {
+		t.Fatalf("currentIDToken: %v", err)
+	}
+	if got != fresh {
+		t.Errorf("returned %q, want the token from the new login", got)
+	}
+	if hint := <-hints; hint != "a@example.com" {
+		t.Errorf("login_hint = %q, want the revoked session's account", hint)
+	}
+	saved, err := loadToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RefreshToken != "new" {
+		t.Errorf("saved refresh token = %q, want the new login's", saved.RefreshToken)
+	}
+}
+
+func TestCurrentIDToken_ReturnsTheRefusalWithoutABrowser(t *testing.T) {
+	issuer := revokingIssuer(t, "")
+	isolateState(t)
+	t.Setenv("FPCLOUD_OIDC_ISSUER", issuer.URL)
+	t.Setenv("FPCLOUD_OIDC_CLIENT_ID", "cli")
+	expired := unsignedJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})
+	if err := saveToken(&cachedToken{Issuer: issuer.URL, IDToken: expired, RefreshToken: "revoked"}); err != nil {
+		t.Fatal(err)
+	}
+	withoutBrowser(t)
+
+	_, err := currentIDToken()
+	if err == nil || !strings.Contains(err.Error(), "RefreshTokenInvalid") || !strings.Contains(err.Error(), "fpcloud login") {
+		t.Fatalf("expected the issuer's refusal pointing at fpcloud login, got %v", err)
 	}
 }
 
