@@ -276,6 +276,82 @@ var registryTagsListCmd = &cobra.Command{
 	},
 }
 
+var registryImagesCmd = &cobra.Command{
+	Use:     "images <repo>",
+	Aliases: []string{"image"},
+	Short:   "List a repository's images with their scan state and age",
+	Long: `List a repository's images, newest first by when the registry first held
+each one, with what the platform's scanner last found and how long ago.
+
+The platform keeps current the scans of every image a workload runs and of
+each repository's newest three images, rescanning them weekly. An older image
+keeps the scan it last had, so its findings are as of SCANNED; one that was
+never scanned reads "unscanned". Either is scanned on request:
+
+  fpcloud registry images web
+  fpcloud registry scan web v12
+  fpcloud registry images web -o json`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := requireProject()
+		if err != nil {
+			return err
+		}
+		list, err := getClient().ListRegistryImages(context.Background(), projectID, args[0])
+		if err != nil {
+			return err
+		}
+		rows := make([][]string, len(list.Images))
+		for i, img := range list.Images {
+			rows[i] = []string{img.Tag, shortDigest(img.Digest), firstSeenCell(img.FirstSeenAt), scanCell(img), scannedCell(img.ScannedAt)}
+		}
+		render([]string{"TAG", "DIGEST", "FIRST SEEN", "SCAN", "SCANNED"}, rows, list)
+		return nil
+	},
+}
+
+// scanCell is what an image's scan says, in one cell. A count is shown only
+// under ScanStateScanned: under every other state nothing was looked for, and a
+// zero there would read as clean.
+func scanCell(img client.RegistryImage) string {
+	switch img.ScanState {
+	case client.ScanStateScanned:
+		v := img.Vulnerabilities
+		if v == nil || v.Total == 0 {
+			return "clean"
+		}
+		return fmt.Sprintf("%s · %d", v.MaxSeverity, v.Total)
+	case "":
+		return "unknown"
+	default:
+		return img.ScanState
+	}
+}
+
+// scannedCell is how long ago the scan ran. A count without a date is a claim
+// about an image as of an unstated moment, and the vulnerability database
+// moves.
+func scannedCell(at *time.Time) string {
+	if at == nil {
+		return "—"
+	}
+	return humanAge(*at) + " ago"
+}
+
+func firstSeenCell(at *time.Time) string {
+	if at == nil {
+		return "—"
+	}
+	return at.Format("2006-01-02 15:04")
+}
+
+func shortDigest(d string) string {
+	if len(d) > 19 {
+		return d[:19] + "…"
+	}
+	return d
+}
+
 var registryCVEsCmd = &cobra.Command{
 	Use:     "cves <repo> <tag>",
 	Aliases: []string{"cve", "vulnerabilities"},
@@ -430,10 +506,7 @@ the scan that is already running.
 // created nothing, and telling the caller it did would credit them with a Job
 // somebody else's request is waiting on.
 func dispatchLine(d *client.ScanDispatch) string {
-	short := d.Digest
-	if len(short) > 19 {
-		short = short[:19] + "…"
-	}
+	short := shortDigest(d.Digest)
 	switch d.Outcome {
 	case client.ScanDispatchInFlight:
 		return fmt.Sprintf("Already scanning %s (%s) — following that scan.", d.Repository+":"+d.Ref, short)
@@ -813,7 +886,7 @@ func init() {
 
 	registryCmd.AddCommand(
 		registryGetLoginPasswordCmd, registryLoginCmd,
-		registryReposCmd, registryRepoPathCmd, registryTagsCmd, registryCVEsCmd, registryScanCmd, registryRetentionCmd, registryVisibilityCmd,
+		registryReposCmd, registryRepoPathCmd, registryTagsCmd, registryImagesCmd, registryCVEsCmd, registryScanCmd, registryRetentionCmd, registryVisibilityCmd,
 	)
 	rootCmd.AddCommand(registryCmd)
 }
@@ -850,7 +923,11 @@ func scanStateLine(state, reason string, scannedAt *time.Time, findings int) str
 		return "NOT SCANNED — the scan of this image failed" + reasonSuffix(reason) +
 			"\nNothing below is a statement about what it contains."
 	case client.ScanStatePending:
-		return "NOT SCANNED YET — no scan has run for this image.\n" +
+		return "NOT SCANNED YET — no scan has run for this image; one will run without asking.\n" +
+			"Nothing below is a statement about what it contains."
+	case client.ScanStateUnscanned:
+		return "NOT SCANNED — this image is older than its repository's newest three and nothing runs it,\n" +
+			"so the platform does not scan it unless asked: fpcloud registry scan <repo> <tag>.\n" +
 			"Nothing below is a statement about what it contains."
 	// The two an app can be in that an image in our registry never is (#934).
 	case client.ScanStateExternal:

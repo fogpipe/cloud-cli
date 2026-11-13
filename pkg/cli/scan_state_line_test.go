@@ -16,6 +16,7 @@ func TestScanStateLineOnlyScannedReadsClean(t *testing.T) {
 		client.ScanStateRefused,
 		client.ScanStateFailed,
 		client.ScanStatePending,
+		client.ScanStateUnscanned,
 		client.ScanStateExternal,
 		client.ScanStateUnresolved,
 		"a-state-from-a-newer-server",
@@ -61,5 +62,46 @@ func TestScanStateLineCarriesReason(t *testing.T) {
 	got := scanStateLine(client.ScanStateRefused, "image exceeds the scratch ceiling", nil, 0)
 	if !strings.Contains(got, "image exceeds the scratch ceiling") {
 		t.Fatalf("reason dropped: %q", got)
+	}
+}
+
+// An image the platform does not keep current says how to get a scan, since
+// nothing else will produce one.
+func TestScanStateLineUnscannedSaysHowToAsk(t *testing.T) {
+	got := scanStateLine(client.ScanStateUnscanned, "", nil, 0)
+	if !strings.Contains(got, "fpcloud registry scan") {
+		t.Fatalf("unscanned does not say how to ask for a scan: %q", got)
+	}
+}
+
+// A count belongs to a scanned image only; under any other state a zero would
+// read as clean in the listing.
+func TestScanCellCountsOnlyUnderScanned(t *testing.T) {
+	zero := &client.RegistryVulnerabilities{}
+	cases := []struct {
+		img  client.RegistryImage
+		want string
+	}{
+		{client.RegistryImage{ScanState: client.ScanStateScanned, Vulnerabilities: zero}, "clean"},
+		{client.RegistryImage{ScanState: client.ScanStateScanned, Vulnerabilities: &client.RegistryVulnerabilities{MaxSeverity: "HIGH", Total: 4, High: 1, Low: 3}}, "HIGH · 4"},
+		{client.RegistryImage{ScanState: client.ScanStateUnscanned, Vulnerabilities: zero}, "unscanned"},
+		{client.RegistryImage{ScanState: client.ScanStatePending}, "pending"},
+		{client.RegistryImage{ScanState: client.ScanStateFailed}, "failed"},
+		{client.RegistryImage{}, "unknown"},
+	}
+	for _, c := range cases {
+		if got := scanCell(c.img); got != c.want {
+			t.Errorf("scanCell(%+v) = %q, want %q", c.img, got, c.want)
+		}
+	}
+}
+
+func TestScannedCellSaysHowLongAgo(t *testing.T) {
+	if got := scannedCell(nil); got != "—" {
+		t.Fatalf("no scan time = %q", got)
+	}
+	at := time.Now().Add(-10 * 24 * time.Hour)
+	if got := scannedCell(&at); got != "10d ago" {
+		t.Fatalf("ten days = %q", got)
 	}
 }

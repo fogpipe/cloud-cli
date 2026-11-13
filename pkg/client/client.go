@@ -354,11 +354,11 @@ type RegistryTagList struct {
 
 // Scan states for one image (fogpipe/cloud-workspace#902).
 //
-// Four values, and the fourth is why they exist. "Nothing has scanned this
-// image", "the platform declined to scan it", "its scan failed" and "it was
-// scanned and nothing was found" are four different answers, and only the last
-// means an image is clean. Collapsing any of the first three into it reports an
-// unexamined image as safe, in the surface whose entire job is reporting risk.
+// "Nothing has scanned this image", "the platform declined to scan it", "its
+// scan failed" and "it was scanned and nothing was found" are different
+// answers, and only the last means an image is clean. Collapsing any of the
+// others into it reports an unexamined image as safe, in the surface whose
+// entire job is reporting risk.
 const (
 	// ScanStateScanned: the scanner ran. Zero findings HERE, and only here, is
 	// what clean means.
@@ -367,8 +367,15 @@ const (
 	ScanStateRefused = "refused"
 	// ScanStateFailed: the scan ran and did not produce a usable result.
 	ScanStateFailed = "failed"
-	// ScanStatePending: nothing has scanned this image yet.
+	// ScanStatePending: nothing has scanned this image yet, and a scan will run
+	// without anyone asking: the platform keeps this image's scan current, or
+	// a scan of it is already in flight.
 	ScanStatePending = "pending"
+	// ScanStateUnscanned: nothing has scanned this image, and nothing will
+	// until someone asks (ScanImage). The platform keeps current only the
+	// images its workloads run and each repository's newest three; an older
+	// image keeps whatever scan it last had, and this one never had one.
+	ScanStateUnscanned = "unscanned"
 	// ScanStateExternal: the image lives outside the Fogpipe registry, so no
 	// scan of ours can ever exist for it. Distinct from ScanStatePending, which
 	// resolves once the sweep reaches the image; this one never does (#934).
@@ -586,6 +593,22 @@ func (c *Client) ListRegistryTags(ctx context.Context, projectID, repo string) (
 		return nil, err
 	}
 	return &tags, nil
+}
+
+// ListRegistryImages lists one repository's images (project-relative name),
+// newest first by when the registry first held each, with every image's scan
+// state and the time of its scan.
+func (c *Client) ListRegistryImages(ctx context.Context, projectID, repo string) (*RegistryImageList, error) {
+	path := "/api/v1/projects/" + projectID + "/repositories/images" + encodeQuery(RepositoryQuery{Repo: repo})
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out RegistryImageList
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // ListRegistryCVEs lists the CVEs the registry's scanner found in one image
