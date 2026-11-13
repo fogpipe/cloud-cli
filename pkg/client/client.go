@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1126,8 +1125,10 @@ func (c *Client) DeleteBudget(ctx context.Context, orgID string) error {
 //
 // The teardown continues server-side after this returns: emptying a project's
 // backup storage is bounded by how much of it there is, not by any timeout this
-// client could set. The project is already gone from every list; use
-// WaitProjectDeleted to observe the teardown finishing.
+// client could set. The project is already gone from every list and refuses
+// writes; GetProject answers until the teardown has finished. Until then a
+// create under the same name is refused with a 409 whose code is
+// PROJECT_TEARING_DOWN.
 func (c *Client) DeleteProject(ctx context.Context, id string) (*Project, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/projects/"+id, nil)
 	if err != nil {
@@ -1138,37 +1139,6 @@ func (c *Client) DeleteProject(ctx context.Context, id string) (*Project, error)
 		return nil, err
 	}
 	return &project, nil
-}
-
-// WaitProjectDeleted blocks until the project's teardown has finished — until
-// reading it stops answering — polling every interval.
-//
-// A caller that needs "deleted" to mean deleted (Terraform, a script that
-// recreates the same name) waits here rather than treating the accepted delete
-// as complete. It returns ctx.Err() if the caller's deadline passes first; the
-// teardown is unaffected and continues.
-//
-// Both 404 and 403 mean gone: a project's IAM bindings are the project's, so the
-// last step of the teardown takes away the permission to read it at the same
-// moment as the row. After an accepted delete there is nothing else a refusal
-// can mean.
-func (c *Client) WaitProjectDeleted(ctx context.Context, id string, interval time.Duration) error {
-	for {
-		_, err := c.GetProject(ctx, id)
-		if err != nil {
-			var apiErr *APIError
-			if errors.As(err, &apiErr) &&
-				(apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusForbidden) {
-				return nil
-			}
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(interval):
-		}
-	}
 }
 
 // MoveProjectResult is the response from re-homing a project to its org-prefixed

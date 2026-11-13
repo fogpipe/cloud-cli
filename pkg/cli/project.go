@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -336,27 +335,13 @@ var projectDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		// The API accepts the delete and tears the project down behind it, so
-		// this waits for the teardown rather than announcing a deletion that is
-		// still running (#865). --no-wait returns as soon as it is accepted.
-		if noWait, _ := cmd.Flags().GetBool("no-wait"); noWait {
-			fmt.Println(successBox.Render(
-				lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-					fmt.Sprintf(" Project %q is being deleted.", args[0]),
-			))
-			return nil
-		}
-
-		var waitErr error
-		withSpinner("Deleting project...", func() {
-			waitErr = c.WaitProjectDeleted(context.Background(), args[0], 2*time.Second)
-		})
-		if waitErr != nil {
-			return waitErr
-		}
+		// The API accepts the delete and tears the project down behind it. The
+		// project is already out of every list and refuses writes, so this
+		// returns: the one thing still held is the name, and a create under it
+		// is refused, saying so, until the teardown has finished.
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Project %q deleted.", args[0]),
+				fmt.Sprintf(" Project %q is being deleted. Its name is free again once the teardown finishes.", args[0]),
 		))
 		return nil
 	},
@@ -540,7 +525,6 @@ func init() {
 	projectUpdateCmd.Flags().String("egress", "", "Egress policy: 'restricted' (no internet, the platform's own API and S3 endpoint only), 'https' (443 only), or 'all' (the internet on any port but tcp 25; inside the platform the same as restricted)")
 	projectListCmd.Flags().Bool("apps", false, "List each project's app names instead of just the count")
 	projectDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
-	projectDeleteCmd.Flags().Bool("no-wait", false, "Return once the deletion is accepted, without waiting for the teardown")
 	projectMoveCmd.Flags().Bool("force", false, "Proceed even if the project has stateful resources (data is not migrated)")
 	projectMoveCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
