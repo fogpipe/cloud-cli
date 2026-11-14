@@ -153,10 +153,43 @@ var runnerShowCmd = &cobra.Command{
 		}
 		fmt.Println(renderInfoBox("Runner", runnerInfoRows(runner)))
 		fmt.Println()
+		if len(runner.RecentFailures) > 0 {
+			fmt.Println("Recent failures, last 30 days")
+			renderTable([]string{"WHEN", "CONTAINER", "REASON", "CODE", "LIMIT", "JOB"}, runnerFailureRows(runner.RecentFailures))
+			fmt.Println()
+		}
 		fmt.Println(mutedStyle.Render(runnerUseNote(runner)))
 		fmt.Println()
 		return nil
 	},
+}
+
+// runnerFailureRows renders the runner's recorded failures, newest first. A
+// pod that ended as a whole (preempted, evicted) has no container and no code.
+func runnerFailureRows(failures []client.RunnerFailure) [][]string {
+	rows := make([][]string, 0, len(failures))
+	for _, f := range failures {
+		container, code := f.Container, orDash("")
+		if container == "" {
+			container = "(pod)"
+		}
+		if f.ExitCode != nil {
+			code = fmt.Sprint(*f.ExitCode)
+		}
+		job := f.Job
+		switch {
+		case job != "" && f.Repository != "" && f.WorkflowRunID != 0:
+			job = fmt.Sprintf("%s (%s, run %d)", job, f.Repository, f.WorkflowRunID)
+		case job != "" && f.Repository != "":
+			job = fmt.Sprintf("%s (%s)", job, f.Repository)
+		case job == "":
+			job = orDash("")
+		}
+		rows = append(rows, []string{
+			f.At.UTC().Format("2006-01-02 15:04 UTC"), container, f.Reason, code, orDash(f.MemoryLimit), job,
+		})
+	}
+	return rows
 }
 
 var runnerUpdateCmd = &cobra.Command{

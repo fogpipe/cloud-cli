@@ -2227,6 +2227,13 @@ type Runner struct {
 	// and never zero in its place (fogpipe/cloud-workspace#146).
 	Queue *RunnerQueue `json:"queue,omitempty"`
 
+	// RecentFailures are the runner's pods and containers that ended
+	// abnormally in the last 30 days, newest first: an OOM kill, a runner that
+	// exited with an error, a pod taken off its node. The platform records each
+	// as it happens, so it is here after the pod itself is gone; GitHub reports
+	// such a job only as "lost communication with the server".
+	RecentFailures []RunnerFailure `json:"recent_failures,omitempty"`
+
 	// Restart is the recycle in progress, when one is: when it was asked for,
 	// whether it may kill running jobs, and which runners it is still waiting
 	// on (fogpipe/cloud-workspace#145). Absent when none is in progress.
@@ -2234,6 +2241,25 @@ type Runner struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RunnerFailure is one abnormal end of a runner pod or one of its
+// containers, with the job it was serving.
+type RunnerFailure struct {
+	At  time.Time `json:"at"`
+	Pod string    `json:"pod"`
+	// Container is empty for an end of the pod as a whole: preempted for
+	// higher-priority work, or evicted.
+	Container string `json:"container,omitempty"`
+	// Reason is the kubelet's (OOMKilled, Error) or, for a pod, the
+	// disruption's (PreemptionByScheduler, TerminationByKubelet, ...).
+	Reason string `json:"reason"`
+	// ExitCode is absent for an end of the pod as a whole.
+	ExitCode      *int   `json:"exit_code,omitempty"`
+	MemoryLimit   string `json:"memory_limit,omitempty"`
+	Job           string `json:"job,omitempty"`
+	Repository    string `json:"repository,omitempty"`
+	WorkflowRunID int64  `json:"workflow_run_id,omitempty"`
 }
 
 // RunnerInstance is one live runner in a pool. A busy runner names the job it
