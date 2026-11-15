@@ -583,7 +583,7 @@ type App struct {
 	HealthCheckInterval int              `json:"health_check_interval"`
 	HealthCheckRetries  int              `json:"health_check_retries"`
 	Probes              *ProbeOverrides  `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
-	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // ConfigMap/Secret/emptyDir mounts (empty = none)
+	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // scratch directories (empty = none)
 	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
 	CreatedAt           time.Time        `json:"created_at"`
 	UpdatedAt           time.Time        `json:"updated_at"`
@@ -623,13 +623,22 @@ type ProbeSpec struct {
 	SuccessThreshold    int    `json:"success_threshold,omitempty"`
 }
 
-// VolumeMount mounts a ConfigMap/Secret as read-only files, or an emptyDir as
-// writable scratch, at a container path.
+// VolumeMount is a writable scratch directory at a container path. EmptyDir is
+// the only kind; a later kind would be a sibling field, set instead of it. A
+// file the app reads comes from a secret_ref with a path, not from a mount.
 type VolumeMount struct {
-	Source    string `json:"source"`             // "configmap", "secret", or "emptydir"
-	Name      string `json:"name"`               // ConfigMap/Secret name (ignored for emptydir)
-	MountPath string `json:"mount_path"`         // container path to mount at
-	SubPath   string `json:"sub_path,omitempty"` // mount a single key instead of the whole dir
+	MountPath string    `json:"mount_path"`
+	EmptyDir  *EmptyDir `json:"empty_dir,omitempty"`
+}
+
+// EmptyDir is a scratch directory on the node's disk, 1 GiB; the pod is
+// evicted when it grows past that. Nothing about it is settable yet.
+type EmptyDir struct{}
+
+// SetVolumeMountsRequest replaces an app's mounts. An empty list removes them
+// all. The app rolls onto the new set.
+type SetVolumeMountsRequest struct {
+	VolumeMounts []VolumeMount `json:"volume_mounts"`
 }
 
 // Route carves a path prefix out of an app's app-wide ingress visibility (#501).

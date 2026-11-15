@@ -179,8 +179,8 @@ var appCreateCmd = &cobra.Command{
 		command, _ := cmd.Flags().GetStringArray("command")
 		cmdArgs, _ := cmd.Flags().GetStringArray("arg")
 		releaseCommand, _ := cmd.Flags().GetStringArray("release-command")
-		mountFlags, _ := cmd.Flags().GetStringArray("mount")
-		mounts, err := parseVolumeMounts(mountFlags)
+		emptyDirs, _ := cmd.Flags().GetStringArray("empty-dir")
+		mounts, err := emptyDirMounts(emptyDirs)
 		if err != nil {
 			return err
 		}
@@ -325,31 +325,19 @@ func parseKeyValues(flags []string, flag string) (map[string]string, error) {
 	return out, nil
 }
 
-// parseVolumeMounts turns repeated --mount flags of the form
-// "source:name:mount-path[:sub-path]" into VolumeMount records. source must be
-// "configmap", "secret", or "emptydir" (emptydir takes an empty name, e.g.
-// "emptydir::/tmp").
-func parseVolumeMounts(flags []string) ([]client.VolumeMount, error) {
-	if len(flags) == 0 {
+// emptyDirMounts turns repeated --empty-dir paths into scratch directory
+// mounts. The API validates each path; this only refuses an empty one, which a
+// stray `--empty-dir ""` would otherwise send as a mount at no path.
+func emptyDirMounts(paths []string) ([]client.VolumeMount, error) {
+	if len(paths) == 0 {
 		return nil, nil
 	}
-	mounts := make([]client.VolumeMount, 0, len(flags))
-	for _, f := range flags {
-		parts := strings.SplitN(f, ":", 4)
-		if len(parts) < 3 {
-			return nil, fmt.Errorf("invalid --mount %q (want source:name:mount-path[:sub-path])", f)
+	mounts := make([]client.VolumeMount, 0, len(paths))
+	for _, p := range paths {
+		if p == "" {
+			return nil, fmt.Errorf("--empty-dir needs a container path, e.g. --empty-dir /tmp")
 		}
-		if parts[0] != "configmap" && parts[0] != "secret" && parts[0] != "emptydir" {
-			return nil, fmt.Errorf("invalid --mount source %q (must be configmap, secret, or emptydir)", parts[0])
-		}
-		if parts[1] == "" && parts[0] != "emptydir" {
-			return nil, fmt.Errorf("invalid --mount %q (name is required for %s)", f, parts[0])
-		}
-		m := client.VolumeMount{Source: parts[0], Name: parts[1], MountPath: parts[2]}
-		if len(parts) == 4 {
-			m.SubPath = parts[3]
-		}
-		mounts = append(mounts, m)
+		mounts = append(mounts, client.VolumeMount{MountPath: p, EmptyDir: &client.EmptyDir{}})
 	}
 	return mounts, nil
 }
@@ -777,6 +765,70 @@ var appSetRoutesCmd = &cobra.Command{
 				paths = append(paths, fmt.Sprintf("%s (%s)", r.Path, r.Visibility))
 			}
 			msg = fmt.Sprintf(" Routes on %s: %s", app.Name, strings.Join(paths, ", "))
+		}
+		fmt.Println(successBox.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") + msg,
+		))
+		return nil
+	},
+}
+
+var appSetMountsCmd = &cobra.Command{
+	Use:   "set-mounts [name]",
+	Short: "Set an app's writable scratch directories",
+	Long: "Gives the app a writable scratch directory at each --empty-dir path: empty when a " +
+		"pod starts, 1 GiB on the node's disk, and the pod is evicted and restarted if it grows " +
+		"past that. A read-only root filesystem needs one wherever the image writes, /tmp usually.\n\n" +
+		"Replace-in-full: the flags given are the complete set, and `--clear` removes them all. " +
+		"The app rolls onto the new set.\n\n" +
+		"A file the app reads is not a mount: reference a secret with a path " +
+		"(`fpcloud app env set web KEY_FILE --from-secret key --path /secrets/key`).",
+	Example: "  fpcloud app set-mounts web --empty-dir /tmp\n" +
+		"  fpcloud app set-mounts web --empty-dir /tmp --empty-dir /var/cache/app\n" +
+		"  fpcloud app set-mounts web --clear",
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		clear, _ := cmd.Flags().GetBool("clear")
+		paths, _ := cmd.Flags().GetStringArray("empty-dir")
+		if clear && len(paths) > 0 {
+			return fmt.Errorf("--clear cannot be combined with --empty-dir")
+		}
+		if !clear && len(paths) == 0 {
+			return fmt.Errorf("at least one --empty-dir is required (or --clear to remove them all)")
+		}
+		mounts, err := emptyDirMounts(paths)
+		if err != nil {
+			return err
+		}
+
+		outputFormat := rootCmd.Flag("output").Value.String()
+		c := getClient()
+		appID, err := appIDFrom(c, cmd, args)
+		if err != nil {
+			return err
+		}
+
+		var app *client.App
+		var updateErr error
+		action := func() { app, updateErr = c.SetAppVolumeMounts(context.Background(), appID, mounts) }
+		if !isStructured(outputFormat) {
+			withSpinner("Applying mounts...", action)
+		} else {
+			action()
+		}
+		if updateErr != nil {
+			return updateErr
+		}
+		if isStructured(outputFormat) {
+			return renderData(app)
+		}
+		msg := fmt.Sprintf(" Removed every mount from %s", app.Name)
+		if len(app.VolumeMounts) > 0 {
+			dirs := make([]string, 0, len(app.VolumeMounts))
+			for _, m := range app.VolumeMounts {
+				dirs = append(dirs, m.MountPath)
+			}
+			msg = fmt.Sprintf(" Scratch directories on %s: %s", app.Name, strings.Join(dirs, ", "))
 		}
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") + msg,
@@ -1930,7 +1982,7 @@ func init() {
 	appCreateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; repeat for exec form)")
 	appCreateCmd.Flags().String("display-name", "", "Cosmetic display name (defaults to the app name); mutable later via `app update --display-name`")
 	appCreateCmd.Flags().String("slug", "", "Optional vanity URL slug; the app is reachable at <slug>.<tenant-domain> instead of the derived host (always-on apps; globally unique)")
-	appCreateCmd.Flags().StringArray("mount", nil, "Mount a ConfigMap/Secret/emptyDir (repeatable), e.g. --mount configmap:my-config:/etc/app[:sub-path] or --mount emptydir::/tmp")
+	appCreateCmd.Flags().StringArray("empty-dir", nil, "Mount a writable scratch directory at this container path, 1 GiB on disk (repeatable), e.g. --empty-dir /tmp. Change them later with app set-mounts")
 	appCreateCmd.Flags().Int64("run-as-user", -1, "Run the container as this UID (hardening; -1 = image default)")
 	appCreateCmd.Flags().Int64("run-as-group", -1, "Run the container as this GID (hardening; -1 = image default)")
 	appCreateCmd.Flags().Int64("fs-group", -1, "fsGroup owning mounted volumes (hardening; -1 = unset)")
@@ -1942,7 +1994,7 @@ func init() {
 	appUpdateCmd.Flags().Bool("read-only-root-fs", false, "Mount the container root filesystem read-only")
 	appUpdateCmd.Flags().Bool("clear-security-context", false, "Remove the security context, returning the app to the platform default")
 
-	appCreateCmd.Flags().Bool("read-only-root-fs", false, "Mount the container root filesystem read-only (hardening; pair with --mount emptydir::/tmp for scratch)")
+	appCreateCmd.Flags().Bool("read-only-root-fs", false, "Mount the container root filesystem read-only (hardening; pair with --empty-dir /tmp for scratch)")
 	appCreateCmd.Flags().String("health-check-path", "/", "Health check HTTP path (default: /)")
 	appCreateCmd.Flags().Int("health-check-timeout", 5, "Health check timeout in seconds")
 	appCreateCmd.Flags().Int("health-check-interval", 10, "Health check interval in seconds")
@@ -1958,6 +2010,8 @@ func init() {
 	appReconcileCmd.Flags().Bool("all", false, "Reconcile every app in the current project")
 	appSetRoutesCmd.Flags().StringArray("route", nil, "Path prefix to carve out: 'path[:visibility]' (visibility defaults to internal). Repeatable")
 	appSetRoutesCmd.Flags().Bool("clear", false, "Remove every route carve-out, putting all paths back under the app-wide ingress")
+	appSetMountsCmd.Flags().StringArray("empty-dir", nil, "Container path for a writable scratch directory (repeatable)")
+	appSetMountsCmd.Flags().Bool("clear", false, "Remove every mount")
 
 	registerProbeFlags(appSetProbesCmd)
 	appSetProbesCmd.Flags().Bool("clear", false, "Drop every per-probe override, putting all three probes back on the shared health check")
@@ -1996,7 +2050,7 @@ func init() {
 
 	appCVEsCmd.Flags().String("min-severity", "", minSeverityUsage)
 
-	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpgradeCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appScaleCmd, appSetRoutesCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appDeploymentsCmd, appExecCmd)
+	appCmd.AddCommand(appCreateCmd, appListCmd, appGetCmd, appDeployCmd, appReconcileCmd, appRestartCmd, appUpgradeCmd, appUpdateCmd, appDeleteCmd, appLogsCmd, appEventsCmd, appScaleCmd, appSetRoutesCmd, appSetMountsCmd, appSetProbesCmd, appRollbackCmd, appVersionCmd, appCVEsCmd, appIdentityCmd, appDeploymentsCmd, appExecCmd)
 	appExecCmd.Flags().String("container", "", "Container to run in (default: the pod's first)")
 	appExecCmd.Flags().Bool("tty", false, "Allocate a TTY (needs a terminal on stdin)")
 	rootCmd.AddCommand(appCmd)

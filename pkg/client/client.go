@@ -1552,6 +1552,23 @@ func (c *Client) UpdateAppRoutes(ctx context.Context, id string, routes []Route)
 	return &app, nil
 }
 
+// SetAppVolumeMounts replaces an app's mounts with the given set, and the app
+// rolls onto it. An empty set removes every mount.
+func (c *Client) SetAppVolumeMounts(ctx context.Context, id string, mounts []VolumeMount) (*App, error) {
+	if mounts == nil {
+		mounts = []VolumeMount{}
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+id+"/volume-mounts", SetVolumeMountsRequest{VolumeMounts: mounts})
+	if err != nil {
+		return nil, err
+	}
+	var app App
+	if err := c.do(httpReq, &app); err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
 // UpdateAppProbes replaces an app's per-probe liveness/readiness/startup
 // overrides (#453). nil clears them, reverting every probe to the shared
 // HealthCheck* shorthand.
