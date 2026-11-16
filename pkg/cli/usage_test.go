@@ -46,11 +46,11 @@ func TestCapacityRowsSayWhatEachDimensionHolds(t *testing.T) {
 // for more.
 func TestAProjectsCapacityRowsCarryNoBound(t *testing.T) {
 	hour := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
-	yes, no := true, false
 	r := &client.CapacityReport{Scope: "project", Axes: []client.CapacityAxis{
-		{Axis: "cpu", Unit: "core", Reserves: true, MeasuresUse: true, OrgNear: &yes, Reserved: f(1), ReservedHour: &hour, Used: f(0.016), UsedHour: &hour},
-		{Axis: "memory", Unit: "byte", Reserves: true, MeasuresUse: true, OrgNear: &no, Reserved: nil, Used: nil},
-		{Axis: "pods", Unit: "count", OrgNear: &yes},
+		{Axis: "cpu", Unit: "core", Reserves: true, MeasuresUse: true, OrgBound: "near", Reserved: f(1), ReservedHour: &hour, Used: f(0.016), UsedHour: &hour},
+		{Axis: "memory", Unit: "byte", Reserves: true, MeasuresUse: true, OrgBound: "below", Reserved: nil, Used: nil},
+		{Axis: "pods", Unit: "count", OrgBound: "at"},
+		{Axis: "objects", Unit: "count"},
 	}}
 	headers, rows := capacityRows(r)
 	assert.Equal(t, []string{"DIMENSION", "RESERVED", "USED", "HOUR", "NOT MEASURED"}, headers)
@@ -58,8 +58,11 @@ func TestAProjectsCapacityRowsCarryNoBound(t *testing.T) {
 		{"CPU", "1", "16m", "Nov 16 12:00", ""},
 		{"Memory", "no reading", "no reading", "-", ""},
 		{"Instances", "-", "-", "-", ""},
+		{"Objects", "-", "-", "-", ""},
 	}, rows)
-	assert.Equal(t, "The organization is near its bound on CPU, Instances. An owner can ask for more with `fpcloud org quota request`.", capacityNear(r))
+	assert.Equal(t, "The organization is at its bound on Instances: creates on it are refused.\n"+
+		"The organization is near its bound on CPU.\n"+
+		"An owner can ask for more with `fpcloud org quota request`.", capacityNear(r))
 }
 
 // --rows lists what each project or resource held on a dimension over the

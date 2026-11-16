@@ -26,8 +26,8 @@ it measurably used, each in the latest hour the platform has recorded, which
 HOUR names (UTC): an hour is recorded about 50 minutes after it ends, so
 neither is the present. With --org-wide, ALLOWED is the organization's bound
 and ADMITTED what that bound counts now, the number a create is refused by. A
-project shows its own figures, and says when its organization is near a bound;
-an owner asks for more with ` + "`fpcloud org quota request`" + `.
+project shows its own figures, and says when its organization is at or near a
+bound; an owner asks for more with ` + "`fpcloud org quota request`" + `.
 
 "no reading" is a figure the platform could not read, or has not recorded
 yet: a project created after the latest recorded hour has none. 0 is a
@@ -217,20 +217,30 @@ func capacityHours(a client.CapacityAxis) string {
 	return strings.Join(hours, " / ")
 }
 
-// capacityNear says which dimensions a project's organization is near its
-// bound on, and who can ask for more; empty when none is.
+// capacityNear says which dimensions a project's organization is at or near
+// its bound on, and who can ask for more; empty when none is. At the bound a
+// create is refused, which is the reader's first question, so it comes first.
 func capacityNear(r *client.CapacityReport) string {
-	var near []string
+	var at, near []string
 	for _, a := range r.Axes {
-		if a.OrgNear != nil && *a.OrgNear {
+		switch a.OrgBound {
+		case "at":
+			at = append(at, capacityAxisLabel(a.Axis))
+		case "near":
 			near = append(near, capacityAxisLabel(a.Axis))
 		}
 	}
-	if len(near) == 0 {
+	var lines []string
+	if len(at) > 0 {
+		lines = append(lines, fmt.Sprintf("The organization is at its bound on %s: creates on it are refused.", strings.Join(at, ", ")))
+	}
+	if len(near) > 0 {
+		lines = append(lines, fmt.Sprintf("The organization is near its bound on %s.", strings.Join(near, ", ")))
+	}
+	if len(lines) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("The organization is near its bound on %s. An owner can ask for more with `fpcloud org quota request`.",
-		strings.Join(near, ", "))
+	return strings.Join(lines, "\n") + "\nAn owner can ask for more with `fpcloud org quota request`."
 }
 
 // capacityShareRows is what each project or resource of the scope held on one

@@ -180,7 +180,7 @@ type CapacityReport struct {
 // Allowed and Admitted are the organization's, at organization scope only:
 // the bound on this axis and what is already counted against it, the two
 // numbers a create is refused by. A project read carries neither, only
-// OrgNear. Reserved and Used are the scope's in the latest hour
+// OrgBound. Reserved and Used are the scope's in the latest hour
 // their source recorded, named by ReservedHour and UsedHour: what metering
 // last billed on this axis and what was last measured. A metered hour lands
 // about 52 minutes after it ends, so neither is the present.
@@ -192,9 +192,10 @@ type CapacityReport struct {
 //     bound cannot be read; a malformed bound refuses every create on the axis.
 //   - Admitted is absent at project scope, and when its source was not read:
 //     no cluster, or a measured axis that has never been measured.
-//   - OrgNear is present at project scope on an axis the organization bounds,
-//     true while what it has admitted is 80% of the bound or more; absent when
-//     that cannot be read.
+//   - OrgBound is present at project scope on an axis the organization
+//     bounds: "at" once what it has admitted reaches the bound, so a create on
+//     the axis is refused; "near" from 80% of it; "below" under that. Absent
+//     when that cannot be read.
 //   - Reserved is null on an axis where Reserves is false (nothing reserves it:
 //     its use is what counts against the bound), and otherwise until metering
 //     has recorded an hour the scope existed in.
@@ -227,7 +228,7 @@ type CapacityAxis struct {
 	MeasuresUse bool     `json:"measures_use"`
 	Allowed     *float64 `json:"allowed,omitempty"`
 	Admitted    *float64 `json:"admitted,omitempty"`
-	OrgNear     *bool    `json:"org_near,omitempty"`
+	OrgBound    string   `json:"org_bound,omitempty"`
 	Reserved    *float64 `json:"reserved"`
 	// ReservedHour is the start of the hour Reserved is from.
 	ReservedHour *time.Time `json:"reserved_hour"`
