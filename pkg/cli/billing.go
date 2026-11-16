@@ -34,7 +34,9 @@ var billingCostCmd = &cobra.Command{
 	Long: `Show what the organization, or one project, cost over a period.
 
 Computed from metered usage at your rates, not an invoice: the default period is
-the month in progress, so the number grows every hour. Amounts are shown to the
+the month in progress, so the number grows every hour. It says the hour it is
+metered through: an hour is metered about 50 minutes after it ends, so a
+resource created since has no usage in it yet. Amounts are shown to the
 cent; the invoice rounds once per line and is the bill.
 
 --group-by takes up to one of project, resource and type (a resource is an app,
@@ -158,9 +160,19 @@ on the project, and is priced at the organization's real rates.
 		if books := costBooks(report.PriceBooks); books != "" {
 			fmt.Println(mutedStyle.Render("  " + books))
 		}
-		fmt.Println(mutedStyle.Render("  Computed from usage so far, not an invoice."))
+		fmt.Println(mutedStyle.Render("  " + costRecency(report.MeteredThrough)))
 		return nil
 	},
+}
+
+// costRecency says how far the total reaches: usage up to the end of the
+// newest metered hour, which lands about 50 minutes after it ends, so a
+// resource created since has no hour in it yet.
+func costRecency(through *time.Time) string {
+	if through == nil {
+		return "Computed from usage so far, not an invoice. No hour is metered yet."
+	}
+	return "Computed from usage metered through " + through.UTC().Format("Jan 2 15:04 MST") + ", not an invoice."
 }
 
 // creditLines says how each month's credit stands: what of it the

@@ -248,62 +248,6 @@ type statusRow struct {
 	changed bool
 }
 
-// renderCeiling is the org's ceiling and what is spent against it, as one line.
-//
-// Spend and ceiling are shown together and named as the organization's, because
-// the number is shared with every other project it owns: shown alone it reads as
-// this project's budget, which is what the per-project caps this replaced
-// actually were.
-func renderCeiling(p client.StatusProject) string {
-	if p.CeilingScope == "" {
-		return ""
-	}
-	axes := []string{}
-	if p.MaxCPU != "" {
-		axes = append(axes, firstNonEmpty(p.UsedCPU, "?")+"/"+p.MaxCPU+" cpu")
-	}
-	if p.MaxMemory != "" {
-		axes = append(axes, firstNonEmpty(p.UsedMemory, "?")+"/"+p.MaxMemory+" mem")
-	}
-	if p.MaxPods > 0 {
-		axes = append(axes, fmt.Sprintf("%d/%d pods", p.UsedPods, p.MaxPods))
-	}
-	if p.MaxStorage != "" {
-		axes = append(axes, firstNonEmpty(p.UsedStorage, "?")+"/"+p.MaxStorage+" disk")
-	}
-	// Every metered type is bounded here, including the three no ResourceQuota
-	// counts (ADR-128). They are on the same line as the rest deliberately: an
-	// axis that is not reported is one nobody can be refused on and understand
-	// why, which is how object storage stayed unbounded while the org row read
-	// as the whole obligation.
-	if p.MaxObjectStorage != "" {
-		axes = append(axes, humanizeSize(p.UsedObjectBytes)+"/"+p.MaxObjectStorage+" object storage")
-	}
-	if p.MaxObjects > 0 {
-		axes = append(axes, fmt.Sprintf("%d/%d objects", p.UsedObjects, p.MaxObjects))
-	}
-	if p.MaxRegistryStorage != "" {
-		axes = append(axes, humanizeSize(p.UsedRegistryBytes)+"/"+p.MaxRegistryStorage+" registry"+registryAge(p))
-	}
-	if len(axes) == 0 {
-		return ""
-	}
-	return p.CeilingScope + " " + strings.Join(axes, " / ")
-}
-
-// registryAge dates the registry reading, or says it has never been taken.
-//
-// It is the one axis whose spend is measured rather than declared, so it is the
-// one whose number can be out of date — a push is bounded against this reading
-// and overshoots it by however long ago it was. Unmeasured is not zero: nothing
-// is refused on it.
-func registryAge(p client.StatusProject) string {
-	if p.RegistryMeasuredAt.IsZero() {
-		return " (never measured)"
-	}
-	return " (measured " + humanAge(p.RegistryMeasuredAt) + " ago)"
-}
-
 // renderProjectStatus renders the whole document. prev, when non-nil, is the
 // previous observation: rows that differ from it are marked, so a watcher sees
 // what moved rather than re-reading the whole screen.
@@ -312,12 +256,9 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(s.Project.Name)
 	meta := []string{"ns " + s.Project.Namespace, "egress " + s.Project.Egress}
-	if ceiling := renderCeiling(s.Project); ceiling != "" {
-		meta = append(meta, ceiling)
-	}
 	// The project's own share of the org's registry spend, so a tenant told to
-	// delete images knows whether it is this project holding them
-	// (fogpipe/cloud-workspace#284). Absent when never measured.
+	// delete images knows whether it is this project holding them. Absent when
+	// never measured.
 	if s.Registry != nil {
 		meta = append(meta, "this project holds "+humanizeSize(s.Registry.Bytes)+" of images (measured "+humanAge(s.Registry.MeasuredAt)+" ago)")
 	}

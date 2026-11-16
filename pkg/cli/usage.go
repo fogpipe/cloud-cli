@@ -21,12 +21,17 @@ hold, what is reserved and what is actually used.
 
 Each dimension in its own unit, never added together: CPU in cores, memory and
 storage in bytes, instances and objects as counts, HTTP requests per hour.
-ALLOWED is the organization's bound and ADMITTED what that bound counts now,
-the number a create is refused by. RESERVED is what the scope holds booked (limits and
-quotas) and USED what it measurably uses, both now. A project shows its own
-reserved and used beside its organization's bound.
+RESERVED is what the scope held booked (limits and volume sizes) and USED what
+it measurably used, each in the latest hour the platform has recorded, which
+HOUR names (UTC): an hour is recorded about 50 minutes after it ends, so
+neither is the present. With --org-wide, ALLOWED is the organization's bound
+and ADMITTED what that bound counts now, the number a create is refused by. A
+project shows its own figures, and says when its organization is near a bound;
+an owner asks for more with ` + "`fpcloud org quota request`" + `.
 
-"no reading" is a figure the platform could not read, 0 is a measured zero,
+"no reading" is a figure the platform could not read, or has not recorded
+yet: a project created after the latest recorded hour has none. 0 is a
+measured zero,
 and "-" is a figure the dimension does not have: backups reserve nothing
 ahead, a count has no use over time, and HTTP requests have no bound yet.
 NOT MEASURED names what a dimension reserves whose use is not read. A
@@ -92,6 +97,10 @@ the platform read.
 			return renderData(report)
 		}
 		renderTable(capacityRows(report))
+		if near := capacityNear(report); near != "" {
+			fmt.Println()
+			fmt.Println(near)
+		}
 		if withRows {
 			for _, a := range report.Axes {
 				if len(a.Rows) == 0 {
@@ -148,11 +157,16 @@ func capacityFigure(v *float64, unit string) string {
 	return strconv.FormatFloat(*v, 'g', 4, 64)
 }
 
-// capacityRows is one row per dimension, now: the bound and what it counts,
-// then what the scope reserves and uses, "-" where the dimension has no such
-// figure at all.
+// capacityRows is one row per dimension: at organization scope the bound and
+// what it counts, then what the scope reserved and used in the latest hour
+// recorded and which hour that was, "-" where the dimension has no such figure
+// at all. A project read carries no bound, so its table has no column for one.
 func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
-	headers := []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "NOT MEASURED"}
+	orgScope := r.Scope == "organization"
+	headers := []string{"DIMENSION", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
+	if orgScope {
+		headers = []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
+	}
 	rows := make([][]string, 0, len(r.Axes))
 	for _, a := range r.Axes {
 		allowed, admitted, reserved, used := "-", "-", "-", "-"
@@ -172,10 +186,51 @@ func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
 				unmeasured[i] = w
 			}
 		}
-		rows = append(rows, []string{capacityAxisLabel(a.Axis), allowed, admitted,
-			reserved, used, strings.Join(unmeasured, ", ")})
+		row := []string{capacityAxisLabel(a.Axis), reserved, used, capacityHours(a), strings.Join(unmeasured, ", ")}
+		if orgScope {
+			row = append([]string{row[0], allowed, admitted}, row[1:]...)
+		}
+		rows = append(rows, row)
 	}
 	return headers, rows
+}
+
+// capacityHours names the hour an axis's reserved and used figures are from,
+// once when both share it: the latest each source recorded, never the present.
+func capacityHours(a client.CapacityAxis) string {
+	var hours []string
+	for _, h := range []struct {
+		has bool
+		at  *time.Time
+	}{{a.Reserves, a.ReservedHour}, {a.MeasuresUse, a.UsedHour}} {
+		if !h.has || h.at == nil {
+			continue
+		}
+		label := h.at.UTC().Format("Jan 2 15:04")
+		if len(hours) == 0 || hours[0] != label {
+			hours = append(hours, label)
+		}
+	}
+	if len(hours) == 0 {
+		return "-"
+	}
+	return strings.Join(hours, " / ")
+}
+
+// capacityNear says which dimensions a project's organization is near its
+// bound on, and who can ask for more; empty when none is.
+func capacityNear(r *client.CapacityReport) string {
+	var near []string
+	for _, a := range r.Axes {
+		if a.OrgNear != nil && *a.OrgNear {
+			near = append(near, capacityAxisLabel(a.Axis))
+		}
+	}
+	if len(near) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("The organization is near its bound on %s. An owner can ask for more with `fpcloud org quota request`.",
+		strings.Join(near, ", "))
 }
 
 // capacityShareRows is what each project or resource of the scope held on one

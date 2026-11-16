@@ -930,8 +930,9 @@ func (c *Client) OrgCapacity(ctx context.Context, orgID string, query CapacityQu
 	return &report, nil
 }
 
-// ProjectCapacity reads what one project holds, beside its org's bound on each
-// axis (ADR-279). query is OrgCapacity's. Needs read on the project.
+// ProjectCapacity reads what one project holds, with only whether its
+// org is near its bound on each axis. query is OrgCapacity's. Needs read on
+// the project.
 func (c *Client) ProjectCapacity(ctx context.Context, projectID string, query CapacityQuery) (*CapacityReport, error) {
 	path := "/api/v1/projects/" + projectID + "/capacity"
 	path += encodeQuery(query)
@@ -944,6 +945,37 @@ func (c *Client) ProjectCapacity(ctx context.Context, projectID string, query Ca
 		return nil, err
 	}
 	return &report, nil
+}
+
+// RequestQuota asks the operators to raise one of an org's bounds.
+// An org holds one open request per axis: asking again while one is open
+// answers with it and sends nothing new. Needs owner on the org.
+func (c *Client) RequestQuota(ctx context.Context, orgID string, req QuotaRequestCreate) (*QuotaRequest, error) {
+	path := "/api/v1/orgs/" + orgID + "/quota-requests"
+	httpReq, err := c.newRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+	var out QuotaRequest
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListQuotaRequests returns an org's open requests to raise a bound, oldest
+// first. Needs read on the org.
+func (c *Client) ListQuotaRequests(ctx context.Context, orgID string) ([]QuotaRequest, error) {
+	path := "/api/v1/orgs/" + orgID + "/quota-requests"
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := []QuotaRequest{}
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListPrices returns the platform's current price list.

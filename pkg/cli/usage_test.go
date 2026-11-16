@@ -2,6 +2,7 @@ package cli
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -15,26 +16,50 @@ func f(v float64) *float64 { return &v }
 // "-": backups reserve nothing ahead, and a count has no use over time
 // (docs/reading-a-zero.md, ADR-279).
 func TestCapacityRowsSayWhatEachDimensionHolds(t *testing.T) {
-	r := &client.CapacityReport{Axes: []client.CapacityAxis{
-		{Axis: "cpu", Bounded: true, Unit: "core", Reserves: true, MeasuresUse: true, Allowed: f(8), Admitted: f(2.5), Reserved: f(1), Used: f(0.016), Unmeasured: []string{"job", "runner"}},
-		{Axis: "memory", Bounded: true, Unit: "byte", Reserves: true, MeasuresUse: true, Allowed: f(16 << 30), Admitted: nil, Reserved: f(2 << 30), Used: nil},
-		{Axis: "backup_storage", Bounded: true, Unit: "byte", MeasuresUse: true, Allowed: f(80 << 30), Admitted: f(0), Used: f(0)},
-		{Axis: "log_bytes_per_second", Bounded: true, Unit: "byte_per_second", MeasuresUse: true, Allowed: f(20480), Admitted: f(1536), Used: f(1536)},
-		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(1204.4)},
-		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(0.42)},
+	hour := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	later := hour.Add(time.Hour)
+	r := &client.CapacityReport{Scope: "organization", Axes: []client.CapacityAxis{
+		{Axis: "cpu", Bounded: true, Unit: "core", Reserves: true, MeasuresUse: true, Allowed: f(8), Admitted: f(2.5), Reserved: f(1), ReservedHour: &hour, Used: f(0.016), UsedHour: &later, Unmeasured: []string{"job", "runner"}},
+		{Axis: "memory", Bounded: true, Unit: "byte", Reserves: true, MeasuresUse: true, Allowed: f(16 << 30), Admitted: nil, Reserved: f(2 << 30), ReservedHour: &hour, Used: nil},
+		{Axis: "backup_storage", Bounded: true, Unit: "byte", MeasuresUse: true, Allowed: f(80 << 30), Admitted: f(0), Used: f(0), UsedHour: &hour},
+		{Axis: "log_bytes_per_second", Bounded: true, Unit: "byte_per_second", MeasuresUse: true, Allowed: f(20480), Admitted: f(1536), Used: f(1536), UsedHour: &hour},
+		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(1204.4), UsedHour: &hour},
+		{Axis: "http_requests", Unit: "request_per_hour", MeasuresUse: true, Used: f(0.42), UsedHour: &hour},
 		{Axis: "pods", Bounded: true, Unit: "count", Allowed: f(20), Admitted: f(3)},
 	}}
 	headers, rows := capacityRows(r)
-	assert.Equal(t, []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "NOT MEASURED"}, headers)
+	assert.Equal(t, []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "HOUR", "NOT MEASURED"}, headers)
 	assert.Equal(t, [][]string{
-		{"CPU", "8", "2.5", "1", "16m", "jobs, runners"},
-		{"Memory", "16Gi", "no reading", "2Gi", "no reading", ""},
-		{"Backups", "80Gi", "0B", "-", "0B", ""},
-		{"Logs", "20Ki/s", "1.5Ki/s", "-", "1.5Ki/s", ""},
-		{"HTTP requests", "-", "-", "-", "1204/h", ""},
-		{"HTTP requests", "-", "-", "-", "0.4/h", ""},
-		{"Instances", "20", "3", "-", "-", ""},
+		{"CPU", "8", "2.5", "1", "16m", "Nov 16 12:00 / Nov 16 13:00", "jobs, runners"},
+		{"Memory", "16Gi", "no reading", "2Gi", "no reading", "Nov 16 12:00", ""},
+		{"Backups", "80Gi", "0B", "-", "0B", "Nov 16 12:00", ""},
+		{"Logs", "20Ki/s", "1.5Ki/s", "-", "1.5Ki/s", "Nov 16 12:00", ""},
+		{"HTTP requests", "-", "-", "-", "1204/h", "Nov 16 12:00", ""},
+		{"HTTP requests", "-", "-", "-", "0.4/h", "Nov 16 12:00", ""},
+		{"Instances", "20", "3", "-", "-", "-", ""},
 	}, rows)
+	assert.Empty(t, capacityNear(r), "an organization read says nothing about being near: it shows the bound")
+}
+
+// A project read carries no bound, so its table has no column for one, and it
+// says which dimensions its organization is near a bound on, and who can ask
+// for more.
+func TestAProjectsCapacityRowsCarryNoBound(t *testing.T) {
+	hour := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	yes, no := true, false
+	r := &client.CapacityReport{Scope: "project", Axes: []client.CapacityAxis{
+		{Axis: "cpu", Unit: "core", Reserves: true, MeasuresUse: true, OrgNear: &yes, Reserved: f(1), ReservedHour: &hour, Used: f(0.016), UsedHour: &hour},
+		{Axis: "memory", Unit: "byte", Reserves: true, MeasuresUse: true, OrgNear: &no, Reserved: nil, Used: nil},
+		{Axis: "pods", Unit: "count", OrgNear: &yes},
+	}}
+	headers, rows := capacityRows(r)
+	assert.Equal(t, []string{"DIMENSION", "RESERVED", "USED", "HOUR", "NOT MEASURED"}, headers)
+	assert.Equal(t, [][]string{
+		{"CPU", "1", "16m", "Nov 16 12:00", ""},
+		{"Memory", "no reading", "no reading", "-", ""},
+		{"Instances", "-", "-", "-", ""},
+	}, rows)
+	assert.Equal(t, "The organization is near its bound on CPU, Instances. An owner can ask for more with `fpcloud org quota request`.", capacityNear(r))
 }
 
 // --rows lists what each project or resource held on a dimension over the
@@ -57,4 +82,12 @@ func TestCapacityShareRowsNameEachHolder(t *testing.T) {
 	registry := client.CapacityAxis{Axis: "registry_storage", Unit: "byte", MeasuresUse: true, Rows: []client.CapacityRow{{Kind: "project", ID: "p1", Name: "demo", Used: f(1 << 20)}}}
 	_, rows = capacityShareRows(registry)
 	assert.Equal(t, [][]string{{"project", "demo", "-", "1Mi"}}, rows, "a dimension that reserves nothing ahead")
+}
+
+// A cost total says how far it reaches, so a resource created minutes ago
+// reading nothing is explained by the hour, not taken for free.
+func TestACostTotalSaysTheHourItIsMeteredThrough(t *testing.T) {
+	through := time.Date(2026, 11, 16, 13, 0, 0, 0, time.UTC)
+	assert.Equal(t, "Computed from usage metered through Nov 16 13:00 UTC, not an invoice.", costRecency(&through))
+	assert.Contains(t, costRecency(nil), "No hour is metered yet.")
 }

@@ -65,6 +65,11 @@ type CostReport struct {
 	PriceBooks []CostPriceBook `json:"price_books"`
 	Rows       []CostRow       `json:"rows"`
 	Total      string          `json:"total"`
+	// MeteredThrough is the end of the newest hour metering has recorded: the
+	// total holds nothing after it. A metered hour lands about 52 minutes
+	// after it ends, so a total is that far behind the clock. Null before any
+	// hour is recorded.
+	MeteredThrough *time.Time `json:"metered_through"`
 	// Unpriced is the usage in the window that no rate prices. It is in neither
 	// Rows nor Total, and it is not free: its invoice waits for a rate (ADR-271).
 	Unpriced []UnpricedCost `json:"unpriced"`
@@ -172,23 +177,27 @@ type CapacityReport struct {
 
 // CapacityAxis is one dimension of a CapacityReport.
 //
-// Allowed and Admitted are the organization's whatever the scope: the bound on
-// this axis and what is already counted against it, the two numbers a create
-// is refused by (ADR-184). Reserved and Used are the scope's, now: what
-// metering last billed on this axis and what was last measured, each from the
-// latest hour its source recorded.
+// Allowed and Admitted are the organization's, at organization scope only:
+// the bound on this axis and what is already counted against it, the two
+// numbers a create is refused by. A project read carries neither, only
+// OrgNear. Reserved and Used are the scope's in the latest hour
+// their source recorded, named by ReservedHour and UsedHour: what metering
+// last billed on this axis and what was last measured. A metered hour lands
+// about 52 minutes after it ends, so neither is the present.
 //
-// Every figure is always present, as a number or as null, and null is "no
-// reading", never zero (docs/reading-a-zero.md). Which reading is missing
-// depends on the field:
+// Reserved, Used and their hours are always present, as a value or as null,
+// and null is "no reading", never zero (docs/reading-a-zero.md):
 //
-//   - Allowed is null only when the bound cannot be read; a malformed bound
-//     refuses every create on the axis.
-//   - Admitted is null when its source was not read: no cluster, or a measured
-//     axis that has never been measured.
+//   - Allowed is absent at project scope, and at organization scope when the
+//     bound cannot be read; a malformed bound refuses every create on the axis.
+//   - Admitted is absent at project scope, and when its source was not read:
+//     no cluster, or a measured axis that has never been measured.
+//   - OrgNear is present at project scope on an axis the organization bounds,
+//     true while what it has admitted is 80% of the bound or more; absent when
+//     that cannot be read.
 //   - Reserved is null on an axis where Reserves is false (nothing reserves it:
 //     its use is what counts against the bound), and otherwise until metering
-//     has recorded an hour.
+//     has recorded an hour the scope existed in.
 //   - Used is null on an axis where MeasuresUse is false, and otherwise until
 //     its source has recorded an hour.
 //
@@ -205,9 +214,10 @@ type CapacityAxis struct {
 	// jobs wrote to their logs, as bytes a second averaged over each hour,
 	// against the rate the log store refuses lines over.
 	Unit string `json:"unit"`
-	// Bounded says the organization has a bound on the axis, so Allowed and
-	// Admitted exist; false on HTTP requests, which have none yet.
-	Bounded bool `json:"bounded"`
+	// Bounded says, at organization scope, that the organization has a bound
+	// on the axis, so Allowed and Admitted exist; false on HTTP requests, which
+	// have none yet, and on every axis of a project read.
+	Bounded bool `json:"bounded,omitempty"`
 	// Reserves says the axis has a reservation distinct from its use: limits
 	// and volume sizes. False on object, registry and backup storage, where what
 	// is stored is what counts, and on the counts.
@@ -215,10 +225,16 @@ type CapacityAxis struct {
 	// MeasuresUse says the platform reads use on this axis for at least one
 	// kind of resource on it; Unmeasured names the kinds it does not.
 	MeasuresUse bool     `json:"measures_use"`
-	Allowed     *float64 `json:"allowed"`
-	Admitted    *float64 `json:"admitted"`
+	Allowed     *float64 `json:"allowed,omitempty"`
+	Admitted    *float64 `json:"admitted,omitempty"`
+	OrgNear     *bool    `json:"org_near,omitempty"`
 	Reserved    *float64 `json:"reserved"`
-	Used        *float64 `json:"used"`
+	// ReservedHour is the start of the hour Reserved is from.
+	ReservedHour *time.Time `json:"reserved_hour"`
+	Used         *float64   `json:"used"`
+	// UsedHour is the start of the hour Used is from, which may differ from
+	// ReservedHour: each source records on its own clock.
+	UsedHour *time.Time `json:"used_hour"`
 	// Series is reserved and used over the window, one point per Step, each the
 	// average held over the hours of its step that its source recorded.
 	Series []CapacityPoint `json:"series"`
@@ -229,6 +245,33 @@ type CapacityAxis struct {
 	// Unmeasured names the kinds of resource whose reservation is on this axis
 	// and whose use it does not read (runner, job, database, volume).
 	Unmeasured []string `json:"unmeasured,omitempty"`
+}
+
+// QuotaRequestCreate asks the operators to raise one of an organization's
+// bounds. Axis is a bound tenants are refused by: cpu, memory, pods,
+// storage, object_storage, objects, registry_storage or backup_storage.
+// Wanted is the bound asked for, in the axis's own spelling ("16", "32Gi",
+// "40"), and must be above the current one.
+type QuotaRequestCreate struct {
+	Axis   string `json:"axis"`
+	Wanted string `json:"wanted"`
+	Note   string `json:"note,omitempty"`
+}
+
+// QuotaRequest is an open request to raise one of an organization's bounds.
+// It closes when the operators change that bound, or after seven days; an
+// organization holds at most one open request per axis.
+type QuotaRequest struct {
+	ID     string `json:"id"`
+	Axis   string `json:"axis"`
+	Wanted string `json:"wanted"`
+	Note   string `json:"note,omitempty"`
+	// Bound is the axis's bound when the request was made.
+	Bound string `json:"bound"`
+	// RequestedBy is the address of the owner who asked, which the operators
+	// answer.
+	RequestedBy string    `json:"requested_by"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // CapacityPoint is one step of an axis's series.
@@ -2563,11 +2606,9 @@ type RegistryStatus struct {
 	MeasuredAt time.Time `json:"measured_at"`
 }
 
-// StatusProject is the project itself and the ceiling its namespace is held to.
-//
-// The ceiling and the spend are the ORG's, shared with every other project it
-// owns — CeilingScope names whose. Empty means the platform could not read them,
-// which is not the same as a ceiling of nothing.
+// StatusProject is the project itself. Its organization's bound is read on
+// the organization, never from a project: the org capacity read and
+// fpcloud usage --org-wide.
 type StatusProject struct {
 	ID             string `json:"id"`
 	OrganizationID string `json:"organization_id"`
@@ -2576,29 +2617,6 @@ type StatusProject struct {
 	Namespace      string `json:"namespace"`
 	Status         string `json:"status"`
 	Egress         string `json:"egress"`
-	MaxCPU         string `json:"max_cpu,omitempty"`
-	MaxMemory      string `json:"max_memory,omitempty"`
-	MaxPods        int    `json:"max_pods,omitempty"`
-	MaxStorage     string `json:"max_storage,omitempty"`
-	UsedCPU        string `json:"used_cpu,omitempty"`
-	UsedMemory     string `json:"used_memory,omitempty"`
-	UsedPods       int64  `json:"used_pods,omitempty"`
-	UsedStorage    string `json:"used_storage,omitempty"`
-
-	// The axes bounded in the control plane rather than by a ResourceQuota:
-	// what the org's buckets and its registry were last measured to hold, each
-	// with the time of that reading.
-	MaxObjectStorage   string    `json:"max_object_storage,omitempty"`
-	MaxObjects         int64     `json:"max_objects,omitempty"`
-	MaxRegistryStorage string    `json:"max_registry_storage,omitempty"`
-	MaxBackupStorage   string    `json:"max_backup_storage,omitempty"`
-	UsedObjectBytes    int64     `json:"used_object_bytes,omitempty"`
-	UsedObjects        int64     `json:"used_objects,omitempty"`
-	ObjectsMeasuredAt  time.Time `json:"objects_measured_at,omitempty"`
-	UsedRegistryBytes  int64     `json:"used_registry_bytes,omitempty"`
-	RegistryMeasuredAt time.Time `json:"registry_measured_at,omitempty"`
-
-	CeilingScope string `json:"ceiling_scope,omitempty"`
 }
 
 // StatusProblem is one thing wrong with one resource, in the same shape
