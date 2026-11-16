@@ -251,24 +251,26 @@ type CapacityAxis struct {
 // RequestQuotaRequest asks the operators to raise one of an organization's
 // bounds. Axis is a bound tenants are refused by: cpu, memory, pods,
 // storage, object_storage, objects, registry_storage or backup_storage.
-// Wanted is the bound asked for, in the axis's own spelling ("16", "32Gi",
-// "40"), and must be above the current one.
+// Wanted is the bound asked for in the axis's base unit, as CapacityAxis
+// reports Allowed: cores, bytes or a count. It must be above the current one.
 type RequestQuotaRequest struct {
-	Axis   string `json:"axis"`
-	Wanted string `json:"wanted"`
-	Note   string `json:"note,omitempty"`
+	Axis   string  `json:"axis"`
+	Wanted float64 `json:"wanted"`
+	Note   string  `json:"note,omitempty"`
 }
 
 // QuotaRequest is an open request to raise one of an organization's bounds.
 // It closes when the operators change that bound, or after seven days; an
 // organization holds at most one open request per axis.
 type QuotaRequest struct {
-	ID     string `json:"id"`
-	Axis   string `json:"axis"`
-	Wanted string `json:"wanted"`
-	Note   string `json:"note,omitempty"`
-	// Bound is the axis's bound when the request was made.
-	Bound string `json:"bound"`
+	ID   string `json:"id"`
+	Axis string `json:"axis"`
+	// Wanted and Bound are in the axis's base unit, as CapacityAxis reports
+	// Allowed. Bound is the axis's bound when the request was made, null when
+	// it could not be read.
+	Wanted float64  `json:"wanted"`
+	Bound  *float64 `json:"bound"`
+	Note   string   `json:"note,omitempty"`
 	// RequestedBy is the address of the owner who asked, which the operators
 	// answer.
 	RequestedBy string    `json:"requested_by"`

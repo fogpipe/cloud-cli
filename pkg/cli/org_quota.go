@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -43,9 +45,13 @@ nothing new. A request closes when the bound is changed, or after seven days.
   fpcloud org quota request cpu --to 16`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		wanted, _ := cmd.Flags().GetString("to")
-		if wanted == "" {
+		raw, _ := cmd.Flags().GetString("to")
+		if raw == "" {
 			return fmt.Errorf("--to is required: the bound to ask for")
+		}
+		wanted, err := parseBound(args[0], raw)
+		if err != nil {
+			return fmt.Errorf("--to: %w", err)
 		}
 		note, _ := cmd.Flags().GetString("note")
 		orgID, err := resolveOrgID(cmd)
@@ -65,8 +71,8 @@ nothing new. A request closes when the bound is changed, or after seven days.
 		}
 		fmt.Println(renderInfoBox("Quota Request", [][]string{
 			{"Dimension", capacityAxisLabel(req.Axis)},
-			{"Bound", req.Bound},
-			{"Asked for", req.Wanted},
+			{"Bound", capacityFigure(req.Bound, quotaUnit(req.Axis))},
+			{"Asked for", capacityFigure(&req.Wanted, quotaUnit(req.Axis))},
 			{"Asked by", req.RequestedBy},
 			{"Asked at", req.CreatedAt.UTC().Format("2006-01-02 15:04 MST")},
 		}))
@@ -95,12 +101,72 @@ var orgQuotaRequestsCmd = &cobra.Command{
 		headers := []string{"DIMENSION", "BOUND", "ASKED FOR", "ASKED BY", "ASKED AT", "NOTE"}
 		rows := make([][]string, 0, len(reqs))
 		for _, r := range reqs {
-			rows = append(rows, []string{capacityAxisLabel(r.Axis), r.Bound, r.Wanted, r.RequestedBy,
+			wanted := r.Wanted
+			rows = append(rows, []string{capacityAxisLabel(r.Axis), capacityFigure(r.Bound, quotaUnit(r.Axis)), capacityFigure(&wanted, quotaUnit(r.Axis)), r.RequestedBy,
 				r.CreatedAt.UTC().Format("2006-01-02 15:04"), r.Note})
 		}
 		render(headers, rows, reqs)
 		return nil
 	},
+}
+
+// quotaUnit is the unit a dimension's bound is counted in, as the capacity
+// read reports it.
+func quotaUnit(axis string) string {
+	switch axis {
+	case "cpu":
+		return "core"
+	case "pods", "objects":
+		return "count"
+	}
+	return "byte"
+}
+
+// byteSuffixes are the units a byte bound may be written in, the binary ones
+// first so "Gi" is not read as "G" and a stray "i".
+var byteSuffixes = []struct {
+	suffix string
+	scale  float64
+}{
+	{"Ki", 1 << 10}, {"Mi", 1 << 20}, {"Gi", 1 << 30}, {"Ti", 1 << 40},
+	{"K", 1e3}, {"M", 1e6}, {"G", 1e9}, {"T", 1e12},
+}
+
+// parseBound reads --to in the dimension's own spelling into its base unit:
+// cores for cpu ("16", "1500m"), bytes for storage ("32Gi", "500G"), a whole
+// number for a count.
+func parseBound(axis, raw string) (float64, error) {
+	raw = strings.TrimSpace(raw)
+	switch quotaUnit(axis) {
+	case "count":
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("%s is a whole number above zero, not %q", axis, raw)
+		}
+		return float64(n), nil
+	case "core":
+		scale := 1.0
+		if v, ok := strings.CutSuffix(raw, "m"); ok {
+			raw, scale = v, 0.001
+		}
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v <= 0 || math.IsInf(v, 0) {
+			return 0, fmt.Errorf("cpu is cores, such as 16 or 1500m, not %q", raw)
+		}
+		return v * scale, nil
+	}
+	scale := 1.0
+	for _, s := range byteSuffixes {
+		if v, ok := strings.CutSuffix(raw, s.suffix); ok {
+			raw, scale = v, s.scale
+			break
+		}
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v <= 0 || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("%s is a size such as 32Gi, not %q", axis, raw)
+	}
+	return math.Round(v * scale), nil
 }
 
 func init() {

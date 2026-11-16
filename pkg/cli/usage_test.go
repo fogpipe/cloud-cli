@@ -94,3 +94,26 @@ func TestACostTotalSaysTheHourItIsMeteredThrough(t *testing.T) {
 	assert.Equal(t, "Computed from usage metered through Nov 16 13:00 UTC, not an invoice.", costRecency(&through))
 	assert.Contains(t, costRecency(nil), "No hour is metered yet.")
 }
+
+// --to is read in the dimension's own spelling into the base unit the wire
+// carries, as the capacity read reports a bound.
+func TestABoundIsReadInItsDimensionsSpelling(t *testing.T) {
+	for _, c := range []struct {
+		axis, raw string
+		want      float64
+	}{
+		{"memory", "32Gi", 32 << 30},
+		{"object_storage", "500G", 500e9},
+		{"cpu", "16", 16},
+		{"cpu", "1500m", 1.5},
+		{"pods", "40", 40},
+	} {
+		got, err := parseBound(c.axis, c.raw)
+		assert.NoError(t, err, c.raw)
+		assert.Equal(t, c.want, got, c.raw)
+	}
+	for _, bad := range [][2]string{{"pods", "4.5"}, {"memory", "lots"}, {"cpu", "-2"}, {"objects", "0"}} {
+		_, err := parseBound(bad[0], bad[1])
+		assert.Error(t, err, bad[1])
+	}
+}
