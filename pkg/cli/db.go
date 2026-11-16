@@ -245,12 +245,17 @@ var dbDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := c.DeleteDatabase(context.Background(), id); err != nil {
+		if _, err := c.DeleteDatabase(context.Background(), id); err != nil {
 			return err
 		}
+
+		// The API accepts the delete and tears the database down behind it, as
+		// it does a project: the database is already out of every list and
+		// refuses writes, and a create under its name is refused, saying so,
+		// until the teardown has finished.
 		fmt.Println(successBox.Render(
 			lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("✓") +
-				fmt.Sprintf(" Database %q deleted.", args[0]),
+				fmt.Sprintf(" Database %q is being deleted. Its name is free again once the teardown finishes.", args[0]),
 		))
 		return nil
 	},

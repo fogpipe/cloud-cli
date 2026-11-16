@@ -105,7 +105,7 @@ func renderStatus(status string) string {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("◌ " + status)
 	case "not_provisioned":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
-	case "pending", "provisioning", "invited", "unchecked":
+	case "pending", "provisioning", "invited", "unchecked", "deleting":
 		return lipgloss.NewStyle().Foreground(colorInfo).Render("◌ " + status)
 	default:
 		return status

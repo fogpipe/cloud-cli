@@ -1896,13 +1896,25 @@ func (c *Client) ListDatabases(ctx context.Context, projectID string) ([]*Databa
 	return dbs, nil
 }
 
-// DeleteDatabase deletes a database by ID.
-func (c *Client) DeleteDatabase(ctx context.Context, id string) error {
+// DeleteDatabase accepts a database's deletion and returns it in `deleting`.
+//
+// The teardown continues server-side after this returns: every instance is
+// given its time to stop before the database's backup archive is reclaimed,
+// which is bounded by the database and not by any timeout this client could
+// set. The database is already gone from every list and refuses writes;
+// GetDatabase answers until the teardown has finished. Until then a create
+// under the same name is refused with a 409 whose code is
+// DATABASE_TEARING_DOWN.
+func (c *Client) DeleteDatabase(ctx context.Context, id string) (*Database, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/databases/"+id, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return c.do(httpReq, nil)
+	var db Database
+	if err := c.do(httpReq, &db); err != nil {
+		return nil, err
+	}
+	return &db, nil
 }
 
 // CreateBucket provisions a managed object-storage bucket in a project (ADR-039).
