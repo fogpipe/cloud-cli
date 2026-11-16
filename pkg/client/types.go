@@ -247,12 +247,12 @@ type CapacityAxis struct {
 	Unmeasured []string `json:"unmeasured,omitempty"`
 }
 
-// QuotaRequestCreate asks the operators to raise one of an organization's
+// RequestQuotaRequest asks the operators to raise one of an organization's
 // bounds. Axis is a bound tenants are refused by: cpu, memory, pods,
 // storage, object_storage, objects, registry_storage or backup_storage.
 // Wanted is the bound asked for, in the axis's own spelling ("16", "32Gi",
 // "40"), and must be above the current one.
-type QuotaRequestCreate struct {
+type RequestQuotaRequest struct {
 	Axis   string `json:"axis"`
 	Wanted string `json:"wanted"`
 	Note   string `json:"note,omitempty"`

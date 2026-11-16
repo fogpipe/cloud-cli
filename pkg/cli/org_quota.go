@@ -55,7 +55,7 @@ nothing new. A request closes when the bound is changed, or after seven days.
 		c := getClient()
 		var req *client.QuotaRequest
 		withSpinner("Sending request...", func() {
-			req, err = c.RequestQuota(cmd.Context(), orgID, client.QuotaRequestCreate{Axis: args[0], Wanted: wanted, Note: note})
+			req, err = c.RequestQuota(cmd.Context(), orgID, client.RequestQuotaRequest{Axis: args[0], Wanted: wanted, Note: note})
 		})
 		if err != nil {
 			return err

@@ -950,7 +950,7 @@ func (c *Client) ProjectCapacity(ctx context.Context, projectID string, query Ca
 // RequestQuota asks the operators to raise one of an org's bounds.
 // An org holds one open request per axis: asking again while one is open
 // answers with it and sends nothing new. Needs owner on the org.
-func (c *Client) RequestQuota(ctx context.Context, orgID string, req QuotaRequestCreate) (*QuotaRequest, error) {
+func (c *Client) RequestQuota(ctx context.Context, orgID string, req RequestQuotaRequest) (*QuotaRequest, error) {
 	path := "/api/v1/orgs/" + orgID + "/quota-requests"
 	httpReq, err := c.newRequest(ctx, http.MethodPost, path, req)
 	if err != nil {
