@@ -1361,9 +1361,8 @@ type SetDomainRoutesRequest struct {
 // Domain attachment modes (ADR-044).
 const (
 	DomainModeVerified = "verified"
-	DomainModeEdge     = "edge"
 	DomainModeOnDemand = "on_demand"
-	DomainModeWildcard = "wildcard"
+	DomainModeDNS      = "dns"
 )
 
 // CheckState is the outcome of one verification check on a custom domain.
@@ -1403,7 +1402,7 @@ type DomainVerification struct {
 	PointingName   string     `json:"pointing_name"`
 	PointingValue  string     `json:"pointing_value"`
 	// AcmeCNAMEName/AcmeCNAMEValue are the one-time ACME DNS-01 delegation CNAME
-	// a wildcard-mode domain must add (ADR-044); empty for every other mode.
+	// a dns-mode domain must add; empty for every other mode.
 	AcmeCNAMEName  string `json:"acme_cname_name,omitempty"`
 	AcmeCNAMEValue string `json:"acme_cname_value,omitempty"`
 }

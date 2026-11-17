@@ -41,30 +41,6 @@ var domainAddCmd = &cobra.Command{
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 
-		// Edge mode (ADR-044) has no ownership/pointing/cert flow — TLS is
-		// terminated upstream. Skip the verification breakdown; just confirm the
-		// route and print the CNAME the upstream edge should point at.
-		if d.Mode == client.DomainModeEdge {
-			if isStructured(outputFormat) {
-				return renderData(d)
-			}
-			fmt.Println(renderInfoBox("Custom Domain Added (edge)", [][]string{
-				{"Domain", d.Domain},
-				{"Mode", d.Mode},
-				{"Status", renderStatus(d.Status)},
-				{"TLS", "terminated upstream"},
-			}))
-			fmt.Println()
-			fmt.Println(mutedStyle.Render("  Edge mode: fpcloud issues no certificate. Point your upstream edge"))
-			fmt.Println(mutedStyle.Render("  (Cloudflare-for-SaaS, reverse proxy) at this app's origin; fpcloud"))
-			fmt.Println(mutedStyle.Render("  routes the Host to your app over plain HTTP."))
-			fmt.Println()
-			fmt.Println(mutedStyle.Render("  This domain is now the app's address: its fogpipe.cloud host is"))
-			fmt.Println(mutedStyle.Render("  withdrawn, and comes back only when the last domain is removed."))
-			fmt.Println()
-			return nil
-		}
-
 		// Fetch the verification breakdown so we can print the exact DNS
 		// records (TXT ownership + CNAME/A pointing) the user must configure.
 		vr, verr := c.VerifyDomain(context.Background(), appID, d.Domain)
@@ -281,13 +257,13 @@ func renderDomainVerification(vr *client.DomainVerification) {
 	fmt.Printf("    %s %s\n", check(vr.CertReady), certLine)
 	fmt.Println()
 
-	isWildcard := vr.Domain != nil && vr.Domain.Mode == client.DomainModeWildcard
+	viaDNS := vr.Domain != nil && vr.Domain.Mode == client.DomainModeDNS
 	renderDomainRoutes(vr.Domain)
 
 	txtPending := vr.TXTOwnership == client.CheckPending
 	pointingPending := vr.DNSPointing == client.CheckPending
 
-	if !txtPending && !pointingPending && !isWildcard {
+	if !txtPending && !pointingPending && !viaDNS {
 		fmt.Println(mutedStyle.Render("  DNS verified. TLS certificate will be issued automatically."))
 		fmt.Println()
 		return
@@ -305,12 +281,12 @@ func renderDomainVerification(vr *client.DomainVerification) {
 		fmt.Printf("    %s  %s  → %s\n", vr.PointingName, vr.PointingType, vr.PointingValue)
 		fmt.Println()
 	}
-	// Wildcard mode needs no pointing record (DNSPointing is not_required), but
+	// The dns mode needs no pointing record (DNSPointing is not_required), but
 	// does need this one-time ACME DNS-01 delegation — shown unconditionally since
 	// fpcloud can't verify it live; cert-manager just retries silently until it's
 	// there (#412).
-	if isWildcard {
-		fmt.Println(mutedStyle.Render("  ACME delegation (CNAME) — required once, before a wildcard cert can issue:"))
+	if viaDNS {
+		fmt.Println(mutedStyle.Render("  ACME delegation (CNAME) — required once, before the certificate can issue:"))
 		fmt.Printf("    %s  CNAME  → %s\n", vr.AcmeCNAMEName, vr.AcmeCNAMEValue)
 		fmt.Println()
 	}
@@ -438,7 +414,7 @@ func printDNSInstructions(domain string) {
 
 func init() {
 	domainAddCmd.Flags().String("app", "", "App name or ID (required)")
-	domainAddCmd.Flags().String("mode", "", "Attachment mode: verified (default), edge (TLS terminated upstream, no cert), on_demand (no TXT ownership proof, HTTP-01 cert on pointing), or wildcard (*.zone, DNS-01 cert)")
+	domainAddCmd.Flags().String("mode", "", "Attachment mode: verified (default), on_demand (no TXT ownership proof, HTTP-01 cert on pointing), or dns (TXT ownership and a DNS-01 cert, no pointing: a host behind a TLS-terminating proxy, or *.zone)")
 	domainRemoveCmd.Flags().String("app", "", "App name or ID (required)")
 	domainListCmd.Flags().String("app", "", "List one app's domains instead of the whole project's")
 	domainStatusCmd.Flags().String("app", "", "App name or ID (required)")
