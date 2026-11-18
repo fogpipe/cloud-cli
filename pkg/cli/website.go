@@ -499,16 +499,27 @@ var websiteShowCmd = &cobra.Command{
 
 var websiteUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update a website's serving conventions or vanity slug",
-	Long: "Update a website's index/error documents, SPA fallback, or vanity slug.\n" +
+	Short: "Update a website's serving conventions, vanity slug, or firewall",
+	Long: "Update a website's index/error documents, SPA fallback, vanity slug, or firewall.\n" +
 		"--slug moves the site to <slug>.<tenant-domain> (globally unique);\n" +
-		"--slug \"\" reverts to the derived host.",
+		"--slug \"\" reverts to the derived host.\n\n" +
+		"--firewall attaches a firewall, by name, replacing any the website has; it\n" +
+		"covers every host the website is served on. --no-firewall detaches it. Either\n" +
+		"waits until the edge has followed and fails if it could not; --no-wait returns\n" +
+		"once the change is accepted. An attach that would deny the address you are\n" +
+		"calling from is refused unless --allow-lockout is given.\n\n" +
+		"  fpcloud website update docs --firewall office\n" +
+		"  fpcloud website update docs --no-firewall",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		conventionsChanged := cmd.Flags().Changed("index") || cmd.Flags().Changed("error") || cmd.Flags().Changed("spa")
 		slugChanged := cmd.Flags().Changed("slug")
-		if !conventionsChanged && !slugChanged {
-			return fmt.Errorf("nothing to update: set --index/--error/--spa and/or --slug")
+		firewall, err := firewallAttachmentFrom(cmd)
+		if err != nil {
+			return err
+		}
+		if !conventionsChanged && !slugChanged && firewall == nil {
+			return fmt.Errorf("nothing to update: set --index/--error/--spa, --slug, --firewall and/or --no-firewall")
 		}
 		c := getClient()
 		b, err := findWebsiteBucket(c, args[0])
@@ -535,6 +546,16 @@ var websiteUpdateCmd = &cobra.Command{
 			}
 		}
 		outputFormat := rootCmd.Flag("output").Value.String()
+		if firewall != nil {
+			// The bucket is read again afterwards so the output carries the
+			// firewall as the edge now has it.
+			if err := firewall.apply(cmd.Context(), websiteFirewallAPI(c, b.ID), isStructured(outputFormat)); err != nil {
+				return err
+			}
+			if b, err = c.GetBucket(cmd.Context(), b.ID); err != nil {
+				return err
+			}
+		}
 		if isStructured(outputFormat) {
 			return renderData(b)
 		}
@@ -812,6 +833,7 @@ func init() {
 	}
 
 	websiteUpdateCmd.Flags().String("slug", "", "Vanity host label: site moves to <slug>.<tenant-domain> (\"\" reverts)")
+	firewallAttachFlags(websiteUpdateCmd, "website")
 
 	websiteDeployCmd.Flags().Bool("keep-extra", false, "Keep site files that no longer exist locally (default prunes)")
 	websiteDeployCmd.Flags().Bool("dryrun", false, "Print what would change without transferring")

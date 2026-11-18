@@ -611,6 +611,7 @@ var appGetCmd = &cobra.Command{
 				[]string{"Port", fmt.Sprintf("%d", app.Port)},
 				[]string{"Ingress", app.Ingress},
 				[]string{"Routes", routesDisplay},
+				[]string{"Firewall", firewallRefDisplay(app.Firewall)},
 				[]string{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 				[]string{"Health Check", healthCheck},
 				[]string{"Probes", probesDisplay},
@@ -1229,7 +1230,7 @@ var appScaleCmd = &cobra.Command{
 
 var appUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update an app's display name, vanity slug, or container command",
+	Short: "Update an app's display name, vanity slug, container command, or firewall",
 	Long: `Update an app in place.
 
   --display-name  Change the app's cosmetic display name. The frozen name (which
@@ -1256,6 +1257,14 @@ var appUpdateCmd = &cobra.Command{
                   Remove the security context entirely, returning the app to the
                   platform default. This is how a --run-as-non-root=false opt-out
                   is revoked once the image no longer needs root.
+  --firewall      Attach a firewall, by name, to the app, replacing any it has.
+                  It covers every host the app is served on. The command waits
+                  until the edge enforces it and fails if it could not;
+                  --no-wait returns once the attach is accepted. An attach that
+                  would deny the address you are calling from is refused unless
+                  --allow-lockout is given.
+  --no-firewall   Detach the app's firewall, and wait until the edge has
+                  stopped enforcing it.
 `,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1286,9 +1295,13 @@ var appUpdateCmd = &cobra.Command{
 			return fmt.Errorf("--clear-security-context cannot be combined with the hardening flags")
 		}
 		securityContextChanged := clearSecurityContext || securityContext != nil
+		firewall, err := firewallAttachmentFrom(cmd)
+		if err != nil {
+			return err
+		}
 
-		if displayName == "" && !slugChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged {
-			return fmt.Errorf("nothing to update: pass --display-name, --slug, --command, --arg, --release-command, the hardening flags and/or --clear-security-context")
+		if displayName == "" && !slugChanged && command == nil && cmdArgs == nil && releaseCommand == nil && !securityContextChanged && firewall == nil {
+			return fmt.Errorf("nothing to update: pass --display-name, --slug, --command, --arg, --release-command, the hardening flags, --clear-security-context, --firewall and/or --no-firewall")
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -1334,6 +1347,17 @@ var appUpdateCmd = &cobra.Command{
 		if updErr != nil {
 			return updErr
 		}
+		if firewall != nil {
+			// Last, and outside the spinner above: the wait for the edge has a
+			// progress line of its own. The app is read again afterwards so the
+			// output carries the firewall as the edge now has it.
+			if err := firewall.apply(cmd.Context(), appFirewallAPI(c, appID), isStructured(outputFormat)); err != nil {
+				return err
+			}
+			if app, err = c.GetApp(cmd.Context(), appID); err != nil {
+				return err
+			}
+		}
 
 		if isStructured(outputFormat) {
 			return renderData(app)
@@ -1345,6 +1369,7 @@ var appUpdateCmd = &cobra.Command{
 			{"Display Name", app.DisplayName},
 			{"URL Slug", slugDisplay(app.URLSlug)},
 			{"Status", renderStatus(app.Status)},
+			{"Firewall", firewallRefDisplay(app.Firewall)},
 			{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
 		}))
 		return nil
@@ -2042,6 +2067,7 @@ func init() {
 	appUpdateCmd.Flags().StringArray("command", nil, "Override the container entrypoint (repeatable; pass with no value to clear back to the image ENTRYPOINT)")
 	appUpdateCmd.Flags().StringArray("arg", nil, "Container argument (repeatable; pass with no value to clear back to the image CMD)")
 	appUpdateCmd.Flags().StringArray("release-command", nil, "Command run once per deploy before the new version goes live, e.g. \"npm run migrate\" (single string runs via sh -c; pass with no value to drop the release phase)")
+	firewallAttachFlags(appUpdateCmd, "app")
 
 	// --app is a persistent flag on the app command tree: every app-scoped
 	// subcommand accepts `--app <name|id>`, with the positional <name> as a

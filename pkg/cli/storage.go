@@ -687,6 +687,7 @@ func websiteInfoPairs(b *client.Bucket) [][]string {
 		pairs = append(pairs,
 			[]string{"URL", url},
 			[]string{"Slug", dashIfEmpty(b.URLSlug)},
+			[]string{"Firewall", firewallRefDisplay(b.Firewall)},
 			[]string{"Index", index},
 			[]string{"Error", dashIfEmpty(b.WebsiteErrorDocument)},
 			[]string{"Deployed", version},
