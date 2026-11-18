@@ -506,8 +506,8 @@ var websiteUpdateCmd = &cobra.Command{
 		"--firewall attaches a firewall, by name, replacing any the website has; it\n" +
 		"covers every host the website is served on. --no-firewall detaches it. Either\n" +
 		"waits until the edge has followed and fails if it could not; --no-wait returns\n" +
-		"once the change is accepted. An attach that would deny the address you are\n" +
-		"calling from is refused unless --allow-lockout is given.\n\n" +
+		"once the change is accepted. An attach that denies the address you are\n" +
+		"calling from is made, and the command warns that it did.\n\n" +
 		"  fpcloud website update docs --firewall office\n" +
 		"  fpcloud website update docs --no-firewall",
 	Args: cobra.ExactArgs(1),

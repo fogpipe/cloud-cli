@@ -1261,8 +1261,8 @@ var appUpdateCmd = &cobra.Command{
                   It covers every host the app is served on. The command waits
                   until the edge enforces it and fails if it could not;
                   --no-wait returns once the attach is accepted. An attach that
-                  would deny the address you are calling from is refused unless
-                  --allow-lockout is given.
+                  denies the address you are calling from is made, and the
+                  command warns that it did.
   --no-firewall   Detach the app's firewall, and wait until the edge has
                   stopped enforcing it.
 `,

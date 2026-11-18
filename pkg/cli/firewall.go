@@ -53,8 +53,10 @@ and fails if one of them could not take it; --no-wait returns at once.
   fpcloud firewall revisions office
   fpcloud firewall rollback office 3
 
-A change that would deny the address you are calling from is refused while
-the firewall is attached; --allow-lockout makes it anyway.
+A change or an attach that denies the address you are calling from is made
+like any other, and the command prints a warning saying so. A firewall filters
+requests to the apps and websites it is attached to and never the Fogpipe API,
+so it can always be changed back from the same place.
 
 Detach a firewall with --no-firewall on the same two commands:
 
@@ -239,9 +241,13 @@ flags win over the file.
 To change one rule, use firewall rule add, remove, enable or disable.
 
 The command waits until every app and website the firewall is attached to
-enforces the change; --no-wait returns once it is stored. A change that would
-deny the address you are calling from is refused while the firewall is
-attached, unless --allow-lockout is given.`,
+enforces the change; --no-wait returns once it is stored. A change that denies
+the address you are calling from is made, and the command warns that it did.
+
+-f writes the file over whatever the firewall holds, since the file is the
+whole of its rules. --description and --default-action given without -f change
+that one thing on the firewall as it stands: if somebody else changed it in
+the same moment, the command reads it again and makes its change to that.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("file")
@@ -263,28 +269,40 @@ attached, unless --allow-lockout is given.`,
 			}
 		}
 
+		flags := func(req *client.UpdateFirewallRequest) error {
+			if cmd.Flags().Changed("description") {
+				req.Description, _ = cmd.Flags().GetString("description")
+			}
+			if action != "" {
+				req.DefaultAction = action
+			}
+			return nil
+		}
+		if file == nil {
+			return changeFirewall(cmd, args[0], "updated", flags)
+		}
+
+		// The file is the whole of the rules, so it is written over whatever
+		// the firewall holds now, on no condition.
 		c := getClient()
 		fw, err := resolveFirewall(cmd.Context(), c, args[0])
 		if err != nil {
 			return err
 		}
 		req := firewallUpdateOf(fw)
-		if file != nil {
-			if file.Description != nil {
-				req.Description = *file.Description
-			}
-			if file.DefaultAction != "" {
-				req.DefaultAction = file.DefaultAction
-			}
-			req.Rules = file.Rules
+		if file.Description != nil {
+			req.Description = *file.Description
 		}
-		if cmd.Flags().Changed("description") {
-			req.Description, _ = cmd.Flags().GetString("description")
+		if file.DefaultAction != "" {
+			req.DefaultAction = file.DefaultAction
 		}
-		if action != "" {
-			req.DefaultAction = action
+		req.Rules = file.Rules
+		_ = flags(&req)
+		updated, err := c.UpdateFirewall(cmd.Context(), fw.ID, req)
+		if err != nil {
+			return explainFirewallError(err)
 		}
-		return applyFirewallUpdate(cmd, c, fw, req, "updated")
+		return finishFirewallChange(cmd, c, updated, "updated")
 	},
 }
 
@@ -364,8 +382,8 @@ back. firewall revisions lists what there is to return to.
 
 The command waits until every app and website the firewall is attached to
 enforces the new revision; --no-wait returns once it is stored. A rollback
-that would deny the address you are calling from is refused while the
-firewall is attached, unless --allow-lockout is given.`,
+that denies the address you are calling from is made, and the command warns
+that it did.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		revision, err := strconv.Atoi(args[1])
@@ -377,8 +395,7 @@ firewall is attached, unless --allow-lockout is given.`,
 		if err != nil {
 			return err
 		}
-		allowLockout, _ := cmd.Flags().GetBool("allow-lockout")
-		updated, err := c.RollbackFirewall(cmd.Context(), fw.ID, client.RollbackFirewallRequest{Revision: revision, AllowLockout: allowLockout})
+		updated, err := c.RollbackFirewall(cmd.Context(), fw.ID, client.RollbackFirewallRequest{Revision: revision})
 		if err != nil {
 			return explainFirewallError(err)
 		}
@@ -428,9 +445,13 @@ evaluated first.
   fpcloud firewall rule remove office 100
 
 Each of these stores a new revision and waits until every app and website the
-firewall is attached to enforces it; --no-wait returns once it is stored. Two
-people changing rules of one firewall at the same moment can overwrite each
-other, because a firewall's rules are written as a whole.`,
+firewall is attached to enforces it; --no-wait returns once it is stored.
+
+A firewall's rules are written as a whole, so each of these writes on the
+condition that the firewall is still at the revision it read. If somebody else
+changed it in the same moment, the command reads the firewall again, makes its
+one change to the rules as they now are, and writes that; neither change is
+lost. After three such attempts it gives up and says so.`,
 }
 
 var firewallRuleAddCmd = &cobra.Command{
@@ -544,39 +565,61 @@ func setFirewallRuleEnabled(cmd *cobra.Command, args []string, enabled bool) err
 // already as asked: nothing is written and the command succeeds.
 var errFirewallUnchanged = errors.New("unchanged")
 
-// changeFirewallRules reads a firewall, lets change rewrite its rule list, and
-// writes the whole firewall back, since the API replaces rules in full. The
-// description and the default action are sent as they were read.
+// changeFirewallRules is changeFirewall for a command that rewrites the rule
+// list and nothing else.
 func changeFirewallRules(cmd *cobra.Command, name, done string, change func([]client.FirewallRuleRequest) ([]client.FirewallRuleRequest, error)) error {
-	c := getClient()
-	fw, err := resolveFirewall(cmd.Context(), c, name)
-	if err != nil {
-		return err
-	}
-	req := firewallUpdateOf(fw)
-	rules, err := change(req.Rules)
-	if errors.Is(err, errFirewallUnchanged) {
-		if isStructured(rootCmd.Flag("output").Value.String()) {
-			return renderData(fw)
+	return changeFirewall(cmd, name, done, func(req *client.UpdateFirewallRequest) error {
+		rules, err := change(req.Rules)
+		if err != nil {
+			return err
 		}
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("Firewall %q: already so, nothing changed.", fw.Name)))
+		req.Rules = rules
 		return nil
-	}
-	if err != nil {
-		return err
-	}
-	req.Rules = rules
-	return applyFirewallUpdate(cmd, c, fw, req, done)
+	})
 }
 
-// applyFirewallUpdate writes req over fw and follows the change to the edge.
-func applyFirewallUpdate(cmd *cobra.Command, c *client.Client, fw *client.Firewall, req client.UpdateFirewallRequest, done string) error {
-	req.AllowLockout, _ = cmd.Flags().GetBool("allow-lockout")
-	updated, err := c.UpdateFirewall(cmd.Context(), fw.ID, req)
-	if err != nil {
-		return explainFirewallError(err)
+// firewallConflictRetries is how many times a change is made again after the
+// firewall moved under it.
+const firewallConflictRetries = 3
+
+// changeFirewall reads a firewall, lets change edit the update that would
+// leave it as it is, and writes that back. The API replaces a firewall's
+// content in full, so the write is made on condition of the revision that was
+// read: when another change got there first, the firewall is read again and
+// change is applied to what it holds now, so neither change is lost.
+func changeFirewall(cmd *cobra.Command, name, done string, change func(*client.UpdateFirewallRequest) error) error {
+	c := getClient()
+	for attempt := 0; ; attempt++ {
+		fw, err := resolveFirewall(cmd.Context(), c, name)
+		if err != nil {
+			return err
+		}
+		req := firewallUpdateOf(fw)
+		err = change(&req)
+		if errors.Is(err, errFirewallUnchanged) {
+			if isStructured(rootCmd.Flag("output").Value.String()) {
+				return renderData(fw)
+			}
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("Firewall %q: already so, nothing changed.", fw.Name)))
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		req.IfRevision = fw.Revision
+		updated, err := c.UpdateFirewall(cmd.Context(), fw.ID, req)
+		if err == nil {
+			return finishFirewallChange(cmd, c, updated, done)
+		}
+		var apiErr *client.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != "FIREWALL_REVISION_CONFLICT" {
+			return explainFirewallError(err)
+		}
+		if attempt == firewallConflictRetries {
+			return fmt.Errorf("%w\nFirewall %q kept changing while this command ran: it was read and the change made again %d times, and each time somebody else's change was stored first. Nothing of this change was stored; run the command again.",
+				err, fw.Name, firewallConflictRetries)
+		}
 	}
-	return finishFirewallChange(cmd, c, updated, done)
 }
 
 // finishFirewallChange follows a stored change to every target unless told
@@ -743,10 +786,9 @@ func waitForFirewallOff(target string, read func() (*client.FirewallRef, error))
 // firewallAttachment is the --firewall and --no-firewall pair as a command
 // that attaches read it.
 type firewallAttachment struct {
-	Name         string // the firewall to attach, by name or id
-	Detach       bool
-	AllowLockout bool
-	NoWait       bool
+	Name   string // the firewall to attach, by name or id
+	Detach bool
+	NoWait bool
 }
 
 // firewallAttachFlags declares the attach flags on a command that updates a
@@ -754,7 +796,6 @@ type firewallAttachment struct {
 func firewallAttachFlags(cmd *cobra.Command, target string) {
 	cmd.Flags().String("firewall", "", "Attach this firewall to the "+target+", replacing any it has")
 	cmd.Flags().Bool("no-firewall", false, "Detach the "+target+"'s firewall")
-	cmd.Flags().Bool("allow-lockout", false, "Attach a firewall even when it denies the address you are calling from")
 	cmd.Flags().Bool("no-wait", false, "With --firewall or --no-firewall: return once the change is accepted, without waiting for the edge to enforce it")
 	cmd.MarkFlagsMutuallyExclusive("firewall", "no-firewall")
 }
@@ -770,7 +811,6 @@ func firewallAttachmentFrom(cmd *cobra.Command) (*firewallAttachment, error) {
 		return nil, nil
 	}
 	a := &firewallAttachment{Name: name, Detach: detach}
-	a.AllowLockout, _ = cmd.Flags().GetBool("allow-lockout")
 	a.NoWait, _ = cmd.Flags().GetBool("no-wait")
 	return a, nil
 }
@@ -798,10 +838,13 @@ func (a *firewallAttachment) apply(ctx context.Context, api firewallTargetAPI, s
 		})
 		return err
 	}
-	ref, err := api.Attach(ctx, client.AttachFirewallRequest{Firewall: a.Name, AllowLockout: a.AllowLockout})
+	ref, err := api.Attach(ctx, client.AttachFirewallRequest{Firewall: a.Name})
 	if err != nil {
 		return explainFirewallError(err)
 	}
+	// The attach's own answer is the only place its warnings are: the read
+	// of the target that follows does not carry them.
+	printFirewallFindings(ref.Findings)
 	if a.NoWait {
 		return nil
 	}
@@ -1051,8 +1094,6 @@ func explainFirewallError(err error) error {
 		return err
 	}
 	switch apiErr.Code {
-	case "FIREWALL_DENIES_CALLER":
-		return fmt.Errorf("%w\nNothing was changed: this would deny the address you are calling from. Pass --allow-lockout to make the change anyway.", err)
 	case "FIREWALL_EDGE_NOT_READY":
 		return fmt.Errorf("%w\nNothing was changed: the edge cannot take a firewall right now. Run the command again in a moment.", err)
 	}
@@ -1217,10 +1258,8 @@ func init() {
 		_ = firewallRuleAddCmd.MarkFlagRequired(name)
 	}
 
-	// Every command that changes what the edge enforces waits for it and can
-	// be refused for denying the caller, so all of them take both flags.
+	// Every command that changes what the edge enforces waits for it.
 	for _, cmd := range []*cobra.Command{firewallUpdateCmd, firewallRollbackCmd, firewallRuleAddCmd, firewallRuleRemoveCmd, firewallRuleEnableCmd, firewallRuleDisableCmd} {
-		cmd.Flags().Bool("allow-lockout", false, "Make the change even when it denies the address you are calling from")
 		cmd.Flags().Bool("no-wait", false, "Return once the change is stored, without waiting for the edge to enforce it")
 	}
 

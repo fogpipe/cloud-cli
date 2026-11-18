@@ -12,10 +12,10 @@ import (
 )
 
 // An app and a website take a firewall through their own update command, with
-// the same four flags, and both wait for the edge unless told not to.
+// the same three flags, and both wait for the edge unless told not to.
 func TestAppAndWebsiteUpdateTakeTheFirewallFlags(t *testing.T) {
 	for _, c := range []*cobra.Command{appUpdateCmd, websiteUpdateCmd} {
-		for _, name := range []string{"firewall", "no-firewall", "allow-lockout", "no-wait"} {
+		for _, name := range []string{"firewall", "no-firewall", "no-wait"} {
 			assert.NotNil(t, c.Flags().Lookup(name), "%s --%s", c.CommandPath(), name)
 		}
 		assert.Equal(t, "false", c.Flags().Lookup("no-wait").DefValue, c.CommandPath())
@@ -36,8 +36,7 @@ func TestAppUpdateAttachesAndDetachesAFirewall(t *testing.T) {
 	assert.Equal(t, 1, f.detached)
 	assert.Nil(t, f.appRef, "the command returned only once the edge had let go")
 
-	require.NoError(t, runFpcloud(t, "app", "update", "web", "--firewall", "office", "--allow-lockout", "--no-wait"))
-	assert.True(t, f.attached[1].AllowLockout)
+	require.NoError(t, runFpcloud(t, "app", "update", "web", "--firewall", "office", "--no-wait"))
 	assert.Equal(t, "pending", f.appRef.Status)
 
 	err := runFpcloud(t, "app", "update", "web", "--firewall", "office", "--no-firewall")
