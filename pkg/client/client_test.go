@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -608,4 +609,109 @@ func TestClientUpdateConfigIsOneChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, out.Config, 1)
 	assert.Equal(t, "S3_BUCKET", out.Config[0].Key)
+}
+
+// A rule sent without `enabled` is enforced, and one switched off says so:
+// the field is absent from the wire unless it was set.
+func TestFirewallRuleRequestOmitsEnabledUnlessSet(t *testing.T) {
+	off := false
+	raw, err := json.Marshal(CreateFirewallRequest{Name: "office", Rules: []FirewallRuleRequest{
+		{Priority: 10, Action: "allow", Match: FirewallMatch{Sources: []string{"198.51.100.0/24"}}},
+		{Priority: 20, Action: "deny", Enabled: &off, Match: FirewallMatch{Sources: []string{"203.0.113.0/24"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"name":"office","rules":[` +
+		`{"priority":10,"action":"allow","match":{"sources":["198.51.100.0/24"]}},` +
+		`{"priority":20,"action":"deny","enabled":false,"match":{"sources":["203.0.113.0/24"]}}]}`
+	if string(raw) != want {
+		t.Errorf("got  %s\nwant %s", raw, want)
+	}
+}
+
+// The firewall routes are spelled as the API serves them, and a write with no
+// rules sends an empty list rather than null.
+func TestFirewallRoutes(t *testing.T) {
+	var got []string
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/firewalls") || strings.HasSuffix(r.URL.Path, "/revisions")) {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "key")
+	ctx := context.Background()
+
+	calls := []func() error{
+		func() error { _, err := c.CreateFirewall(ctx, "p1", CreateFirewallRequest{Name: "office"}); return err },
+		func() error { _, err := c.ListFirewalls(ctx, "p1"); return err },
+		func() error { _, err := c.GetFirewall(ctx, "f1"); return err },
+		func() error {
+			_, err := c.UpdateFirewall(ctx, "f1", UpdateFirewallRequest{DefaultAction: "deny"})
+			return err
+		},
+		func() error { _, err := c.ListFirewallRevisions(ctx, "f1"); return err },
+		func() error {
+			_, err := c.RollbackFirewall(ctx, "f1", RollbackFirewallRequest{Revision: 2})
+			return err
+		},
+		func() error {
+			_, err := c.TestFirewall(ctx, "f1", TestFirewallRequest{Address: "198.51.100.7"})
+			return err
+		},
+		func() error { return c.DeleteFirewall(ctx, "f1") },
+		func() error {
+			_, err := c.AttachAppFirewall(ctx, "a1", AttachFirewallRequest{Firewall: "office"})
+			return err
+		},
+		func() error { return c.DetachAppFirewall(ctx, "a1") },
+		func() error {
+			_, err := c.AttachWebsiteFirewall(ctx, "b1", AttachFirewallRequest{Firewall: "office", AllowLockout: true})
+			return err
+		},
+		func() error { return c.DetachWebsiteFirewall(ctx, "b1") },
+	}
+	for i, call := range calls {
+		if err := call(); err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	want := []string{
+		"POST /api/v1/projects/p1/firewalls",
+		"GET /api/v1/projects/p1/firewalls",
+		"GET /api/v1/firewalls/f1",
+		"PUT /api/v1/firewalls/f1",
+		"GET /api/v1/firewalls/f1/revisions",
+		"POST /api/v1/firewalls/f1/rollback",
+		"POST /api/v1/firewalls/f1/test",
+		"DELETE /api/v1/firewalls/f1",
+		"PUT /api/v1/apps/a1/firewall",
+		"DELETE /api/v1/apps/a1/firewall",
+		"PUT /api/v1/buckets/b1/website/firewall",
+		"DELETE /api/v1/buckets/b1/website/firewall",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if strings.TrimSpace(bodies[0]) != `{"name":"office","rules":[]}` {
+		t.Errorf("create body = %s", bodies[0])
+	}
+	if strings.TrimSpace(bodies[3]) != `{"default_action":"deny","rules":[]}` {
+		t.Errorf("update body = %s", bodies[3])
+	}
+	if strings.TrimSpace(bodies[10]) != `{"firewall":"office","allow_lockout":true}` {
+		t.Errorf("attach body = %s", bodies[10])
+	}
 }

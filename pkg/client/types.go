@@ -652,6 +652,10 @@ type App struct {
 	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
 	CreatedAt           time.Time        `json:"created_at"`
 	UpdatedAt           time.Time        `json:"updated_at"`
+	// Firewall is the firewall attached to the app and what the edge enforces
+	// of it, on a single read and on every row of a list. Nil when the app
+	// has none.
+	Firewall *FirewallRef `json:"firewall,omitempty"`
 	// Access is everyone who reaches this resource: every binding through
 	// which a member holds a permission on it, held on the resource or on its
 	// project or organization, each with HeldOn. Set on a single read for a
@@ -1126,6 +1130,9 @@ type Bucket struct {
 	// the bucket; the endpoint and the region are plain facts on the bucket.
 	Secrets map[string]string `json:"secrets,omitempty"`
 	UsedBy  []string          `json:"used_by,omitempty"` // apps whose env references one; the reference is the bind
+	// Firewall is the firewall attached to the bucket's website and what the
+	// edge enforces of it. Nil when the website has none.
+	Firewall *FirewallRef `json:"firewall,omitempty"`
 	// Access is everyone who reaches this resource: every binding through
 	// which a member holds a permission on it, held on the resource or on its
 	// project or organization, each with HeldOn. Set on a single read for a
@@ -3197,4 +3204,150 @@ type ExecControl struct {
 	// Error is sent by the server instead of ExitCode when the command could
 	// not be run or the stream to it broke.
 	Error string `json:"error,omitempty"`
+}
+
+// Firewall is a project's ordered access list for what the edge serves: rules
+// evaluated first match wins in priority order, lower first, then the default
+// action. It is attached to an app or to a bucket's website and applies to
+// every host the edge serves for that target. It covers requests entering
+// through the edge and nothing else: not calls between apps, and not outbound
+// traffic.
+type Firewall struct {
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Revision counts the firewall's content: every change to the default
+	// action or the rules stores the next one. A target reports the revision
+	// the edge enforces on it as AppliedRevision.
+	Revision      int            `json:"revision"`
+	DefaultAction string         `json:"default_action"` // "allow" or "deny"
+	Rules         []FirewallRule `json:"rules"`
+	// Targets is every app and website the firewall is attached to.
+	Targets []FirewallTarget `json:"targets"`
+	// Findings are warnings about a firewall that is valid and enforced as
+	// written: a rule no request can reach, a default of deny with no IPv6
+	// source. On a create, an update and a single read.
+	Findings  []FirewallFinding `json:"findings,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// FirewallRule is one access rule. Priority is unique within a firewall and
+// is the rule's identifier; a rule that is not Enabled is kept and never
+// evaluated.
+type FirewallRule struct {
+	Priority    int           `json:"priority"`
+	Action      string        `json:"action"` // "allow" or "deny"
+	Description string        `json:"description"`
+	Enabled     bool          `json:"enabled"`
+	Match       FirewallMatch `json:"match"`
+}
+
+// FirewallMatch is what a rule matches on. Sources are client address ranges
+// as CIDRs, IPv4 or IPv6; a bare address is the one-address range.
+type FirewallMatch struct {
+	Sources []string `json:"sources"`
+}
+
+// FirewallRuleRequest is a rule as it is sent. Enabled left out is true.
+type FirewallRuleRequest struct {
+	Priority    int           `json:"priority"`
+	Action      string        `json:"action"`
+	Description string        `json:"description,omitempty"`
+	Enabled     *bool         `json:"enabled,omitempty"`
+	Match       FirewallMatch `json:"match"`
+}
+
+// FirewallFinding is one warning about a firewall. Field is the path it is
+// about, as "rules[2]" or "default_action".
+type FirewallFinding struct {
+	Code    string `json:"code"`
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// FirewallTarget is one app or website a firewall is attached to, with what
+// the edge enforces there.
+type FirewallTarget struct {
+	Type string `json:"type"` // "app" or "bucket"
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// AppliedRevision is the revision every route of the target enforces; 0
+	// until the first one is.
+	AppliedRevision int    `json:"applied_revision"`
+	Status          string `json:"status"` // "pending", "applied" or "failed"
+	Message         string `json:"message,omitempty"`
+}
+
+// FirewallRef is a target's own view of its firewall: which one, its current
+// revision, and the revision the edge enforces on the target. A change is in
+// force once AppliedRevision equals Revision and Status is "applied". While a
+// detached firewall is still being taken off the edge, ID is empty and Status
+// is "pending".
+type FirewallRef struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Revision        int    `json:"revision"`
+	AppliedRevision int    `json:"applied_revision"`
+	Status          string `json:"status"` // "pending", "applied" or "failed"
+	Message         string `json:"message,omitempty"`
+}
+
+// FirewallRevision is one stored revision of a firewall's content.
+type FirewallRevision struct {
+	Revision      int            `json:"revision"`
+	DefaultAction string         `json:"default_action"`
+	Rules         []FirewallRule `json:"rules"`
+	CreatedAt     time.Time      `json:"created_at"`
+	CreatedBy     string         `json:"created_by,omitempty"`
+}
+
+// FirewallDecision is what a firewall does with one client address: the
+// action, and the rule that matched. Rule is nil when the default action
+// decided.
+type FirewallDecision struct {
+	Address string        `json:"address"`
+	Action  string        `json:"action"`
+	Rule    *FirewallRule `json:"rule,omitempty"`
+}
+
+// CreateFirewallRequest creates a firewall in a project. DefaultAction left
+// out is "allow", so a firewall with no rules changes nothing.
+type CreateFirewallRequest struct {
+	Name          string                `json:"name"`
+	Description   string                `json:"description,omitempty"`
+	DefaultAction string                `json:"default_action,omitempty"`
+	Rules         []FirewallRuleRequest `json:"rules"`
+}
+
+// UpdateFirewallRequest replaces a firewall's description, default action and
+// rules in full. A change that would deny the address the request arrives
+// from is refused with a 409 (code FIREWALL_DENIES_CALLER) while the firewall
+// is attached, unless AllowLockout is set.
+type UpdateFirewallRequest struct {
+	Description   string                `json:"description,omitempty"`
+	DefaultAction string                `json:"default_action,omitempty"`
+	Rules         []FirewallRuleRequest `json:"rules"`
+	AllowLockout  bool                  `json:"allow_lockout,omitempty"`
+}
+
+// RollbackFirewallRequest re-applies an earlier revision's content as a new
+// revision.
+type RollbackFirewallRequest struct {
+	Revision     int  `json:"revision"`
+	AllowLockout bool `json:"allow_lockout,omitempty"`
+}
+
+// TestFirewallRequest asks what a firewall does with one client address.
+type TestFirewallRequest struct {
+	Address string `json:"address"`
+}
+
+// AttachFirewallRequest attaches a firewall, named by id or by its name in
+// the target's project, to an app or a website. AllowLockout admits an attach
+// that would deny the address the request arrives from.
+type AttachFirewallRequest struct {
+	Firewall     string `json:"firewall"`
+	AllowLockout bool   `json:"allow_lockout,omitempty"`
 }

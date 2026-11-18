@@ -1552,6 +1552,168 @@ func (c *Client) DeleteSecret(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
+// CreateFirewall creates a firewall in the project.
+func (c *Client) CreateFirewall(ctx context.Context, projectID string, req CreateFirewallRequest) (*Firewall, error) {
+	if req.Rules == nil {
+		req.Rules = []FirewallRuleRequest{}
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/projects/"+projectID+"/firewalls", req)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// ListFirewalls lists the project's firewalls, each with its rules and the
+// targets it is attached to.
+func (c *Client) ListFirewalls(ctx context.Context, projectID string) ([]*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/projects/"+projectID+"/firewalls", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []*Firewall
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetFirewall reads one firewall by id, with its findings.
+func (c *Client) GetFirewall(ctx context.Context, id string) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/firewalls/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// UpdateFirewall replaces a firewall's description, default action and rules.
+// A change to the content stores a new revision and returns at once; the edge
+// follows, and each target reports the revision it enforces. A change that
+// would deny the caller's own address on an attached firewall fails with a 409
+// APIError (code FIREWALL_DENIES_CALLER) unless req.AllowLockout is set.
+func (c *Client) UpdateFirewall(ctx context.Context, id string, req UpdateFirewallRequest) (*Firewall, error) {
+	if req.Rules == nil {
+		req.Rules = []FirewallRuleRequest{}
+	}
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/firewalls/"+id, req)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// DeleteFirewall deletes a firewall nothing is attached to. One still
+// attached fails with a 409 APIError (code FIREWALL_ATTACHED) naming the
+// targets.
+func (c *Client) DeleteFirewall(ctx context.Context, id string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/firewalls/"+id, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
+// ListFirewallRevisions lists a firewall's stored revisions, newest first.
+func (c *Client) ListFirewallRevisions(ctx context.Context, id string) ([]*FirewallRevision, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/firewalls/"+id+"/revisions", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []*FirewallRevision
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RollbackFirewall re-applies an earlier revision's content as a new
+// revision, under the rules UpdateFirewall follows.
+func (c *Client) RollbackFirewall(ctx context.Context, id string, req RollbackFirewallRequest) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/firewalls/"+id+"/rollback", req)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// TestFirewall says what the firewall's current revision does with a request
+// from address: the action, and the rule that matched if one did.
+func (c *Client) TestFirewall(ctx context.Context, id string, req TestFirewallRequest) (*FirewallDecision, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/firewalls/"+id+"/test", req)
+	if err != nil {
+		return nil, err
+	}
+	var d FirewallDecision
+	if err := c.do(httpReq, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// AttachAppFirewall attaches a firewall to an app, replacing any it had. It
+// returns at once; the app's Firewall reports the revision the edge enforces.
+func (c *Client) AttachAppFirewall(ctx context.Context, appID string, req AttachFirewallRequest) (*FirewallRef, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+appID+"/firewall", req)
+	if err != nil {
+		return nil, err
+	}
+	var ref FirewallRef
+	if err := c.do(httpReq, &ref); err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+// DetachAppFirewall takes the app's firewall off it. The edge follows; the
+// app's Firewall is nil once it has.
+func (c *Client) DetachAppFirewall(ctx context.Context, appID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/apps/"+appID+"/firewall", nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
+// AttachWebsiteFirewall attaches a firewall to a bucket's website, replacing
+// any it had.
+func (c *Client) AttachWebsiteFirewall(ctx context.Context, bucketID string, req AttachFirewallRequest) (*FirewallRef, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/buckets/"+bucketID+"/website/firewall", req)
+	if err != nil {
+		return nil, err
+	}
+	var ref FirewallRef
+	if err := c.do(httpReq, &ref); err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+// DetachWebsiteFirewall takes the website's firewall off it.
+func (c *Client) DetachWebsiteFirewall(ctx context.Context, bucketID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/buckets/"+bucketID+"/website/firewall", nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
 // UpdateAppCommand changes an app's container entrypoint override (command),
 // arguments (args), and/or release command. Each is optional: a nil pointer
 // leaves the value untouched, a non-nil pointer (including an empty slice)
