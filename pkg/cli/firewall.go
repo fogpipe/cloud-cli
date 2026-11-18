@@ -528,7 +528,7 @@ pick another.
 		if err != nil {
 			var apiErr *client.APIError
 			if errors.As(err, &apiErr) && apiErr.Code == "FIREWALL_RULE_EXISTS" {
-				return fmt.Errorf("%w\nRemove it first with `fpcloud firewall rule remove %s %d`, or pick another priority.", err, fw.Name, priority)
+				return fmt.Errorf("%w\nTo replace it, remove it first: fpcloud firewall rule remove %s %d", err, fw.Name, priority)
 			}
 			return explainFirewallError(err)
 		}
