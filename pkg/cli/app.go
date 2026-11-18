@@ -235,6 +235,11 @@ var appCreateCmd = &cobra.Command{
 			return printQuote(q)
 		}
 
+		firewall, _ := cmd.Flags().GetString("firewall")
+		if cmd.Flags().Changed("firewall") && firewall == "" {
+			return usageError{errors.New("--firewall needs a firewall's name")}
+		}
+
 		var app *client.App
 		var createErr error
 		action := func() {
@@ -264,6 +269,7 @@ var appCreateCmd = &cobra.Command{
 				Probes:              probes,
 				EnvVars:             envVars,
 				SecretEnv:           secretEnv,
+				Firewall:            firewall,
 			})
 		}
 
@@ -273,7 +279,12 @@ var appCreateCmd = &cobra.Command{
 			action()
 		}
 		if createErr != nil {
-			return createErr
+			return explainFirewallError(createErr)
+		}
+		// The create's own answer is the only place the firewall's warnings
+		// are: the reads of the app that follow do not carry them.
+		if app.Firewall != nil {
+			printFirewallFindings(app.Firewall.Findings)
 		}
 		if app, err = deployOutcome(cmd, c, app.ID, app, outputFormat); err != nil {
 			return err
@@ -1261,8 +1272,9 @@ var appUpdateCmd = &cobra.Command{
                   It covers every host the app is served on. The command waits
                   until the edge enforces it and fails if it could not;
                   --no-wait returns once the attach is accepted. An attach that
-                  denies the address you are calling from is made, and the
-                  command warns that it did.
+                  denies the address the request came from is made, and the
+                  command warns that it did. To put a firewall on a new app
+                  from its first request, use app create --firewall.
   --no-firewall   Detach the app's firewall, and wait until the edge has
                   stopped enforcing it.
 `,
@@ -1990,6 +2002,7 @@ func init() {
 		c.Flags().Bool("no-wait", false, "Return once the deploy is accepted and any release command has passed, without waiting for the rollout")
 	}
 	appCreateCmd.Flags().String("image", "", "Container image")
+	appCreateCmd.Flags().String("firewall", "", "Attach this firewall as the app is created, so it is never served without it; attaching one later with `app update --firewall` leaves the app open until the edge has taken it")
 	appCreateCmd.Flags().String("release", "", "Name the first revision (e.g. v1.4.0); derived from the image tag when left out, reported by `app version`, targetable by `app rollback`")
 	appCreateCmd.Flags().String("cpu", "", "CPU limit per instance, like 500m or 2 (default 500m)")
 	appCreateCmd.Flags().String("memory", "", "Memory limit per instance, like 512Mi or 2Gi (default 512Mi)")

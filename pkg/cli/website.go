@@ -71,7 +71,12 @@ func findWebsiteBucket(c *client.Client, name string) (*client.Bucket, error) {
 // ensureWebsite makes sure a bucket named name exists with web serving enabled
 // (creating/enabling as needed) and returns it. The idempotent bootstrap behind
 // `website create` and `website deploy`.
-func ensureWebsite(c *client.Client, name, index, errorDoc string) (*client.Bucket, error) {
+//
+// firewall, when set, is attached in the same requests that create the
+// bucket and enable the site, so no host of the site is ever served without
+// it: attaching after the site is enabled leaves it open until the edge has
+// taken the attach.
+func ensureWebsite(c *client.Client, name, index, errorDoc, firewall string) (*client.Bucket, error) {
 	b, err := findWebsiteBucket(c, name)
 	if err != nil {
 		return nil, err
@@ -81,17 +86,17 @@ func ensureWebsite(c *client.Client, name, index, errorDoc string) (*client.Buck
 		if err != nil {
 			return nil, err
 		}
-		b, err = c.CreateBucket(context.Background(), project, client.CreateBucketRequest{Name: name})
+		b, err = c.CreateBucket(context.Background(), project, client.CreateBucketRequest{Name: name, Firewall: firewall})
 		if err != nil {
-			return nil, err
+			return nil, explainFirewallError(err)
 		}
 	}
-	if !b.WebsiteEnabled || b.WebsiteIndexDocument != index || b.WebsiteErrorDocument != errorDoc {
+	if !b.WebsiteEnabled || b.WebsiteIndexDocument != index || b.WebsiteErrorDocument != errorDoc || firewall != "" {
 		b, err = c.SetBucketWebsite(context.Background(), b.ID, client.SetBucketWebsiteRequest{
-			Enabled: true, IndexDocument: index, ErrorDocument: errorDoc,
+			Enabled: true, IndexDocument: index, ErrorDocument: errorDoc, Firewall: firewall,
 		})
 		if err != nil {
-			return nil, err
+			return nil, explainFirewallError(err)
 		}
 	}
 	return b, nil
@@ -101,16 +106,25 @@ var websiteCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a website (a public web-served bucket)",
 	Long: "Create a website: an object-storage bucket with public web serving enabled.\n" +
-		"Content is world-readable over HTTP by definition — that is the product.",
+		"Content is world-readable over HTTP by definition: that is the product.\n\n" +
+		"--firewall attaches a firewall as the website is created, so it is never\n" +
+		"served without it:\n\n" +
+		"  fpcloud website create docs --firewall office\n\n" +
+		"Attaching one afterwards (website update --firewall) leaves the site open to\n" +
+		"everyone until the edge has taken the firewall, a few seconds.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		index, errorDoc, _ := websiteFlags(cmd)
+		firewall, _ := cmd.Flags().GetString("firewall")
+		if cmd.Flags().Changed("firewall") && firewall == "" {
+			return usageError{errors.New("--firewall needs a firewall's name")}
+		}
 		c := getClient()
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		var b *client.Bucket
 		var err error
-		action := func() { b, err = ensureWebsite(c, args[0], index, errorDoc) }
+		action := func() { b, err = ensureWebsite(c, args[0], index, errorDoc, firewall) }
 		if !isStructured(outputFormat) {
 			withSpinner("Creating website...", action)
 		} else {
@@ -123,6 +137,9 @@ var websiteCreateCmd = &cobra.Command{
 			return renderData(b)
 		}
 		fmt.Println(renderInfoBox("Website Created", websiteInfoPairs(b)))
+		if b.Firewall != nil {
+			printFirewallFindings(b.Firewall.Findings)
+		}
 		fmt.Println(mutedStyle.Render("Deploy content with: fpcloud website deploy " + b.Name + " <dir>"))
 		return nil
 	},
@@ -143,7 +160,7 @@ var websiteDeployCmd = &cobra.Command{
 		rules := *(cmd.Context().Value(filterCtxKey).(*[]filterRule))
 		c := getClient()
 
-		b, err := ensureWebsite(c, args[0], index, errorDoc)
+		b, err := ensureWebsite(c, args[0], index, errorDoc, "")
 		if err != nil {
 			return err
 		}
@@ -506,8 +523,8 @@ var websiteUpdateCmd = &cobra.Command{
 		"--firewall attaches a firewall, by name, replacing any the website has; it\n" +
 		"covers every host the website is served on. --no-firewall detaches it. Either\n" +
 		"waits until the edge has followed and fails if it could not; --no-wait returns\n" +
-		"once the change is accepted. An attach that denies the address you are\n" +
-		"calling from is made, and the command warns that it did.\n\n" +
+		"once the change is accepted. An attach that denies the address the request\n" +
+		"came from is made, and the command warns that it did.\n\n" +
 		"  fpcloud website update docs --firewall office\n" +
 		"  fpcloud website update docs --no-firewall",
 	Args: cobra.ExactArgs(1),
@@ -834,6 +851,7 @@ func init() {
 
 	websiteUpdateCmd.Flags().String("slug", "", "Vanity host label: site moves to <slug>.<tenant-domain> (\"\" reverts)")
 	firewallAttachFlags(websiteUpdateCmd, "website")
+	websiteCreateCmd.Flags().String("firewall", "", "Attach this firewall as the website is created, so it is never served without it")
 
 	websiteDeployCmd.Flags().Bool("keep-extra", false, "Keep site files that no longer exist locally (default prunes)")
 	websiteDeployCmd.Flags().Bool("dryrun", false, "Print what would change without transferring")

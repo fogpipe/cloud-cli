@@ -640,7 +640,7 @@ func TestFirewallRoutes(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, string(body))
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodDelete {
+		if r.Method == http.MethodDelete && !strings.Contains(r.URL.Path, "/rules/") {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -682,6 +682,18 @@ func TestFirewallRoutes(t *testing.T) {
 			return err
 		},
 		func() error { return c.DetachWebsiteFirewall(ctx, "b1") },
+		func() error {
+			_, err := c.PutFirewallRule(ctx, "f1", 150, PutFirewallRuleRequest{Action: "allow", IfAbsent: true, Match: FirewallMatch{Sources: []string{"192.0.2.0/24"}}})
+			return err
+		},
+		func() error {
+			fw, err := c.DeleteFirewallRule(ctx, "f1", 150)
+			if err == nil && fw == nil {
+				return errors.New("a rule delete answers the firewall it left")
+			}
+			return err
+		},
+		func() error { _, err := c.GetFirewallRevision(ctx, "f1", 2); return err },
 	}
 	for i, call := range calls {
 		if err := call(); err != nil {
@@ -701,6 +713,9 @@ func TestFirewallRoutes(t *testing.T) {
 		"DELETE /api/v1/apps/a1/firewall",
 		"PUT /api/v1/buckets/b1/website/firewall",
 		"DELETE /api/v1/buckets/b1/website/firewall",
+		"PUT /api/v1/firewalls/f1/rules/150",
+		"DELETE /api/v1/firewalls/f1/rules/150",
+		"GET /api/v1/firewalls/f1/revisions/2",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -716,5 +731,9 @@ func TestFirewallRoutes(t *testing.T) {
 	}
 	if strings.TrimSpace(bodies[10]) != `{"firewall":"office"}` {
 		t.Errorf("attach body = %s", bodies[10])
+	}
+	// The priority is the route's, and the body is the rule alone.
+	if strings.TrimSpace(bodies[12]) != `{"action":"allow","match":{"sources":["192.0.2.0/24"]},"if_absent":true}` {
+		t.Errorf("rule body = %s", bodies[12])
 	}
 }

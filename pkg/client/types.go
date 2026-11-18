@@ -770,6 +770,11 @@ type CreateAppRequest struct {
 	HealthCheckInterval int                  `json:"health_check_interval,omitempty"`
 	HealthCheckRetries  int                  `json:"health_check_retries,omitempty"`
 	Probes              *ProbeOverrides      `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	// Firewall attaches a firewall, by id or by its name in the project, as
+	// the app is created, so its route is written with the firewall from the
+	// first write. Attaching after the create leaves the app served without
+	// it until the edge has taken the attach.
+	Firewall string `json:"firewall,omitempty"`
 
 	// Release names the first revision, the one `app rollback` can aim at.
 	// Left empty, the platform derives it from the image's tag (`web:v1.2.3`
@@ -1170,6 +1175,10 @@ type CreateBucketRequest struct {
 	// PublicRead makes the bucket's objects readable without a signature from
 	// the moment it exists (ADR-161). Nil leaves it private.
 	PublicRead *bool `json:"public_read,omitempty"`
+	// Firewall attaches a firewall, by id or by its name in the project, to
+	// the bucket's website as the bucket is created, so the first route the
+	// site is given already enforces it.
+	Firewall string `json:"firewall,omitempty"`
 }
 
 // SetBucketWebsiteRequest is the request body for toggling static-website
@@ -1179,6 +1188,10 @@ type SetBucketWebsiteRequest struct {
 	Enabled       bool   `json:"enabled"`
 	IndexDocument string `json:"index_document,omitempty"`
 	ErrorDocument string `json:"error_document,omitempty"`
+	// Firewall attaches a firewall, by id or by its name in the project,
+	// before the site is served, so a website enabled with one is never
+	// served without it. Empty leaves the website's firewall as it is.
+	Firewall string `json:"firewall,omitempty"`
 }
 
 // SetBucketPublicReadRequest is the request body for whether a bucket's objects
@@ -3303,7 +3316,8 @@ type FirewallRef struct {
 	Findings []FirewallFinding `json:"findings,omitempty"`
 }
 
-// FirewallRevision is one stored revision of a firewall's content.
+// FirewallRevision is one stored revision of a firewall's content, rules
+// included. GetFirewallRevision reads it.
 type FirewallRevision struct {
 	Revision      int            `json:"revision"`
 	DefaultAction string         `json:"default_action"`
@@ -3312,13 +3326,40 @@ type FirewallRevision struct {
 	CreatedBy     string         `json:"created_by,omitempty"`
 }
 
-// FirewallDecision is what a firewall does with one client address: the
-// action, and the rule that matched. Rule is nil when the default action
-// decided.
+// FirewallRevisionSummary is one stored revision as ListFirewallRevisions
+// carries it: everything but the rules, counted in RuleCount.
+type FirewallRevisionSummary struct {
+	Revision      int       `json:"revision"`
+	DefaultAction string    `json:"default_action"`
+	RuleCount     int       `json:"rule_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	CreatedBy     string    `json:"created_by,omitempty"`
+}
+
+// FirewallDecision is what happens to a request from one client address on a
+// target the firewall is attached to: the action, and the rule that matched.
+// Operator is true when the platform's own deny list decided, before any rule
+// of the firewall was read: the action is then "deny", Rule is nil, and no
+// change to the firewall admits the address. With Rule nil and Operator
+// false, the firewall's default action decided.
 type FirewallDecision struct {
-	Address string        `json:"address"`
-	Action  string        `json:"action"`
-	Rule    *FirewallRule `json:"rule,omitempty"`
+	Address  string        `json:"address"`
+	Action   string        `json:"action"`
+	Rule     *FirewallRule `json:"rule,omitempty"`
+	Operator bool          `json:"operator,omitempty"`
+}
+
+// PutFirewallRuleRequest is one rule, written to the priority PutFirewallRule
+// names: it creates the rule there or replaces the one holding it, and
+// touches no other rule. Enabled left out is true. IfAbsent makes it a create
+// alone, refused with a 409 (code FIREWALL_RULE_EXISTS) when a rule already
+// holds the priority.
+type PutFirewallRuleRequest struct {
+	Action      string        `json:"action"`
+	Description string        `json:"description,omitempty"`
+	Enabled     *bool         `json:"enabled,omitempty"`
+	Match       FirewallMatch `json:"match"`
+	IfAbsent    bool          `json:"if_absent,omitempty"`
 }
 
 // CreateFirewallRequest creates a firewall in a project. DefaultAction left
@@ -3338,7 +3379,8 @@ type CreateFirewallRequest struct {
 // A caller that reads a firewall, changes part of it and writes it all back
 // sets it to the revision it read, so an edit made in between is not
 // overwritten. Zero writes unconditionally, which is right for a caller whose
-// own copy is the whole intended state.
+// own copy is the whole intended state. A caller changing one rule uses
+// PutFirewallRule or DeleteFirewallRule, which read nothing first.
 type UpdateFirewallRequest struct {
 	Description   string                `json:"description,omitempty"`
 	DefaultAction string                `json:"default_action,omitempty"`

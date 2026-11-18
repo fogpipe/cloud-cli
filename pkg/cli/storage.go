@@ -375,11 +375,17 @@ var storageBucketWebsiteEnableCmd = &cobra.Command{
 	Long: "Enable static-website serving for a bucket. The bucket is served over HTTP at\n" +
 		"<bucket>.web.<platform-domain> with `index.html` as the default document.\n\n" +
 		"This makes the bucket's objects world-readable over HTTP — anyone with the URL\n" +
-		"can fetch them. Only enable it for content you intend to publish.",
+		"can fetch them. Only enable it for content you intend to publish.\n\n" +
+		"--firewall attaches a firewall before the site is served, so it is never\n" +
+		"served without it.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		index, _ := cmd.Flags().GetString("index")
 		errorDoc, _ := cmd.Flags().GetString("error")
+		firewall, _ := cmd.Flags().GetString("firewall")
+		if cmd.Flags().Changed("firewall") && firewall == "" {
+			return usageError{errors.New("--firewall needs a firewall's name")}
+		}
 		yes, _ := cmd.Flags().GetBool("yes")
 		if !yes {
 			ok, err := confirm(
@@ -405,7 +411,7 @@ var storageBucketWebsiteEnableCmd = &cobra.Command{
 		var setErr error
 		action := func() {
 			b, setErr = c.SetBucketWebsite(context.Background(), id, client.SetBucketWebsiteRequest{
-				Enabled: true, IndexDocument: index, ErrorDocument: errorDoc,
+				Enabled: true, IndexDocument: index, ErrorDocument: errorDoc, Firewall: firewall,
 			})
 		}
 		if !isStructured(outputFormat) {
@@ -414,12 +420,15 @@ var storageBucketWebsiteEnableCmd = &cobra.Command{
 			action()
 		}
 		if setErr != nil {
-			return setErr
+			return explainFirewallError(setErr)
 		}
 		if isStructured(outputFormat) {
 			return renderData(b)
 		}
 		fmt.Println(renderInfoBox("Website Enabled", websiteInfoPairs(b)))
+		if b.Firewall != nil {
+			printFirewallFindings(b.Firewall.Findings)
+		}
 		return nil
 	},
 }
@@ -743,6 +752,7 @@ func init() {
 	storageBucketWebsiteEnableCmd.Flags().String("index", "", "Index document served for a directory request (default index.html)")
 	storageBucketWebsiteEnableCmd.Flags().String("error", "", "Document served on a miss (optional)")
 	storageBucketWebsiteEnableCmd.Flags().BoolP("yes", "y", false, "Skip the public-read confirmation prompt")
+	storageBucketWebsiteEnableCmd.Flags().String("firewall", "", "Attach this firewall before the site is served, so it is never served without it")
 	storageBucketWebsiteCmd.AddCommand(storageBucketWebsiteEnableCmd, storageBucketWebsiteDisableCmd, storageBucketWebsiteShowCmd)
 
 	storageBucketLifecycleSetCmd.Flags().String("prefix", "", "Key prefix the rule covers (default: the whole bucket)")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +38,8 @@ calls between apps, and not outbound traffic.
   fpcloud website update docs --firewall office
   fpcloud firewall get office
 
-Rules are changed one at a time, or replaced in full from a file:
+Rules are changed one at a time, each by its priority and touching no other
+rule, or replaced in full from a file:
 
   fpcloud firewall rule add office --priority 200 --action allow --source 203.0.113.7
   fpcloud firewall rule disable office 200
@@ -51,9 +53,10 @@ and fails if one of them could not take it; --no-wait returns at once.
 
   fpcloud firewall test office 203.0.113.7
   fpcloud firewall revisions office
+  fpcloud firewall revisions office 3
   fpcloud firewall rollback office 3
 
-A change or an attach that denies the address you are calling from is made
+A change or an attach that denies the address the request came from is made
 like any other, and the command prints a warning saying so. A firewall filters
 requests to the apps and websites it is attached to and never the Fogpipe API,
 so it can always be changed back from the same place.
@@ -242,12 +245,13 @@ To change one rule, use firewall rule add, remove, enable or disable.
 
 The command waits until every app and website the firewall is attached to
 enforces the change; --no-wait returns once it is stored. A change that denies
-the address you are calling from is made, and the command warns that it did.
+the address the request came from is made, and the command warns that it did.
 
 -f writes the file over whatever the firewall holds, since the file is the
 whole of its rules. --description and --default-action given without -f change
-that one thing on the firewall as it stands: if somebody else changed it in
-the same moment, the command reads it again and makes its change to that.`,
+that one thing on the firewall as the command read it: if somebody else
+changed the firewall in the same moment, nothing is stored and the command
+says so, and running it again makes the change to the firewall as it now is.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("file")
@@ -336,17 +340,39 @@ var firewallDeleteCmd = &cobra.Command{
 }
 
 var firewallRevisionsCmd = &cobra.Command{
-	Use:   "revisions <name>",
-	Short: "List a firewall's stored revisions, newest first",
-	Long: `List a firewall's stored revisions, newest first. Each is the default action
-and the rules as they stood; -o json or -o yaml prints the rules themselves.
-firewall rollback re-applies one.`,
-	Args: cobra.ExactArgs(1),
+	Use:   "revisions <name> [revision]",
+	Short: "List a firewall's stored revisions, or print the rules of one",
+	Long: `List a firewall's stored revisions, newest first: when each was stored, by
+whom, its default action and how many rules it held. Name a revision to print
+its rules as they stood. firewall rollback re-applies one.
+
+  fpcloud firewall revisions office
+  fpcloud firewall revisions office 3`,
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
 		fw, err := resolveFirewall(cmd.Context(), c, args[0])
 		if err != nil {
 			return err
+		}
+		if len(args) == 2 {
+			number, err := strconv.Atoi(args[1])
+			if err != nil || number < 1 {
+				return usageError{fmt.Errorf("revision %q is not a revision number; fpcloud firewall revisions %s lists them", args[1], args[0])}
+			}
+			rev, err := c.GetFirewallRevision(cmd.Context(), fw.ID, number)
+			if err != nil {
+				var apiErr *client.APIError
+				if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+					return notFoundf("firewall %q holds no revision %d; fpcloud firewall revisions %s lists the ones it keeps", fw.Name, number, fw.Name)
+				}
+				return err
+			}
+			if isStructured(rootCmd.Flag("output").Value.String()) {
+				return renderData(rev)
+			}
+			printFirewallRevision(fw, rev)
+			return nil
 		}
 		revisions, err := c.ListFirewallRevisions(cmd.Context(), fw.ID)
 		if err != nil {
@@ -361,7 +387,7 @@ firewall rollback re-applies one.`,
 			rows[i] = []string{
 				number,
 				firewallAction(rev.DefaultAction),
-				strconv.Itoa(len(rev.Rules)),
+				strconv.Itoa(rev.RuleCount),
 				rev.CreatedAt.Format("2006-01-02 15:04"),
 				dashIfBlank(rev.CreatedBy),
 			}
@@ -382,7 +408,7 @@ back. firewall revisions lists what there is to return to.
 
 The command waits until every app and website the firewall is attached to
 enforces the new revision; --no-wait returns once it is stored. A rollback
-that denies the address you are calling from is made, and the command warns
+that denies the address the request came from is made, and the command warns
 that it did.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -411,7 +437,13 @@ print the action and the rule that decided, or that the default action did.
 Nothing is sent to the app or the website; this reads the rules only, so it
 works on a firewall attached to nothing.
 
-  fpcloud firewall test office 203.0.113.7`,
+  fpcloud firewall test office 203.0.113.7
+
+The answer is the one the edge gives. An address the platform itself denies
+on every app and website is reported as denied by the platform: no rule of
+the firewall decided, and none can allow it. An IPv4-mapped IPv6 address
+(::ffff:198.51.100.7) is an IPv6 address that no IPv4 range holds, so the
+default action decides for it; write the address as IPv4.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
@@ -447,11 +479,8 @@ evaluated first.
 Each of these stores a new revision and waits until every app and website the
 firewall is attached to enforces it; --no-wait returns once it is stored.
 
-A firewall's rules are written as a whole, so each of these writes on the
-condition that the firewall is still at the revision it read. If somebody else
-changed it in the same moment, the command reads the firewall again, makes its
-one change to the rules as they now are, and writes that; neither change is
-lost. After three such attempts it gives up and says so.`,
+Each writes the one rule it names and leaves every other rule as it is, so two
+people changing different rules at the same moment both keep their change.`,
 }
 
 var firewallRuleAddCmd = &cobra.Command{
@@ -482,19 +511,28 @@ pick another.
 			return usageError{fmt.Errorf("--source: %w", err)}
 		}
 		enabled := !disabled
-		rule := client.FirewallRuleRequest{
-			Priority:    priority,
+		c := getClient()
+		fw, err := resolveFirewall(cmd.Context(), c, args[0])
+		if err != nil {
+			return err
+		}
+		// Written on condition that the priority is free, so adding a rule
+		// never replaces one somebody else put there.
+		updated, err := c.PutFirewallRule(cmd.Context(), fw.ID, priority, client.PutFirewallRuleRequest{
 			Action:      action,
 			Description: description,
 			Enabled:     &enabled,
 			Match:       client.FirewallMatch{Sources: sources},
-		}
-		return changeFirewallRules(cmd, args[0], fmt.Sprintf("rule %d added", priority), func(rules []client.FirewallRuleRequest) ([]client.FirewallRuleRequest, error) {
-			if firewallRuleIndex(rules, priority) >= 0 {
-				return nil, fmt.Errorf("firewall %q already has a rule at priority %d; remove it first or pick another priority", args[0], priority)
-			}
-			return append(rules, rule), nil
+			IfAbsent:    true,
 		})
+		if err != nil {
+			var apiErr *client.APIError
+			if errors.As(err, &apiErr) && apiErr.Code == "FIREWALL_RULE_EXISTS" {
+				return fmt.Errorf("%w\nRemove it first with `fpcloud firewall rule remove %s %d`, or pick another priority.", err, fw.Name, priority)
+			}
+			return explainFirewallError(err)
+		}
+		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d added", priority))
 	},
 }
 
@@ -508,13 +546,20 @@ var firewallRuleRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return changeFirewallRules(cmd, args[0], fmt.Sprintf("rule %d removed", priority), func(rules []client.FirewallRuleRequest) ([]client.FirewallRuleRequest, error) {
-			i := firewallRuleIndex(rules, priority)
-			if i < 0 {
-				return nil, notFoundf("firewall %q has no rule at priority %d", args[0], priority)
+		c := getClient()
+		fw, err := resolveFirewall(cmd.Context(), c, args[0])
+		if err != nil {
+			return err
+		}
+		updated, err := c.DeleteFirewallRule(cmd.Context(), fw.ID, priority)
+		if err != nil {
+			var apiErr *client.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+				return notFoundf("firewall %q has no rule at priority %d", fw.Name, priority)
 			}
-			return append(rules[:i:i], rules[i+1:]...), nil
-		})
+			return explainFirewallError(err)
+		}
+		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d removed", priority))
 	},
 }
 
@@ -536,9 +581,10 @@ var firewallRuleDisableCmd = &cobra.Command{
 	},
 }
 
-// setFirewallRuleEnabled is rule enable and rule disable. A rule already in
-// the state asked for is left alone, so no revision is stored for a change
-// that changes nothing.
+// setFirewallRuleEnabled is rule enable and rule disable: the rule as the
+// firewall holds it, written back to its own priority with enabled changed,
+// which touches no other rule. A rule already in the state asked for is left
+// alone, so no request is made for a change that changes nothing.
 func setFirewallRuleEnabled(cmd *cobra.Command, args []string, enabled bool) error {
 	priority, err := firewallPriorityArg(args[1])
 	if err != nil {
@@ -548,78 +594,60 @@ func setFirewallRuleEnabled(cmd *cobra.Command, args []string, enabled bool) err
 	if enabled {
 		verb = "enabled"
 	}
-	return changeFirewallRules(cmd, args[0], fmt.Sprintf("rule %d %s", priority, verb), func(rules []client.FirewallRuleRequest) ([]client.FirewallRuleRequest, error) {
-		i := firewallRuleIndex(rules, priority)
-		if i < 0 {
-			return nil, notFoundf("firewall %q has no rule at priority %d", args[0], priority)
-		}
-		if *rules[i].Enabled == enabled {
-			return nil, errFirewallUnchanged
-		}
-		rules[i].Enabled = &enabled
-		return rules, nil
-	})
-}
-
-// errFirewallUnchanged is returned by a rule change that found the rule
-// already as asked: nothing is written and the command succeeds.
-var errFirewallUnchanged = errors.New("unchanged")
-
-// changeFirewallRules is changeFirewall for a command that rewrites the rule
-// list and nothing else.
-func changeFirewallRules(cmd *cobra.Command, name, done string, change func([]client.FirewallRuleRequest) ([]client.FirewallRuleRequest, error)) error {
-	return changeFirewall(cmd, name, done, func(req *client.UpdateFirewallRequest) error {
-		rules, err := change(req.Rules)
-		if err != nil {
-			return err
-		}
-		req.Rules = rules
-		return nil
-	})
-}
-
-// firewallConflictRetries is how many times a change is made again after the
-// firewall moved under it.
-const firewallConflictRetries = 3
-
-// changeFirewall reads a firewall, lets change edit the update that would
-// leave it as it is, and writes that back. The API replaces a firewall's
-// content in full, so the write is made on condition of the revision that was
-// read: when another change got there first, the firewall is read again and
-// change is applied to what it holds now, so neither change is lost.
-func changeFirewall(cmd *cobra.Command, name, done string, change func(*client.UpdateFirewallRequest) error) error {
 	c := getClient()
-	for attempt := 0; ; attempt++ {
-		fw, err := resolveFirewall(cmd.Context(), c, name)
-		if err != nil {
-			return err
-		}
-		req := firewallUpdateOf(fw)
-		err = change(&req)
-		if errors.Is(err, errFirewallUnchanged) {
-			if isStructured(rootCmd.Flag("output").Value.String()) {
-				return renderData(fw)
-			}
-			fmt.Println(mutedStyle.Render(fmt.Sprintf("Firewall %q: already so, nothing changed.", fw.Name)))
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		req.IfRevision = fw.Revision
-		updated, err := c.UpdateFirewall(cmd.Context(), fw.ID, req)
-		if err == nil {
-			return finishFirewallChange(cmd, c, updated, done)
-		}
-		var apiErr *client.APIError
-		if !errors.As(err, &apiErr) || apiErr.Code != "FIREWALL_REVISION_CONFLICT" {
-			return explainFirewallError(err)
-		}
-		if attempt == firewallConflictRetries {
-			return fmt.Errorf("%w\nFirewall %q kept changing while this command ran: it was read and the change made again %d times, and each time somebody else's change was stored first. Nothing of this change was stored; run the command again.",
-				err, fw.Name, firewallConflictRetries)
+	fw, err := resolveFirewall(cmd.Context(), c, args[0])
+	if err != nil {
+		return err
+	}
+	var rule *client.FirewallRule
+	for i := range fw.Rules {
+		if fw.Rules[i].Priority == priority {
+			rule = &fw.Rules[i]
 		}
 	}
+	if rule == nil {
+		return notFoundf("firewall %q has no rule at priority %d", fw.Name, priority)
+	}
+	if rule.Enabled == enabled {
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(fw)
+		}
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("Firewall %q: already so, nothing changed.", fw.Name)))
+		return nil
+	}
+	updated, err := c.PutFirewallRule(cmd.Context(), fw.ID, priority, client.PutFirewallRuleRequest{
+		Action:      rule.Action,
+		Description: rule.Description,
+		Enabled:     &enabled,
+		Match:       client.FirewallMatch{Sources: rule.Match.Sources},
+	})
+	if err != nil {
+		return explainFirewallError(err)
+	}
+	return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d %s", priority, verb))
+}
+
+// changeFirewall reads a firewall, lets change edit the update that would
+// leave it as it is, and writes that back. That write replaces the firewall's
+// content in full, so it is made on condition of the revision that was read:
+// when another change got there first nothing is stored, and the command says
+// to run it again, which makes the change to the firewall as it now is.
+func changeFirewall(cmd *cobra.Command, name, done string, change func(*client.UpdateFirewallRequest) error) error {
+	c := getClient()
+	fw, err := resolveFirewall(cmd.Context(), c, name)
+	if err != nil {
+		return err
+	}
+	req := firewallUpdateOf(fw)
+	if err := change(&req); err != nil {
+		return err
+	}
+	req.IfRevision = fw.Revision
+	updated, err := c.UpdateFirewall(cmd.Context(), fw.ID, req)
+	if err != nil {
+		return explainFirewallError(err)
+	}
+	return finishFirewallChange(cmd, c, updated, done)
 }
 
 // finishFirewallChange follows a stored change to every target unless told
@@ -948,15 +976,6 @@ func firewallUpdateOf(fw *client.Firewall) client.UpdateFirewallRequest {
 	return req
 }
 
-func firewallRuleIndex(rules []client.FirewallRuleRequest, priority int) int {
-	for i, r := range rules {
-		if r.Priority == priority {
-			return i
-		}
-	}
-	return -1
-}
-
 func firewallPriorityArg(arg string) (int, error) {
 	priority, err := strconv.Atoi(arg)
 	if err != nil {
@@ -1026,7 +1045,7 @@ func parseFirewallRuleFlags(specs []string) ([]client.FirewallRuleRequest, error
 		if err != nil {
 			return nil, usageError{err}
 		}
-		if firewallRuleIndex(rules, rule.Priority) >= 0 {
+		if slices.ContainsFunc(rules, func(r client.FirewallRuleRequest) bool { return r.Priority == rule.Priority }) {
 			return nil, usageError{fmt.Errorf("--rule: priority %d is given twice; a priority names one rule", rule.Priority)}
 		}
 		rules = append(rules, rule)
@@ -1096,6 +1115,8 @@ func explainFirewallError(err error) error {
 	switch apiErr.Code {
 	case "FIREWALL_EDGE_NOT_READY":
 		return fmt.Errorf("%w\nNothing was changed: the edge cannot take a firewall right now. Run the command again in a moment.", err)
+	case "FIREWALL_REVISION_CONFLICT":
+		return fmt.Errorf("%w\nRun the command again to make the change to the firewall as it now is.", err)
 	}
 	return err
 }
@@ -1129,23 +1150,7 @@ func printFirewall(fw *client.Firewall) {
 		{"Updated", fw.UpdatedAt.Format("2006-01-02 15:04")},
 	}))
 
-	rules := append([]client.FirewallRule(nil), fw.Rules...)
-	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Priority < rules[j].Priority })
-	if len(rules) == 0 {
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("  No rules: every request gets the default action, %s.", fw.DefaultAction)))
-	} else {
-		rows := make([][]string, len(rules))
-		for i, r := range rules {
-			rows[i] = []string{
-				strconv.Itoa(r.Priority),
-				firewallAction(r.Action),
-				strings.Join(r.Match.Sources, ", "),
-				yesNo(r.Enabled),
-				dashIfBlank(r.Description),
-			}
-		}
-		renderTable([]string{"PRIORITY", "ACTION", "SOURCES", "ENABLED", "DESCRIPTION"}, rows)
-	}
+	printFirewallRules(fw.Rules, fw.DefaultAction)
 
 	if len(fw.Targets) == 0 {
 		fmt.Println(mutedStyle.Render("  Attached to nothing, so it is enforced nowhere."))
@@ -1161,6 +1166,45 @@ func printFirewall(fw *client.Firewall) {
 		renderTable([]string{"ATTACHED TO", "NAME", "APPLIED REVISION", "STATUS"}, rows)
 	}
 	printFirewallFindings(fw.Findings)
+}
+
+// printFirewallRevision is firewall revisions <name> <revision> for a person:
+// the revision's default action and its rules in the order they were
+// evaluated.
+func printFirewallRevision(fw *client.Firewall, rev *client.FirewallRevision) {
+	number := strconv.Itoa(rev.Revision)
+	if rev.Revision == fw.Revision {
+		number += " (current)"
+	}
+	fmt.Println(renderInfoBox("Firewall revision", [][]string{
+		{"Firewall", fw.Name},
+		{"Revision", number},
+		{"Default action", firewallAction(rev.DefaultAction)},
+		{"Stored", rev.CreatedAt.Format("2006-01-02 15:04")},
+		{"By", dashIfBlank(rev.CreatedBy)},
+	}))
+	printFirewallRules(rev.Rules, rev.DefaultAction)
+}
+
+// printFirewallRules prints rules in the order they are evaluated.
+func printFirewallRules(in []client.FirewallRule, defaultAction string) {
+	rules := append([]client.FirewallRule(nil), in...)
+	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Priority < rules[j].Priority })
+	if len(rules) == 0 {
+		fmt.Println(mutedStyle.Render(fmt.Sprintf("  No rules: every request gets the default action, %s.", defaultAction)))
+		return
+	}
+	rows := make([][]string, len(rules))
+	for i, r := range rules {
+		rows[i] = []string{
+			strconv.Itoa(r.Priority),
+			firewallAction(r.Action),
+			strings.Join(r.Match.Sources, ", "),
+			yesNo(r.Enabled),
+			dashIfBlank(r.Description),
+		}
+	}
+	renderTable([]string{"PRIORITY", "ACTION", "SOURCES", "ENABLED", "DESCRIPTION"}, rows)
 }
 
 // printFirewallFindings prints the API's warnings about a firewall on stderr,
@@ -1179,6 +1223,9 @@ func printFirewallFindings(findings []client.FirewallFinding) {
 // firewallDecisionLine is firewall test for a person: the address, what
 // happens to it, and what decided.
 func firewallDecisionLine(d *client.FirewallDecision) string {
+	if d.Operator {
+		return fmt.Sprintf("%s: %s, by the platform (it denies this address on every app and website, whatever the firewall says)", d.Address, firewallAction(d.Action))
+	}
 	if d.Rule == nil {
 		return fmt.Sprintf("%s: %s, by default (no rule matches)", d.Address, firewallAction(d.Action))
 	}

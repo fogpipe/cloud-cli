@@ -1626,13 +1626,61 @@ func (c *Client) DeleteFirewall(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// ListFirewallRevisions lists a firewall's stored revisions, newest first.
-func (c *Client) ListFirewallRevisions(ctx context.Context, id string) ([]*FirewallRevision, error) {
+// PutFirewallRule writes one rule at priority: it creates the rule or
+// replaces the one holding that priority, and leaves every other rule as it
+// is, so nothing is read first and two rules written at once both land. With
+// req.IfAbsent it only creates, and a taken priority fails with an *APIError
+// whose Code is "FIREWALL_RULE_EXISTS". It answers the firewall as the write
+// left it, with its findings.
+func (c *Client) PutFirewallRule(ctx context.Context, id string, priority int, req PutFirewallRuleRequest) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/firewalls/"+id+"/rules/"+strconv.Itoa(priority), req)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// DeleteFirewallRule removes the rule at priority and leaves every other rule
+// as it is. A firewall with no rule there answers 404. It answers the
+// firewall as the removal left it, with its findings.
+func (c *Client) DeleteFirewallRule(ctx context.Context, id string, priority int) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/firewalls/"+id+"/rules/"+strconv.Itoa(priority), nil)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// GetFirewallRevision reads one stored revision of a firewall, with its
+// rules. One that was never stored, or is older than those kept, answers 404.
+func (c *Client) GetFirewallRevision(ctx context.Context, id string, revision int) (*FirewallRevision, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/firewalls/"+id+"/revisions/"+strconv.Itoa(revision), nil)
+	if err != nil {
+		return nil, err
+	}
+	var rev FirewallRevision
+	if err := c.do(httpReq, &rev); err != nil {
+		return nil, err
+	}
+	return &rev, nil
+}
+
+// ListFirewallRevisions lists a summary of each of a firewall's stored
+// revisions, newest first. GetFirewallRevision reads the rules of one.
+func (c *Client) ListFirewallRevisions(ctx context.Context, id string) ([]*FirewallRevisionSummary, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/firewalls/"+id+"/revisions", nil)
 	if err != nil {
 		return nil, err
 	}
-	var out []*FirewallRevision
+	var out []*FirewallRevisionSummary
 	if err := c.do(httpReq, &out); err != nil {
 		return nil, err
 	}
@@ -1653,8 +1701,10 @@ func (c *Client) RollbackFirewall(ctx context.Context, id string, req RollbackFi
 	return &fw, nil
 }
 
-// TestFirewall says what the firewall's current revision does with a request
-// from address: the action, and the rule that matched if one did.
+// TestFirewall says what happens to a request from address on a target the
+// firewall's current revision is applied to: the action, and the rule that
+// matched if one did, or that the platform's own deny list decided
+// (FirewallDecision.Operator).
 func (c *Client) TestFirewall(ctx context.Context, id string, req TestFirewallRequest) (*FirewallDecision, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/firewalls/"+id+"/test", req)
 	if err != nil {
