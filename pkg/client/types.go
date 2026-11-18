@@ -364,7 +364,14 @@ type QuoteRequest struct {
 	// Job is one scheduled job: priced per hour a run takes, since a run is
 	// billed for how long it ran, so the answer carries no month.
 	Job *QuoteJob `json:"job,omitempty"`
+	// Bucket is one bucket. A bucket has no size, so the answer has no fixed
+	// lines: what it stores accrues, at the rate Accrues carries.
+	Bucket *QuoteBucket `json:"bucket,omitempty"`
 }
+
+// QuoteBucket is a bucket create's half that a quote reads: nothing, since a
+// bucket is billed only on what it stores.
+type QuoteBucket struct{}
 
 // QuoteDatabase is the sizing half of CreateDatabaseRequest.
 type QuoteDatabase struct {
@@ -415,12 +422,24 @@ type Quote struct {
 	TotalMax  string `json:"total_max,omitempty"`
 	// Unpriced names every resource type here that the book has no rate for.
 	Unpriced []string `json:"unpriced"`
-	// Accrues names what the spec will be billed for on measured bytes as they
-	// grow, which no size in the request can predict: a database's backups.
-	Accrues []string `json:"accrues"`
+	// Accrues is what the spec will be billed for on measured bytes as they
+	// grow, which no size in the request can predict (a database's backups, an
+	// app's logs, what a bucket stores), each at its rate.
+	Accrues []QuoteAccrual `json:"accrues"`
 	// NotBilled names what the platform meters or serves for this kind and
 	// does not bill: traffic.
 	NotBilled []string `json:"not_billed"`
+}
+
+// QuoteAccrual is one resource type a quote cannot size, at its rate.
+// UnitPrice is per Unit; MonthPrice is UnitPrice over the quote's Hours, set
+// only for a per-hour unit (a GiB-hour), so no client works out a month. A
+// type the book has no rate for is in Unpriced and carries neither.
+type QuoteAccrual struct {
+	ResourceType string `json:"resource_type"`
+	Unit         string `json:"unit"`
+	UnitPrice    string `json:"unit_price,omitempty"`
+	MonthPrice   string `json:"month_price,omitempty"`
 }
 
 // QuoteLine is one resource type of a quote.

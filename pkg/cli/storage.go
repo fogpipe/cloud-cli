@@ -110,6 +110,13 @@ var storageBucketCreateCmd = &cobra.Command{
 
 		outputFormat := rootCmd.Flag("output").Value.String()
 		c := getClient()
+		if estimating(cmd) {
+			q, err := c.Quote(context.Background(), projectID, client.QuoteRequest{Bucket: &client.QuoteBucket{}})
+			if err != nil {
+				return err
+			}
+			return printQuote(q)
+		}
 
 		var b *client.Bucket
 		var createErr error
@@ -722,6 +729,7 @@ func storedBytes(used *int64) string {
 
 func init() {
 	storageBucketCreateCmd.Flags().Bool("public-read", false, "Serve the bucket's objects to anyone, without a signature")
+	estimateFlag(storageBucketCreateCmd)
 	storageBucketUpdateCmd.Flags().Bool("public-read", false, "Whether the bucket's objects can be read without a signature")
 	storageBucketUpdateCmd.Flags().Bool("website", false, "Whether the bucket carries the static-website conventions")
 	storageBucketUpdateCmd.Flags().String("index", "", "Index document, with --website")

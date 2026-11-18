@@ -946,6 +946,20 @@ func printQuote(q *client.Quote) error {
 	if isStructured(rootCmd.Flag("output").Value.String()) {
 		return renderData(q)
 	}
+	// A spec with nothing fixed (a bucket) is only what it grows into: its
+	// rate is the answer, and a total would read as free.
+	if len(q.Lines) == 0 {
+		for _, a := range q.Accrues {
+			if a.UnitPrice != "" {
+				fmt.Printf("  %s: %s, as it fills\n", a.ResourceType, accrualRate(a, q.Currency))
+			}
+		}
+		fmt.Printf("  Price book: %s\n", q.PriceBook)
+		for _, u := range q.Unpriced {
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("  %s has no rate in this book yet; it is not free.", u)))
+		}
+		return nil
+	}
 	span := func(lo, hi string) string {
 		if lo == hi {
 			return hi
@@ -979,11 +993,34 @@ func printQuote(q *client.Quote) error {
 	for _, u := range q.Unpriced {
 		fmt.Println(mutedStyle.Render(fmt.Sprintf("  %s has no rate in this book yet and is not in the number; it is not free.", u)))
 	}
-	if len(q.Accrues) > 0 {
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("  On top, as it grows: %s.", strings.Join(q.Accrues, ", "))))
+	for _, a := range q.Accrues {
+		if a.UnitPrice != "" {
+			fmt.Printf("  %s grows on top: %s.\n", a.ResourceType, accrualRate(a, q.Currency))
+		}
 	}
 	fmt.Println(mutedStyle.Render("  Today's rates for the hours it runs; the invoice bills what actually ran."))
 	return nil
+}
+
+// accrualRate is what one unit of a growing type costs, a month for a
+// per-hour unit ("0.0365 EUR per GiB a month") and per unit otherwise
+// ("0.10 EUR per GB").
+func accrualRate(a client.QuoteAccrual, currency string) string {
+	if a.MonthPrice != "" {
+		return fmt.Sprintf("%s %s per %s a month", a.MonthPrice, currency, accrualUnit(a.Unit))
+	}
+	return fmt.Sprintf("%s %s per %s", a.UnitPrice, currency, accrualUnit(a.Unit))
+}
+
+// accrualUnit is the quantity a rate is per, without the hour a month folds in.
+func accrualUnit(unit string) string {
+	switch unit {
+	case "gib-hour":
+		return "GiB"
+	case "gb":
+		return "GB"
+	}
+	return unit
 }
 
 // firstInt32 is the bound a scale names, or the one the app keeps.
