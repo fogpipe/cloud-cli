@@ -1597,9 +1597,9 @@ func (c *Client) GetFirewall(ctx context.Context, id string) (*Firewall, error) 
 
 // UpdateFirewall replaces a firewall's description, default action and rules.
 // A change to the content stores a new revision and returns at once; the edge
-// follows, and each target reports the revision it enforces. A change that
-// would deny the caller's own address on an attached firewall fails with a 409
-// APIError (code FIREWALL_DENIES_CALLER) unless req.AllowLockout is set.
+// follows, and each target reports the revision it enforces. With
+// req.IfRevision set, a firewall that has moved past that revision fails with
+// a 409 APIError (code FIREWALL_REVISION_CONFLICT) and nothing is written.
 func (c *Client) UpdateFirewall(ctx context.Context, id string, req UpdateFirewallRequest) (*Firewall, error) {
 	if req.Rules == nil {
 		req.Rules = []FirewallRuleRequest{}
@@ -1669,6 +1669,7 @@ func (c *Client) TestFirewall(ctx context.Context, id string, req TestFirewallRe
 
 // AttachAppFirewall attaches a firewall to an app, replacing any it had. It
 // returns at once; the app's Firewall reports the revision the edge enforces.
+// The returned Findings warn when the firewall denies the caller's own address.
 func (c *Client) AttachAppFirewall(ctx context.Context, appID string, req AttachFirewallRequest) (*FirewallRef, error) {
 	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/apps/"+appID+"/firewall", req)
 	if err != nil {

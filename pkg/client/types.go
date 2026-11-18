@@ -3227,7 +3227,9 @@ type Firewall struct {
 	Targets []FirewallTarget `json:"targets"`
 	// Findings are warnings about a firewall that is valid and enforced as
 	// written: a rule no request can reach, a default of deny with no IPv6
-	// source. On a create, an update and a single read.
+	// source. On a create, an update and a single read. The answer to an
+	// update or a rollback also carries one with code "denies_caller" when the
+	// firewall as it is now stored denies the address the request came from.
 	Findings  []FirewallFinding `json:"findings,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`
@@ -3260,7 +3262,8 @@ type FirewallRuleRequest struct {
 }
 
 // FirewallFinding is one warning about a firewall. Field is the path it is
-// about, as "rules[2]" or "default_action".
+// about, as "rules[2]" or "default_action", and empty when the finding is
+// about the firewall as a whole.
 type FirewallFinding struct {
 	Code    string `json:"code"`
 	Field   string `json:"field"`
@@ -3285,6 +3288,10 @@ type FirewallTarget struct {
 // force once AppliedRevision equals Revision and Status is "applied". While a
 // detached firewall is still being taken off the edge, ID is empty and Status
 // is "pending".
+//
+// Findings is set on the answer to an attach alone: a warning with code
+// "denies_caller" when the firewall just attached denies the address the
+// request came from.
 type FirewallRef struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -3292,6 +3299,8 @@ type FirewallRef struct {
 	AppliedRevision int    `json:"applied_revision"`
 	Status          string `json:"status"` // "pending", "applied" or "failed"
 	Message         string `json:"message,omitempty"`
+
+	Findings []FirewallFinding `json:"findings,omitempty"`
 }
 
 // FirewallRevision is one stored revision of a firewall's content.
@@ -3322,21 +3331,26 @@ type CreateFirewallRequest struct {
 }
 
 // UpdateFirewallRequest replaces a firewall's description, default action and
-// rules in full. A change that would deny the address the request arrives
-// from is refused with a 409 (code FIREWALL_DENIES_CALLER) while the firewall
-// is attached, unless AllowLockout is set.
+// rules in full.
+//
+// IfRevision makes the write conditional: it is refused with a 409 (code
+// FIREWALL_REVISION_CONFLICT) unless the firewall is still at that revision.
+// A caller that reads a firewall, changes part of it and writes it all back
+// sets it to the revision it read, so an edit made in between is not
+// overwritten. Zero writes unconditionally, which is right for a caller whose
+// own copy is the whole intended state.
 type UpdateFirewallRequest struct {
 	Description   string                `json:"description,omitempty"`
 	DefaultAction string                `json:"default_action,omitempty"`
 	Rules         []FirewallRuleRequest `json:"rules"`
-	AllowLockout  bool                  `json:"allow_lockout,omitempty"`
+	IfRevision    int                   `json:"if_revision,omitempty"`
 }
 
 // RollbackFirewallRequest re-applies an earlier revision's content as a new
-// revision.
+// revision. IfRevision is the condition UpdateFirewallRequest describes.
 type RollbackFirewallRequest struct {
-	Revision     int  `json:"revision"`
-	AllowLockout bool `json:"allow_lockout,omitempty"`
+	Revision   int `json:"revision"`
+	IfRevision int `json:"if_revision,omitempty"`
 }
 
 // TestFirewallRequest asks what a firewall does with one client address.
@@ -3345,9 +3359,7 @@ type TestFirewallRequest struct {
 }
 
 // AttachFirewallRequest attaches a firewall, named by id or by its name in
-// the target's project, to an app or a website. AllowLockout admits an attach
-// that would deny the address the request arrives from.
+// the target's project, to an app or a website.
 type AttachFirewallRequest struct {
-	Firewall     string `json:"firewall"`
-	AllowLockout bool   `json:"allow_lockout,omitempty"`
+	Firewall string `json:"firewall"`
 }

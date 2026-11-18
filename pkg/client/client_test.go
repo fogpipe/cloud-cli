@@ -664,7 +664,7 @@ func TestFirewallRoutes(t *testing.T) {
 		},
 		func() error { _, err := c.ListFirewallRevisions(ctx, "f1"); return err },
 		func() error {
-			_, err := c.RollbackFirewall(ctx, "f1", RollbackFirewallRequest{Revision: 2})
+			_, err := c.RollbackFirewall(ctx, "f1", RollbackFirewallRequest{Revision: 2, IfRevision: 4})
 			return err
 		},
 		func() error {
@@ -678,7 +678,7 @@ func TestFirewallRoutes(t *testing.T) {
 		},
 		func() error { return c.DetachAppFirewall(ctx, "a1") },
 		func() error {
-			_, err := c.AttachWebsiteFirewall(ctx, "b1", AttachFirewallRequest{Firewall: "office", AllowLockout: true})
+			_, err := c.AttachWebsiteFirewall(ctx, "b1", AttachFirewallRequest{Firewall: "office"})
 			return err
 		},
 		func() error { return c.DetachWebsiteFirewall(ctx, "b1") },
@@ -711,7 +711,10 @@ func TestFirewallRoutes(t *testing.T) {
 	if strings.TrimSpace(bodies[3]) != `{"default_action":"deny","rules":[]}` {
 		t.Errorf("update body = %s", bodies[3])
 	}
-	if strings.TrimSpace(bodies[10]) != `{"firewall":"office","allow_lockout":true}` {
+	if strings.TrimSpace(bodies[5]) != `{"revision":2,"if_revision":4}` {
+		t.Errorf("rollback body = %s", bodies[5])
+	}
+	if strings.TrimSpace(bodies[10]) != `{"firewall":"office"}` {
 		t.Errorf("attach body = %s", bodies[10])
 	}
 }
