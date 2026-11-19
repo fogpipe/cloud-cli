@@ -683,7 +683,12 @@ func TestFirewallRoutes(t *testing.T) {
 		},
 		func() error { return c.DetachWebsiteFirewall(ctx, "b1") },
 		func() error {
-			_, err := c.PutFirewallRule(ctx, "f1", 150, PutFirewallRuleRequest{Action: "allow", IfAbsent: true, Match: FirewallMatch{Sources: []string{"192.0.2.0/24"}}})
+			_, err := c.CreateFirewallRule(ctx, "f1", CreateFirewallRuleRequest{Priority: 150, Action: "allow", Match: FirewallMatch{Sources: []string{"192.0.2.0/24"}}})
+			return err
+		},
+		func() error {
+			off, to := false, 160
+			_, err := c.UpdateFirewallRule(ctx, "f1", 150, UpdateFirewallRuleRequest{Priority: &to, Enabled: &off})
 			return err
 		},
 		func() error {
@@ -713,7 +718,8 @@ func TestFirewallRoutes(t *testing.T) {
 		"DELETE /api/v1/apps/a1/firewall",
 		"PUT /api/v1/buckets/b1/website/firewall",
 		"DELETE /api/v1/buckets/b1/website/firewall",
-		"PUT /api/v1/firewalls/f1/rules/150",
+		"POST /api/v1/firewalls/f1/rules",
+		"PATCH /api/v1/firewalls/f1/rules/150",
 		"DELETE /api/v1/firewalls/f1/rules/150",
 		"GET /api/v1/firewalls/f1/revisions/2",
 	}
@@ -732,8 +738,35 @@ func TestFirewallRoutes(t *testing.T) {
 	if strings.TrimSpace(bodies[10]) != `{"firewall":"office"}` {
 		t.Errorf("attach body = %s", bodies[10])
 	}
-	// The priority is the route's, and the body is the rule alone.
-	if strings.TrimSpace(bodies[12]) != `{"action":"allow","match":{"sources":["192.0.2.0/24"]},"if_absent":true}` {
-		t.Errorf("rule body = %s", bodies[12])
+	// A new rule carries its priority; an update names the rule in its route
+	// and sends the fields it changes and nothing else.
+	if strings.TrimSpace(bodies[12]) != `{"priority":150,"action":"allow","match":{"sources":["192.0.2.0/24"]}}` {
+		t.Errorf("rule create body = %s", bodies[12])
+	}
+	if strings.TrimSpace(bodies[13]) != `{"priority":160,"enabled":false}` {
+		t.Errorf("rule update body = %s", bodies[13])
+	}
+}
+
+// A rule update sends what it changes and leaves the rest out, so a field the
+// caller did not name is never written back as the caller last saw it. An
+// empty description is a change, the description cleared, and is sent.
+func TestFirewallRuleUpdateSendsOnlyWhatItChanges(t *testing.T) {
+	for _, tc := range []struct {
+		req  UpdateFirewallRuleRequest
+		want string
+	}{
+		{UpdateFirewallRuleRequest{}, `{}`},
+		{UpdateFirewallRuleRequest{Enabled: new(bool)}, `{"enabled":false}`},
+		{UpdateFirewallRuleRequest{Description: new(string)}, `{"description":""}`},
+		{UpdateFirewallRuleRequest{Match: &FirewallMatch{Sources: []string{"192.0.2.0/24"}}, IfRevision: 7}, `{"match":{"sources":["192.0.2.0/24"]},"if_revision":7}`},
+	} {
+		raw, err := json.Marshal(tc.req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != tc.want {
+			t.Errorf("got  %s\nwant %s", raw, tc.want)
+		}
 	}
 }

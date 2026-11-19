@@ -3349,17 +3349,31 @@ type FirewallDecision struct {
 	Operator bool          `json:"operator,omitempty"`
 }
 
-// PutFirewallRuleRequest is one rule, written to the priority PutFirewallRule
-// names: it creates the rule there or replaces the one holding it, and
-// touches no other rule. Enabled left out is true. IfAbsent makes it a create
-// alone, refused with a 409 (code FIREWALL_RULE_EXISTS) when a rule already
-// holds the priority.
-type PutFirewallRuleRequest struct {
+// CreateFirewallRuleRequest is one new rule, at Priority. Enabled left out
+// is true. IfRevision is the condition UpdateFirewallRequest describes; zero
+// writes on no condition, which is right for a rule, since the write touches
+// no other.
+type CreateFirewallRuleRequest struct {
+	Priority    int           `json:"priority"`
 	Action      string        `json:"action"`
 	Description string        `json:"description,omitempty"`
 	Enabled     *bool         `json:"enabled,omitempty"`
 	Match       FirewallMatch `json:"match"`
-	IfAbsent    bool          `json:"if_absent,omitempty"`
+	IfRevision  int           `json:"if_revision,omitempty"`
+}
+
+// UpdateFirewallRuleRequest changes one rule, the one at the priority
+// UpdateFirewallRule names. Each field left nil keeps the rule's own, so a
+// caller sends only what it changes; an empty Description clears it. Priority
+// moves the rule there. Match replaces the rule's sources in full. IfRevision
+// is the condition UpdateFirewallRequest describes.
+type UpdateFirewallRuleRequest struct {
+	Priority    *int           `json:"priority,omitempty"`
+	Action      *string        `json:"action,omitempty"`
+	Description *string        `json:"description,omitempty"`
+	Enabled     *bool          `json:"enabled,omitempty"`
+	Match       *FirewallMatch `json:"match,omitempty"`
+	IfRevision  int            `json:"if_revision,omitempty"`
 }
 
 // CreateFirewallRequest creates a firewall in a project. DefaultAction left
@@ -3380,7 +3394,8 @@ type CreateFirewallRequest struct {
 // sets it to the revision it read, so an edit made in between is not
 // overwritten. Zero writes unconditionally, which is right for a caller whose
 // own copy is the whole intended state. A caller changing one rule uses
-// PutFirewallRule or DeleteFirewallRule, which read nothing first.
+// CreateFirewallRule, UpdateFirewallRule or DeleteFirewallRule, which read
+// nothing first.
 type UpdateFirewallRequest struct {
 	Description   string                `json:"description,omitempty"`
 	DefaultAction string                `json:"default_action,omitempty"`

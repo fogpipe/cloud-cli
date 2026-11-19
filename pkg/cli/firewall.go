@@ -41,9 +41,9 @@ calls between apps, and not outbound traffic.
 Rules are changed one at a time, each by its priority and touching no other
 rule, or replaced in full from a file:
 
-  fpcloud firewall rule add office --priority 200 --action allow --source 203.0.113.7
-  fpcloud firewall rule disable office 200
-  fpcloud firewall rule remove office 200
+  fpcloud firewall rule create office 200 --action allow --source 203.0.113.7
+  fpcloud firewall rule update office 200 --disable
+  fpcloud firewall rule delete office 200
   fpcloud firewall update office -f office.yaml
 
 Every change to the rules or the default action stores a new revision, and the
@@ -95,7 +95,7 @@ comma-separated list of address ranges with no spaces in it:
   --rule "100 allow 198.51.100.0/24,2001:db8::/32"
 
 A bare address is the range holding only it. A rule written this way is
-enabled and has no description; use a file or firewall rule add for those.`
+enabled and has no description; use a file or firewall rule create for those.`
 
 var firewallCreateCmd = &cobra.Command{
 	Use:   "create <name>",
@@ -241,7 +241,7 @@ flags win over the file.
 
 ` + firewallFileHelp + `
 
-To change one rule, use firewall rule add, remove, enable or disable.
+To change one rule, use firewall rule create, update or delete.
 
 The command waits until every app and website the firewall is attached to
 enforces the change; --no-wait returns once it is stored. A change that denies
@@ -466,40 +466,49 @@ default action decides for it; write the address as IPv4.`,
 var firewallRuleCmd = &cobra.Command{
 	Use:     "rule",
 	Aliases: []string{"rules"},
-	Short:   "Add, remove, enable or disable one rule of a firewall",
+	Short:   "Create, update or delete one rule of a firewall",
 	Long: `Change one rule of a firewall. A rule is named by its priority, which is
 unique within the firewall and is also its place in the order: lower is
 evaluated first.
 
-  fpcloud firewall rule add office --priority 100 --action allow --source 198.51.100.0/24
-  fpcloud firewall rule disable office 100
-  fpcloud firewall rule enable office 100
-  fpcloud firewall rule remove office 100
+  fpcloud firewall rule create office 100 --action allow --source 198.51.100.0/24
+  fpcloud firewall rule update office 100 --source 198.51.100.0/24 --source 2001:db8::/32
+  fpcloud firewall rule update office 100 --disable
+  fpcloud firewall rule update office 100 --new-priority 150
+  fpcloud firewall rule delete office 150
 
-Each of these stores a new revision and waits until every app and website the
-firewall is attached to enforces it; --no-wait returns once it is stored.
+Each of these stores one new revision and waits until every app and website
+the firewall is attached to enforces it; --no-wait returns once it is stored.
 
 Each writes the one rule it names and leaves every other rule as it is, so two
-people changing different rules at the same moment both keep their change.`,
+people changing different rules at the same moment both keep their change.
+An update changes only the fields it is given, on the rule as the firewall
+holds it when the change is made, so it never writes back a field somebody
+else changed in the meantime. Replacing a rule, switching it off and moving it
+are each one update: the rule is never absent in between.`,
 }
 
-var firewallRuleAddCmd = &cobra.Command{
-	Use:   "add <name>",
-	Short: "Add a rule to a firewall",
-	Long: `Add a rule. --source takes an address range as a CIDR, IPv4 or IPv6, and a
-bare address for the range holding only it; repeat it or separate ranges with
-commas. The priority must not be in use: remove the rule holding it first, or
-pick another.
+var firewallRuleCreateCmd = &cobra.Command{
+	Use:   "create <name> <priority>",
+	Short: "Create a rule at a priority no rule holds",
+	Long: `Create a rule. --source takes an address range as a CIDR, IPv4 or IPv6, and
+a bare address for the range holding only it; repeat it or separate ranges
+with commas. The priority must be free: a rule already there is changed with
+firewall rule update, never replaced by a create.
 
-  fpcloud firewall rule add office --priority 100 --action allow \
+  fpcloud firewall rule create office 100 --action allow \
       --source 198.51.100.0/24 --source 2001:db8::/32 --description office
-  fpcloud firewall rule add office --priority 900 --action deny \
+  fpcloud firewall rule create office 900 --action deny \
       --source 203.0.113.0/24 --disabled
 
---disabled stores the rule without evaluating it, until firewall rule enable.`,
-	Args: cobra.ExactArgs(1),
+--disabled stores the rule without evaluating it, until firewall rule update
+--enable.`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		priority, _ := cmd.Flags().GetInt("priority")
+		priority, err := firewallPriorityArg(args[1])
+		if err != nil {
+			return err
+		}
 		action, _ := cmd.Flags().GetString("action")
 		sources, _ := cmd.Flags().GetStringSlice("source")
 		description, _ := cmd.Flags().GetString("description")
@@ -516,29 +525,122 @@ pick another.
 		if err != nil {
 			return err
 		}
-		// Written on condition that the priority is free, so adding a rule
-		// never replaces one somebody else put there.
-		updated, err := c.PutFirewallRule(cmd.Context(), fw.ID, priority, client.PutFirewallRuleRequest{
+		updated, err := c.CreateFirewallRule(cmd.Context(), fw.ID, client.CreateFirewallRuleRequest{
+			Priority:    priority,
 			Action:      action,
 			Description: description,
 			Enabled:     &enabled,
 			Match:       client.FirewallMatch{Sources: sources},
-			IfAbsent:    true,
 		})
 		if err != nil {
 			var apiErr *client.APIError
 			if errors.As(err, &apiErr) && apiErr.Code == "FIREWALL_RULE_EXISTS" {
-				return fmt.Errorf("%w\nTo replace it, remove it first: fpcloud firewall rule remove %s %d", err, fw.Name, priority)
+				return fmt.Errorf("%w\nTo change that rule, update it in place: fpcloud firewall rule update %s %d --action %s --source %s",
+					err, fw.Name, priority, action, strings.Join(sources, ","))
 			}
 			return explainFirewallError(err)
 		}
-		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d added", priority))
+		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d created", priority))
 	},
 }
 
-var firewallRuleRemoveCmd = &cobra.Command{
-	Use:     "remove <name> <priority>",
-	Short:   "Remove the rule at a priority",
+var firewallRuleUpdateCmd = &cobra.Command{
+	Use:   "update <name> <priority>",
+	Short: "Change, switch off or move the rule at a priority",
+	Long: `Change the rule at a priority. Only the flags given are changed; every other
+field keeps what the firewall holds for it when the change is made. --source
+replaces the rule's address ranges in full; repeat it or separate ranges with
+commas. --new-priority moves the rule, in the same revision as any other
+change, onto a priority no other rule holds.
+
+  fpcloud firewall rule update office 100 --source 198.51.100.0/24,2001:db8::/32
+  fpcloud firewall rule update office 100 --action deny --description "former office"
+  fpcloud firewall rule update office 100 --disable
+  fpcloud firewall rule update office 100 --enable
+  fpcloud firewall rule update office 100 --new-priority 150
+
+--disable keeps the rule and stops evaluating it; --enable evaluates it again.
+--description "" clears the description.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		priority, err := firewallPriorityArg(args[1])
+		if err != nil {
+			return err
+		}
+		req, err := firewallRuleUpdateFrom(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		fw, err := resolveFirewall(cmd.Context(), c, args[0])
+		if err != nil {
+			return err
+		}
+		updated, err := c.UpdateFirewallRule(cmd.Context(), fw.ID, priority, req)
+		if err != nil {
+			var apiErr *client.APIError
+			switch {
+			case errors.As(err, &apiErr) && apiErr.StatusCode == 404:
+				return notFoundf("firewall %q has no rule at priority %d; create one with fpcloud firewall rule create %s %d --action <allow|deny> --source <cidr>",
+					fw.Name, priority, fw.Name, priority)
+			case errors.As(err, &apiErr) && apiErr.Code == "FIREWALL_RULE_EXISTS" && req.Priority != nil:
+				return fmt.Errorf("%w\nPick a --new-priority no rule holds; fpcloud firewall get %s lists the ones in use", err, fw.Name)
+			}
+			return explainFirewallError(err)
+		}
+		done := fmt.Sprintf("rule %d updated", priority)
+		if req.Priority != nil && *req.Priority != priority {
+			done = fmt.Sprintf("rule %d moved to %d", priority, *req.Priority)
+		}
+		return finishFirewallChange(cmd, c, updated, done)
+	},
+}
+
+// firewallRuleUpdateFrom reads rule update's flags into the patch it sends:
+// a field is set only when its flag was given, so the request carries what
+// the caller changes and nothing it merely read.
+func firewallRuleUpdateFrom(cmd *cobra.Command) (client.UpdateFirewallRuleRequest, error) {
+	var req client.UpdateFirewallRuleRequest
+	flags := cmd.Flags()
+	if flags.Changed("action") {
+		action, _ := flags.GetString("action")
+		if err := checkFirewallAction("--action", action); err != nil {
+			return req, err
+		}
+		req.Action = &action
+	}
+	if flags.Changed("source") {
+		sources, _ := flags.GetStringSlice("source")
+		if err := checkFirewallSources(sources); err != nil {
+			return req, usageError{fmt.Errorf("--source: %w", err)}
+		}
+		req.Match = &client.FirewallMatch{Sources: sources}
+	}
+	if flags.Changed("description") {
+		description, _ := flags.GetString("description")
+		req.Description = &description
+	}
+	if flags.Changed("enable") {
+		enabled := true
+		req.Enabled = &enabled
+	}
+	if flags.Changed("disable") {
+		enabled := false
+		req.Enabled = &enabled
+	}
+	if flags.Changed("new-priority") {
+		to, _ := flags.GetInt("new-priority")
+		req.Priority = &to
+	}
+	if req == (client.UpdateFirewallRuleRequest{}) {
+		return req, usageError{errors.New("nothing to update: pass --action, --source, --description, --enable, --disable and/or --new-priority")}
+	}
+	return req, nil
+}
+
+var firewallRuleDeleteCmd = &cobra.Command{
+	Use:     "delete <name> <priority>",
+	Short:   "Delete the rule at a priority",
 	Aliases: []string{"rm"},
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -559,72 +661,8 @@ var firewallRuleRemoveCmd = &cobra.Command{
 			}
 			return explainFirewallError(err)
 		}
-		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d removed", priority))
+		return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d deleted", priority))
 	},
-}
-
-var firewallRuleEnableCmd = &cobra.Command{
-	Use:   "enable <name> <priority>",
-	Short: "Evaluate a disabled rule again",
-	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return setFirewallRuleEnabled(cmd, args, true)
-	},
-}
-
-var firewallRuleDisableCmd = &cobra.Command{
-	Use:   "disable <name> <priority>",
-	Short: "Keep a rule and stop evaluating it",
-	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return setFirewallRuleEnabled(cmd, args, false)
-	},
-}
-
-// setFirewallRuleEnabled is rule enable and rule disable: the rule as the
-// firewall holds it, written back to its own priority with enabled changed,
-// which touches no other rule. A rule already in the state asked for is left
-// alone, so no request is made for a change that changes nothing.
-func setFirewallRuleEnabled(cmd *cobra.Command, args []string, enabled bool) error {
-	priority, err := firewallPriorityArg(args[1])
-	if err != nil {
-		return err
-	}
-	verb := "disabled"
-	if enabled {
-		verb = "enabled"
-	}
-	c := getClient()
-	fw, err := resolveFirewall(cmd.Context(), c, args[0])
-	if err != nil {
-		return err
-	}
-	var rule *client.FirewallRule
-	for i := range fw.Rules {
-		if fw.Rules[i].Priority == priority {
-			rule = &fw.Rules[i]
-		}
-	}
-	if rule == nil {
-		return notFoundf("firewall %q has no rule at priority %d", fw.Name, priority)
-	}
-	if rule.Enabled == enabled {
-		if isStructured(rootCmd.Flag("output").Value.String()) {
-			return renderData(fw)
-		}
-		fmt.Println(mutedStyle.Render(fmt.Sprintf("Firewall %q: already so, nothing changed.", fw.Name)))
-		return nil
-	}
-	updated, err := c.PutFirewallRule(cmd.Context(), fw.ID, priority, client.PutFirewallRuleRequest{
-		Action:      rule.Action,
-		Description: rule.Description,
-		Enabled:     &enabled,
-		Match:       client.FirewallMatch{Sources: rule.Match.Sources},
-	})
-	if err != nil {
-		return explainFirewallError(err)
-	}
-	return finishFirewallChange(cmd, c, updated, fmt.Sprintf("rule %d %s", priority, verb))
 }
 
 // changeFirewall reads a firewall, lets change edit the update that would
@@ -1296,21 +1334,28 @@ func init() {
 	firewallUpdateCmd.Flags().String("default-action", "", "What happens to a request no rule matches: allow or deny")
 	firewallUpdateCmd.Flags().StringP("file", "f", "", "Replace the rules in full from a YAML or JSON file (- for stdin)")
 
-	firewallRuleAddCmd.Flags().Int("priority", 0, "The rule's place in the order, lower first; unique within the firewall")
-	firewallRuleAddCmd.Flags().String("action", "", "allow or deny")
-	firewallRuleAddCmd.Flags().StringSlice("source", nil, "Client address range as a CIDR, or a bare address (repeatable, or comma-separated)")
-	firewallRuleAddCmd.Flags().String("description", "", "What the rule is for")
-	firewallRuleAddCmd.Flags().Bool("disabled", false, "Store the rule without evaluating it")
-	for _, name := range []string{"priority", "action", "source"} {
-		_ = firewallRuleAddCmd.MarkFlagRequired(name)
+	firewallRuleCreateCmd.Flags().String("action", "", "allow or deny")
+	firewallRuleCreateCmd.Flags().StringSlice("source", nil, "Client address range as a CIDR, or a bare address (repeatable, or comma-separated)")
+	firewallRuleCreateCmd.Flags().String("description", "", "What the rule is for")
+	firewallRuleCreateCmd.Flags().Bool("disabled", false, "Store the rule without evaluating it")
+	for _, name := range []string{"action", "source"} {
+		_ = firewallRuleCreateCmd.MarkFlagRequired(name)
 	}
 
+	firewallRuleUpdateCmd.Flags().String("action", "", "allow or deny")
+	firewallRuleUpdateCmd.Flags().StringSlice("source", nil, "Replace the rule's address ranges: a CIDR, or a bare address (repeatable, or comma-separated)")
+	firewallRuleUpdateCmd.Flags().String("description", "", "What the rule is for; empty clears it")
+	firewallRuleUpdateCmd.Flags().Bool("enable", false, "Evaluate the rule")
+	firewallRuleUpdateCmd.Flags().Bool("disable", false, "Keep the rule and stop evaluating it")
+	firewallRuleUpdateCmd.Flags().Int("new-priority", 0, "Move the rule to this priority, which no other rule may hold")
+	firewallRuleUpdateCmd.MarkFlagsMutuallyExclusive("enable", "disable")
+
 	// Every command that changes what the edge enforces waits for it.
-	for _, cmd := range []*cobra.Command{firewallUpdateCmd, firewallRollbackCmd, firewallRuleAddCmd, firewallRuleRemoveCmd, firewallRuleEnableCmd, firewallRuleDisableCmd} {
+	for _, cmd := range []*cobra.Command{firewallUpdateCmd, firewallRollbackCmd, firewallRuleCreateCmd, firewallRuleUpdateCmd, firewallRuleDeleteCmd} {
 		cmd.Flags().Bool("no-wait", false, "Return once the change is stored, without waiting for the edge to enforce it")
 	}
 
-	firewallRuleCmd.AddCommand(firewallRuleAddCmd, firewallRuleRemoveCmd, firewallRuleEnableCmd, firewallRuleDisableCmd)
+	firewallRuleCmd.AddCommand(firewallRuleCreateCmd, firewallRuleUpdateCmd, firewallRuleDeleteCmd)
 	firewallCmd.AddCommand(firewallCreateCmd, firewallListCmd, firewallGetCmd, firewallUpdateCmd, firewallDeleteCmd, firewallRevisionsCmd, firewallRollbackCmd, firewallTestCmd, firewallRuleCmd)
 	rootCmd.AddCommand(firewallCmd)
 }

@@ -403,7 +403,7 @@ func TestFirewallRefDisplay(t *testing.T) {
 func TestEveryEdgeChangingFirewallCommandWaits(t *testing.T) {
 	for _, c := range []*cobra.Command{
 		firewallUpdateCmd, firewallRollbackCmd,
-		firewallRuleAddCmd, firewallRuleRemoveCmd, firewallRuleEnableCmd, firewallRuleDisableCmd,
+		firewallRuleCreateCmd, firewallRuleUpdateCmd, firewallRuleDeleteCmd,
 	} {
 		noWait := c.Flags().Lookup("no-wait")
 		require.NotNil(t, noWait, c.CommandPath())
@@ -439,10 +439,9 @@ func TestFirewallCommandTree(t *testing.T) {
 		"fpcloud firewall revisions",
 		"fpcloud firewall rollback",
 		"fpcloud firewall test",
-		"fpcloud firewall rule add",
-		"fpcloud firewall rule remove",
-		"fpcloud firewall rule enable",
-		"fpcloud firewall rule disable",
+		"fpcloud firewall rule create",
+		"fpcloud firewall rule update",
+		"fpcloud firewall rule delete",
 	}, paths)
 
 	for alias, want := range map[string]*cobra.Command{"ls": firewallListCmd, "rm": firewallDeleteCmd} {
@@ -450,11 +449,14 @@ func TestFirewallCommandTree(t *testing.T) {
 		require.NoError(t, err)
 		assert.Same(t, want, got, alias)
 	}
+	got, _, err := rootCmd.Find([]string{"firewall", "rule", "rm"})
+	require.NoError(t, err)
+	assert.Same(t, firewallRuleDeleteCmd, got)
 
 	help := renderLLMHelp(rootCmd)
 	for _, want := range []string{
-		"fpcloud firewall create", "fpcloud firewall rule add", "fpcloud firewall rollback", "fpcloud firewall test",
-		"--default-action", "--rule", "--no-wait",
+		"fpcloud firewall create", "fpcloud firewall rule create", "fpcloud firewall rule update", "fpcloud firewall rollback", "fpcloud firewall test",
+		"--default-action", "--rule", "--no-wait", "--new-priority",
 	} {
 		assert.Contains(t, help, want)
 	}
@@ -505,8 +507,11 @@ type fakeFirewallAPI struct {
 	// racing is how many of the next conditional updates find that somebody
 	// else's change, a rule at a priority from 900 up, was stored first.
 	racing int
-	// rulePuts and ruleDeletes are the writes made to one rule, by priority.
-	rulePuts    map[int][]client.PutFirewallRuleRequest
+	// ruleCreates, rulePatches and ruleDeletes are the writes made to one
+	// rule. A patch is kept as the body was sent, so a test can read which
+	// fields it named.
+	ruleCreates []client.CreateFirewallRuleRequest
+	rulePatches map[int][]string
 	ruleDeletes []int
 	// created is what the bucket and app creates were sent.
 	createdApps    []client.CreateAppRequest
@@ -556,42 +561,8 @@ func (f *fakeFirewallAPI) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": f.refuse.Code, "message": f.refuse.Message}})
 		return
 	}
-	if rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/firewalls/fw-1/rules/"); ok {
-		priority, _ := strconv.Atoi(rest)
-		at := slices.IndexFunc(f.fw.Rules, func(rule client.FirewallRule) bool { return rule.Priority == priority })
-		rules := make([]client.FirewallRuleRequest, 0, len(f.fw.Rules)+1)
-		for i, rule := range f.fw.Rules {
-			if i != at {
-				enabled := rule.Enabled
-				rules = append(rules, client.FirewallRuleRequest{Priority: rule.Priority, Action: rule.Action, Description: rule.Description, Enabled: &enabled, Match: rule.Match})
-			}
-		}
-		switch r.Method {
-		case http.MethodPut:
-			var req client.PutFirewallRuleRequest
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			if f.rulePuts == nil {
-				f.rulePuts = map[int][]client.PutFirewallRuleRequest{}
-			}
-			f.rulePuts[priority] = append(f.rulePuts[priority], req)
-			if req.IfAbsent && at >= 0 {
-				w.WriteHeader(http.StatusConflict)
-				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "FIREWALL_RULE_EXISTS",
-					"message": fmt.Sprintf("firewall \"office\" already has a rule at priority %d. Nothing was stored.", priority)}})
-				return
-			}
-			rules = append(rules, client.FirewallRuleRequest{Priority: priority, Action: req.Action, Description: req.Description, Enabled: req.Enabled, Match: req.Match})
-		case http.MethodDelete:
-			f.ruleDeletes = append(f.ruleDeletes, priority)
-			if at < 0 {
-				http.Error(w, `{"error":{"code":"NOT_FOUND","message":"not found"}}`, http.StatusNotFound)
-				return
-			}
-		}
-		f.store(f.fw.Description, f.fw.DefaultAction, rules)
-		answer := f.fw
-		answer.Findings, f.findings = f.findings, nil
-		_ = json.NewEncoder(w).Encode(answer)
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/firewalls/fw-1/rules"); ok {
+		f.serveRule(w, r, strings.TrimPrefix(rest, "/"))
 		return
 	}
 	switch r.Method + " " + r.URL.Path {
@@ -687,6 +658,101 @@ func (f *fakeFirewallAPI) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// serveRule is the three rule routes: a create refused on a taken priority,
+// a patch applying the fields it names to the rule as held, moving it when it
+// names a priority, and a delete. Each stores one revision.
+func (f *fakeFirewallAPI) serveRule(w http.ResponseWriter, r *http.Request, rest string) {
+	conflict := func(priority int) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "FIREWALL_RULE_EXISTS",
+			"message": fmt.Sprintf("firewall \"office\" already has a rule at priority %d. Nothing was stored.", priority)}})
+	}
+	notFound := func() {
+		http.Error(w, `{"error":{"code":"NOT_FOUND","message":"not found"}}`, http.StatusNotFound)
+	}
+	index := func(priority int) int {
+		return slices.IndexFunc(f.fw.Rules, func(rule client.FirewallRule) bool { return rule.Priority == priority })
+	}
+	// without is the rules as requests, less the one at skip.
+	without := func(skip int) []client.FirewallRuleRequest {
+		out := make([]client.FirewallRuleRequest, 0, len(f.fw.Rules)+1)
+		for i, rule := range f.fw.Rules {
+			if i != skip {
+				enabled := rule.Enabled
+				out = append(out, client.FirewallRuleRequest{Priority: rule.Priority, Action: rule.Action, Description: rule.Description, Enabled: &enabled, Match: rule.Match})
+			}
+		}
+		return out
+	}
+	var rules []client.FirewallRuleRequest
+	switch {
+	case r.Method == http.MethodPost && rest == "":
+		var req client.CreateFirewallRuleRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		f.ruleCreates = append(f.ruleCreates, req)
+		if index(req.Priority) >= 0 {
+			conflict(req.Priority)
+			return
+		}
+		rules = append(without(-1), client.FirewallRuleRequest{Priority: req.Priority, Action: req.Action, Description: req.Description, Enabled: req.Enabled, Match: req.Match})
+	case r.Method == http.MethodPatch:
+		priority, _ := strconv.Atoi(rest)
+		body, _ := io.ReadAll(r.Body)
+		if f.rulePatches == nil {
+			f.rulePatches = map[int][]string{}
+		}
+		f.rulePatches[priority] = append(f.rulePatches[priority], string(body))
+		var req client.UpdateFirewallRuleRequest
+		_ = json.Unmarshal(body, &req)
+		at := index(priority)
+		if at < 0 {
+			notFound()
+			return
+		}
+		held := f.fw.Rules[at]
+		rule := client.FirewallRuleRequest{Priority: held.Priority, Action: held.Action, Description: held.Description, Enabled: &held.Enabled, Match: held.Match}
+		if req.Priority != nil {
+			if to := index(*req.Priority); to >= 0 && to != at {
+				conflict(*req.Priority)
+				return
+			}
+			rule.Priority = *req.Priority
+		}
+		if req.Action != nil {
+			rule.Action = *req.Action
+		}
+		if req.Description != nil {
+			rule.Description = *req.Description
+		}
+		if req.Enabled != nil {
+			rule.Enabled = req.Enabled
+		}
+		if req.Match != nil {
+			rule.Match = *req.Match
+		}
+		rules = append(without(at), rule)
+	case r.Method == http.MethodDelete:
+		priority, _ := strconv.Atoi(rest)
+		f.ruleDeletes = append(f.ruleDeletes, priority)
+		at := index(priority)
+		if at < 0 {
+			notFound()
+			return
+		}
+		rules = without(at)
+	default:
+		http.Error(w, `{"error":{"code":"NOT_FOUND","message":"no route"}}`, http.StatusNotFound)
+		return
+	}
+	f.store(f.fw.Description, f.fw.DefaultAction, rules)
+	answer := f.fw
+	answer.Findings, f.findings = f.findings, nil
+	if r.Method == http.MethodPost {
+		w.WriteHeader(http.StatusCreated)
+	}
+	_ = json.NewEncoder(w).Encode(answer)
+}
+
 // runFpcloud runs the real command tree in project p1 with JSON output, then
 // returns every flag the run set to its default so the next run starts clean.
 func runFpcloud(t *testing.T, args ...string) error {
@@ -724,53 +790,105 @@ func runFpcloud(t *testing.T, args ...string) error {
 func TestFirewallRuleCommandsWriteOneRuleAndWait(t *testing.T) {
 	fastFirewallWait(t, time.Minute)
 	f := newFakeFirewallAPI(t)
-	yes, no := true, false
+	yes := true
+	rule := func(priority int) client.FirewallRule {
+		t.Helper()
+		at := slices.IndexFunc(f.fw.Rules, func(r client.FirewallRule) bool { return r.Priority == priority })
+		require.GreaterOrEqual(t, at, 0, "no rule at %d", priority)
+		return f.fw.Rules[at]
+	}
 
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "add", "office",
-		"--priority", "150", "--action", "allow", "--source", "2001:db8::/32,203.0.113.9", "--source", "192.0.2.0/24", "--description", "vpn"))
-	assert.Equal(t, []client.PutFirewallRuleRequest{{
-		Action: "allow", Description: "vpn", Enabled: &yes, IfAbsent: true,
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "create", "office", "150",
+		"--action", "allow", "--source", "2001:db8::/32,203.0.113.9", "--source", "192.0.2.0/24", "--description", "vpn"))
+	assert.Equal(t, []client.CreateFirewallRuleRequest{{
+		Priority: 150, Action: "allow", Description: "vpn", Enabled: &yes,
 		Match: client.FirewallMatch{Sources: []string{"2001:db8::/32", "203.0.113.9", "192.0.2.0/24"}},
-	}}, f.rulePuts[150], "the rule alone, on condition that its priority is free")
+	}}, f.ruleCreates, "the rule alone, at its priority")
 	assert.Empty(t, f.updates, "the whole firewall is never written back")
 	require.Len(t, f.fw.Rules, 3)
 	assert.Equal(t, 4, f.fw.Targets[0].AppliedRevision, "the command returned only once the target enforced the new revision")
 
-	err := runFpcloud(t, "firewall", "rule", "add", "office", "--priority", "150", "--action", "deny", "--source", "10.0.0.0/8")
+	err := runFpcloud(t, "firewall", "rule", "create", "office", "150", "--action", "deny", "--source", "10.0.0.0/8")
 	require.Error(t, err, "a priority in use is refused, since writing it would replace that rule")
 	assert.Contains(t, err.Error(), "already has a rule at priority 150")
-	assert.Contains(t, err.Error(), "fpcloud firewall rule remove office 150")
+	assert.Contains(t, err.Error(), "fpcloud firewall rule update office 150 --action deny --source 10.0.0.0/8",
+		"the refusal names the verb that changes the rule in place")
+	assert.NotContains(t, err.Error(), "delete", "and never advises taking the rule away first")
+	assert.Len(t, f.fw.Rules, 3)
+	assert.Equal(t, 4, f.fw.Revision, "a refused create stores nothing")
+
+	// An update sends the fields it was given and nothing it read.
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "update", "office", "200", "--enable"))
+	assert.Equal(t, []string{`{"enabled":true}`}, trimmed(f.rulePatches[200]))
+	assert.True(t, rule(200).Enabled)
+	assert.Equal(t, []string{"203.0.113.7"}, rule(200).Match.Sources, "what the update did not name is the rule's own")
+
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "update", "office", "100", "--disable"))
+	assert.Equal(t, []string{`{"enabled":false}`}, trimmed(f.rulePatches[100]))
+	assert.Equal(t, "office", rule(100).Description)
+
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "update", "office", "100",
+		"--action", "deny", "--source", "198.51.100.0/25,2001:db8:1::/48", "--description", ""))
+	assert.Equal(t, `{"action":"deny","description":"","match":{"sources":["198.51.100.0/25","2001:db8:1::/48"]}}`, trimmed(f.rulePatches[100])[1],
+		"a description given empty is sent, to clear it")
+	assert.Equal(t, client.FirewallRule{Priority: 100, Action: "deny", Enabled: false, Match: client.FirewallMatch{Sources: []string{"198.51.100.0/25", "2001:db8:1::/48"}}}, rule(100),
+		"replaced in place, still switched off")
+
+	// A move is one update, and so one revision: the rule is never absent.
+	before := f.fw.Revision
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "update", "office", "100", "--new-priority", "120", "--enable"))
+	assert.Equal(t, `{"priority":120,"enabled":true}`, trimmed(f.rulePatches[100])[2])
+	assert.Equal(t, before+1, f.fw.Revision)
+	assert.Equal(t, "deny", rule(120).Action)
 	assert.Len(t, f.fw.Rules, 3)
 
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "enable", "office", "200"))
-	assert.Equal(t, []client.PutFirewallRuleRequest{{
-		Action: "deny", Enabled: &yes, Match: client.FirewallMatch{Sources: []string{"203.0.113.7"}},
-	}}, f.rulePuts[200], "the rule as it was, enabled, with no condition")
+	err = runFpcloud(t, "firewall", "rule", "update", "office", "120", "--new-priority", "150")
+	require.Error(t, err, "a move onto a priority another rule holds is refused")
+	assert.Contains(t, err.Error(), "Pick a --new-priority no rule holds")
+	assert.Equal(t, before+1, f.fw.Revision)
 
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "enable", "office", "200"))
-	assert.Len(t, f.rulePuts[200], 1, "a rule already enabled is not written")
+	err = runFpcloud(t, "firewall", "rule", "update", "office", "999", "--disable")
+	require.Error(t, err)
+	assert.Equal(t, exitNotFound, exitCode(err))
+	assert.Contains(t, err.Error(), "fpcloud firewall rule create office 999", "a rule that is not there is created, not updated")
 
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "disable", "office", "100"))
-	require.Len(t, f.rulePuts[100], 1)
-	assert.Equal(t, &no, f.rulePuts[100][0].Enabled)
-	assert.Equal(t, "office", f.rulePuts[100][0].Description, "what the command does not change is sent as the rule held it")
+	sent := len(f.rulePatches[120])
+	err = runFpcloud(t, "firewall", "rule", "update", "office", "120")
+	require.Error(t, err)
+	assert.True(t, isUsageErrorValue(err))
+	assert.Contains(t, err.Error(), "nothing to update")
+	err = runFpcloud(t, "firewall", "rule", "update", "office", "120", "--enable", "--disable")
+	require.Error(t, err)
+	err = runFpcloud(t, "firewall", "rule", "update", "office", "120", "--action", "drop")
+	require.Error(t, err)
+	assert.True(t, isUsageErrorValue(err))
+	assert.Len(t, f.rulePatches[120], sent, "a refused flag sends nothing")
 
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "remove", "office", "150"))
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "delete", "office", "150"))
 	assert.Equal(t, []int{150}, f.ruleDeletes)
 	require.Len(t, f.fw.Rules, 2)
 
-	err = runFpcloud(t, "firewall", "rule", "remove", "office", "999")
-	require.Error(t, err)
-	assert.Equal(t, exitNotFound, exitCode(err))
-	err = runFpcloud(t, "firewall", "rule", "enable", "office", "999")
+	err = runFpcloud(t, "firewall", "rule", "delete", "office", "999")
 	require.Error(t, err)
 	assert.Equal(t, exitNotFound, exitCode(err))
 
-	err = runFpcloud(t, "firewall", "rule", "add", "office", "--priority", "5", "--action", "drop", "--source", "10.0.0.0/8")
+	err = runFpcloud(t, "firewall", "rule", "create", "office", "5", "--action", "drop", "--source", "10.0.0.0/8")
 	require.Error(t, err)
 	assert.True(t, isUsageErrorValue(err))
-	assert.Empty(t, f.rulePuts[5])
+	err = runFpcloud(t, "firewall", "rule", "create", "office", "first", "--action", "allow", "--source", "10.0.0.0/8")
+	require.Error(t, err)
+	assert.True(t, isUsageErrorValue(err))
+	assert.Len(t, f.ruleCreates, 2, "neither refused create was sent")
 	assert.Empty(t, f.updates)
+}
+
+// trimmed is each body without the encoder's trailing newline.
+func trimmed(bodies []string) []string {
+	out := make([]string, len(bodies))
+	for i, b := range bodies {
+		out[i] = strings.TrimSpace(b)
+	}
+	return out
 }
 
 // The revisions list is summaries, and one revision is read by its number.
@@ -859,7 +977,7 @@ func TestAWholeReplaceThatLostIsRefusedOnce(t *testing.T) {
 
 	// A rule command names no revision, so the same race costs it nothing.
 	f.racing = 1
-	require.NoError(t, runFpcloud(t, "firewall", "rule", "add", "office", "--priority", "150", "--action", "allow", "--source", "192.0.2.0/24"))
+	require.NoError(t, runFpcloud(t, "firewall", "rule", "create", "office", "150", "--action", "allow", "--source", "192.0.2.0/24"))
 	var stored []int
 	for _, r := range f.fw.Rules {
 		stored = append(stored, r.Priority)
@@ -883,6 +1001,8 @@ func TestAChangeThatDeniesTheCallerIsMadeAndWarned(t *testing.T) {
 	f.findings = []client.FirewallFinding{warning}
 	errUpdate := runFpcloud(t, "firewall", "update", "office", "--default-action", "allow")
 	f.findings = []client.FirewallFinding{warning}
+	errRule := runFpcloud(t, "firewall", "rule", "update", "office", "100", "--action", "deny")
+	f.findings = []client.FirewallFinding{warning}
 	errAttach := runFpcloud(t, "app", "update", "web", "--firewall", "office")
 	_ = wOut.Close()
 	_ = wErr.Close()
@@ -891,9 +1011,11 @@ func TestAChangeThatDeniesTheCallerIsMadeAndWarned(t *testing.T) {
 	errOut, _ := io.ReadAll(rErr)
 
 	require.NoError(t, errUpdate)
+	require.NoError(t, errRule)
 	require.NoError(t, errAttach)
 	assert.Equal(t, "allow", f.fw.DefaultAction, "the change was stored")
-	assert.Contains(t, string(out), `"code": "denies_caller"`, "structured output carries the update's finding")
+	assert.Equal(t, "deny", f.fw.Rules[slices.IndexFunc(f.fw.Rules, func(r client.FirewallRule) bool { return r.Priority == 100 })].Action, "the rule update too")
+	assert.Equal(t, 2, strings.Count(string(out), `"code": "denies_caller"`), "structured output carries the update's and the rule update's finding: %s", out)
 	assert.Equal(t, 1, strings.Count(string(errOut), "the address this request came from"),
 		"the attach's warning is printed, since the app read that follows does not carry it: %s", errOut)
 }

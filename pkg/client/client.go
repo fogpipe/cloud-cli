@@ -1626,14 +1626,32 @@ func (c *Client) DeleteFirewall(ctx context.Context, id string) error {
 	return c.do(httpReq, nil)
 }
 
-// PutFirewallRule writes one rule at priority: it creates the rule or
-// replaces the one holding that priority, and leaves every other rule as it
-// is, so nothing is read first and two rules written at once both land. With
-// req.IfAbsent it only creates, and a taken priority fails with an *APIError
-// whose Code is "FIREWALL_RULE_EXISTS". It answers the firewall as the write
-// left it, with its findings.
-func (c *Client) PutFirewallRule(ctx context.Context, id string, priority int, req PutFirewallRuleRequest) (*Firewall, error) {
-	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/firewalls/"+id+"/rules/"+strconv.Itoa(priority), req)
+// CreateFirewallRule adds one rule at req.Priority and leaves every other
+// rule as it is, so nothing is read first and two rules created at once both
+// land. A priority a rule already holds fails with an *APIError whose Code is
+// "FIREWALL_RULE_EXISTS": that rule is changed with UpdateFirewallRule. It
+// answers the firewall as the write left it, with its findings.
+func (c *Client) CreateFirewallRule(ctx context.Context, id string, req CreateFirewallRuleRequest) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/firewalls/"+id+"/rules", req)
+	if err != nil {
+		return nil, err
+	}
+	var fw Firewall
+	if err := c.do(httpReq, &fw); err != nil {
+		return nil, err
+	}
+	return &fw, nil
+}
+
+// UpdateFirewallRule changes the fields req sets on the rule at priority, as
+// the firewall holds that rule when the write is made, and leaves every other
+// field and every other rule as it is. req.Priority moves the rule, in the
+// same revision. A firewall with no rule at priority answers 404, and a move
+// onto a priority another rule holds fails with an *APIError whose Code is
+// "FIREWALL_RULE_EXISTS". It answers the firewall as the write left it, with
+// its findings.
+func (c *Client) UpdateFirewallRule(ctx context.Context, id string, priority int, req UpdateFirewallRuleRequest) (*Firewall, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPatch, "/api/v1/firewalls/"+id+"/rules/"+strconv.Itoa(priority), req)
 	if err != nil {
 		return nil, err
 	}
