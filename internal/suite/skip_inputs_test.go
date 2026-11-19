@@ -286,7 +286,7 @@ func providedNames(t *testing.T, root string) map[string]bool {
 		}
 		body, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return nil
+			return readErr
 		}
 		if strings.HasSuffix(d.Name(), ".go") {
 			for _, m := range setenvCall.FindAllStringSubmatch(string(body), -1) {

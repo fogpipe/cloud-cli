@@ -18,6 +18,11 @@ jobs:
           go-version-file: go.mod
       - run: go build ./...
       - run: go vet ./...
+      # .golangci.yml names the linters and why each was chosen. The version
+      # is pinned, so a finding is a fact about the commit, not about the day.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
       - run: go test ./...
       # Symbol-level: red for a vulnerability on a path this code calls, quiet
       # for one in a module it merely carries. A fresh advisory turns main red

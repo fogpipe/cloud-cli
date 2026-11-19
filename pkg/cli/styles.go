@@ -151,13 +151,6 @@ var errorBox = messageBox{lipgloss.NewStyle().
 	Padding(0, 2)}
 
 // Key-value pair rendering for detail views
-// renderKeyValue draws one label and its value as one row. A value holding
-// several lines keeps the label on its first line, with the rest indented
-// under the value: a box row is then as many terminal lines as the value has,
-// each one bordered by renderInfoBox.
-func renderKeyValue(key, value string) string {
-	return renderKeyValueWidth(key, value, labelWidth(key))
-}
 
 // labelWidth is the column a label takes: the label itself and one space,
 // never narrower than the sixteen columns the boxes have always used, so a

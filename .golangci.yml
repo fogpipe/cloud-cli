@@ -1,0 +1,20 @@
+# The linters CI holds the Go code to, and only these. Each was chosen by
+# running it over the code and reading every finding:
+#
+# - nilerr: an error answered as success. Where a nil return on an error is
+#   deliberate, the line says why in a `//nolint:nilerr // <reason>` comment.
+# - unused: dead code.
+#
+# errorlint, bodyclose, ineffassign and durationcheck were read and found no
+# bug; a class that recurs is a reason to read them again.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - nilerr
+    - unused
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
