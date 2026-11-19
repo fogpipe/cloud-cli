@@ -832,8 +832,9 @@ type LogsQuery struct {
 	// Status to the request lines carrying a code ("500") or a class ("5xx"),
 	// which is refused with Source "app". Source "release" reads what the
 	// app's release command printed instead, which neither default kind
-	// includes. A website has request lines only, so GetWebsiteLogs takes no
-	// Source.
+	// includes. Source "denied" reads the requests a firewall refused, the
+	// only lines that carry the client's address, kept 14 days; it is the one
+	// Source a website takes, since a website's other lines are its requests.
 	Source string `query:"source"`
 	Status string `query:"status"`
 	// Deployment narrows the read to the pods one deploy started: its serving
@@ -844,6 +845,10 @@ type LogsQuery struct {
 	// line its fields; and the last record, source "summary", how many
 	// requests the edge served against how many lines the store holds.
 	Format string `query:"format"`
+	// Group "address" folds Source "denied" into one row per client address:
+	// how many requests it made, the first and last of them, and the paths it
+	// asked for most. Not with Follow.
+	Group string `query:"group"`
 }
 
 // ScaleRequest is the request body for scaling an app. A nil bound keeps the
@@ -3294,6 +3299,12 @@ type FirewallTarget struct {
 	AppliedRevision int    `json:"applied_revision"`
 	Status          string `json:"status"` // "pending", "applied" or "failed"
 	Message         string `json:"message,omitempty"`
+	// RefusedLastDay is how many requests to the target its firewall, or the
+	// platform's own block list, refused over the last day. On a single read
+	// only; absent when it could not be counted, and RefusedUnchecked then
+	// says why.
+	RefusedLastDay   *int64 `json:"refused_last_day,omitempty"`
+	RefusedUnchecked string `json:"refused_unchecked,omitempty"`
 }
 
 // FirewallRef is a target's own view of its firewall: which one, its current

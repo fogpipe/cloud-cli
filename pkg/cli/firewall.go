@@ -1199,9 +1199,19 @@ func printFirewall(fw *client.Firewall) {
 			if t.Message != "" {
 				status += " " + t.Message
 			}
-			rows[i] = []string{firewallTargetKind(t.Type), t.Name, strconv.Itoa(t.AppliedRevision), status}
+			refused := "-"
+			if t.RefusedLastDay != nil {
+				refused = strconv.FormatInt(*t.RefusedLastDay, 10)
+			}
+			rows[i] = []string{firewallTargetKind(t.Type), t.Name, strconv.Itoa(t.AppliedRevision), status, refused}
 		}
-		renderTable([]string{"ATTACHED TO", "NAME", "APPLIED REVISION", "STATUS"}, rows)
+		renderTable([]string{"ATTACHED TO", "NAME", "APPLIED REVISION", "STATUS", "REFUSED (24H)"}, rows)
+		for _, t := range fw.Targets {
+			if t.RefusedUnchecked != "" {
+				fmt.Println(mutedStyle.Render(fmt.Sprintf("  %s: refusals not counted: %s", t.Name, t.RefusedUnchecked)))
+			}
+		}
+		fmt.Println(mutedStyle.Render("  Who was refused: `fpcloud app logs <app> --denied`, `fpcloud website logs <site> --denied`."))
 	}
 	printFirewallFindings(fw.Findings)
 }

@@ -1780,7 +1780,13 @@ is prefixed [request].
 
 A site logging fewer lines than it serves is said in a last line, "N of M
 requests over the range were logged". With -o json every line is one JSON
-record, and the last one, source "summary", carries those two counts.`,
+record, and the last one, source "summary", carries those two counts.
+
+--denied reads the requests the app's firewall refused instead: one row per
+client address, with how many requests it made, the first and last of them,
+and the paths it asked for most. --lines prints every refusal as a line, and
+--follow follows them. They are kept 14 days. A refusal on the platform's own
+block list is marked "platform", judged against that list as it is now.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
@@ -1793,6 +1799,10 @@ record, and the last one, source "summary", carries those two counts.`,
 		source, _ := cmd.Flags().GetString("source")
 		status, _ := cmd.Flags().GetString("status")
 		deployment, _ := cmd.Flags().GetString("deployment")
+		source, group, err := deniedRead(cmd, source, follow)
+		if err != nil {
+			return err
+		}
 
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
@@ -1809,7 +1819,7 @@ record, and the last one, source "summary", carries those two counts.`,
 		}
 		body, err := c.GetAppLogs(context.Background(), appID, client.LogsQuery{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Prefix: prefix, Pod: pod, Source: source, Status: status, Deployment: deployment, Format: format,
+			Prefix: prefix, Pod: pod, Source: source, Status: status, Deployment: deployment, Format: format, Group: group,
 		})
 		if err != nil {
 			return err
@@ -2063,6 +2073,8 @@ func init() {
 	appLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when it was printed")
 	appLogsCmd.Flags().Bool("prefix", false, "Prefix each line with the replica that printed it")
 	appLogsCmd.Flags().String("pod", "", "Read one replica's lines only, by the name --prefix prints")
+	appLogsCmd.Flags().Bool("denied", false, "Read the requests the app's firewall refused, one row per client address")
+	appLogsCmd.Flags().Bool("lines", false, "With --denied, print every refused request as a line instead of one row per address")
 	appLogsCmd.Flags().String("source", "", "Read one kind of line alone: app (what it printed), requests (what it was served) or release (what its release command printed)")
 	appLogsCmd.Flags().String("deployment", "", "Read the lines of one deploy only, by the id app deployments lists")
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
@@ -2134,4 +2146,25 @@ func scaleDisplay(minScale, maxScale int32) string {
 		return fmt.Sprintf("%d", minScale)
 	}
 	return fmt.Sprintf("%d to %d (CPU)", minScale, maxScale)
+}
+
+// deniedRead turns --denied and --lines into the read they ask for: the
+// requests a firewall refused, one row per address unless --lines or
+// --follow asks for the lines themselves.
+func deniedRead(cmd *cobra.Command, source string, follow bool) (string, string, error) {
+	denied, _ := cmd.Flags().GetBool("denied")
+	lines, _ := cmd.Flags().GetBool("lines")
+	if !denied {
+		if lines {
+			return "", "", fmt.Errorf("--lines prints refused requests one per line, and only --denied reads them")
+		}
+		return source, "", nil
+	}
+	if source != "" && source != "denied" {
+		return "", "", fmt.Errorf("--denied reads refused requests, and --source %s reads other lines; drop one", source)
+	}
+	if lines || follow {
+		return "denied", "", nil
+	}
+	return "denied", "address", nil
 }

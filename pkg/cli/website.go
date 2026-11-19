@@ -669,7 +669,12 @@ never holds either.
 following and is refused. A site logging fewer lines than it serves is said
 in a last line, "N of M requests over the range were logged". With -o json
 every line is one JSON record, and the last one, source "summary", carries
-those two counts.`,
+those two counts.
+
+--denied reads the requests the website's firewall refused instead: one row
+per client address, with how many requests it made, the first and last of
+them, and the paths it asked for most. --lines prints every refusal as a line,
+and --follow follows them. They are kept 14 days.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		follow, _ := cmd.Flags().GetBool("follow")
@@ -678,6 +683,10 @@ those two counts.`,
 		until, _ := cmd.Flags().GetString("until")
 		timestamps, _ := cmd.Flags().GetBool("timestamps")
 		status, _ := cmd.Flags().GetString("status")
+		source, group, err := deniedRead(cmd, "", follow)
+		if err != nil {
+			return err
+		}
 
 		if follow && until != "" {
 			return fmt.Errorf("--until names where a read stops and --follow never does; drop one")
@@ -694,7 +703,7 @@ those two counts.`,
 		}
 		body, err := c.GetWebsiteLogs(context.Background(), b.ID, client.LogsQuery{
 			Follow: follow, Tail: tail, Since: since, Until: until, Timestamps: timestamps,
-			Status: status, Format: format,
+			Status: status, Format: format, Source: source, Group: group,
 		})
 		if err != nil {
 			return err
@@ -869,6 +878,8 @@ func init() {
 	websiteLogsCmd.Flags().String("since", "", "Read from this far back: a duration ago (e.g. 24h, 7d) or an RFC3339 timestamp (default: as far as the store retains). Composes with --follow")
 	websiteLogsCmd.Flags().String("until", "", "Read up to this point: a duration ago (e.g. 1h, 2d) or an RFC3339 timestamp (default: now). Not valid with --follow")
 	websiteLogsCmd.Flags().Bool("timestamps", false, "Prefix each line with when the request arrived, and end it with the request id")
+	websiteLogsCmd.Flags().Bool("denied", false, "Read the requests the website's firewall refused, one row per client address")
+	websiteLogsCmd.Flags().Bool("lines", false, "With --denied, print every refused request as a line instead of one row per address")
 	websiteLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (404) or a class (4xx)")
 
 	websiteDeleteCmd.Flags().Bool("force", false, "Delete all site content first")
