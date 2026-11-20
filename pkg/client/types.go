@@ -950,7 +950,8 @@ type Database struct {
 	// Status is `provisioning` until the database is ready for the first time,
 	// then `running`; `degraded` once the platform has not been managing it for
 	// longer than a switchover or a restart takes (it may still be serving, and
-	// Problems says why); `failed`; `deleting`.
+	// Problems says why); `deleting` once a delete was accepted. A create that
+	// cannot stand the database up answers with an error and leaves none.
 	Status string `json:"status"`
 	// Problems says why a database is not as it should be. Always present, and
 	// empty when nothing is wrong.
