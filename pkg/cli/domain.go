@@ -294,6 +294,16 @@ func renderDomainVerification(vr *client.DomainVerification) {
 	}
 	fmt.Println(mutedStyle.Render("  A TLS certificate is issued only after all records above verify."))
 	fmt.Println()
+	if viaDNS {
+		fmt.Println(lipgloss.NewStyle().Bold(true).Render("  Switch DNS:"))
+		if vr.CertReady {
+			fmt.Println(mutedStyle.Render("  Certificate ready, safe to switch:"))
+			fmt.Printf("    %s  %s  → %s\n", vr.PointingName, vr.PointingType, vr.PointingValue)
+		} else {
+			fmt.Println(mutedStyle.Render("  Not yet. Keep serving from where you are until the certificate is ready."))
+		}
+		fmt.Println()
+	}
 }
 
 var domainSetRoutesCmd = &cobra.Command{
@@ -392,7 +402,7 @@ func renderDomainRoutes(d *client.Domain) {
 
 func init() {
 	domainAddCmd.Flags().String("app", "", "App name or ID (required)")
-	domainAddCmd.Flags().String("mode", "", "Attachment mode: verified (default), on_demand (no TXT ownership proof, HTTP-01 cert on pointing), or dns (TXT ownership and a DNS-01 cert, no pointing: a host behind a TLS-terminating proxy, or *.zone)")
+	domainAddCmd.Flags().String("mode", "", "Attachment mode: verified (default), on_demand (no TXT ownership proof, HTTP-01 cert on pointing), or dns (TXT ownership and a DNS-01 cert, no pointing: a site moving here from another host, a host behind a TLS-terminating proxy, or *.zone)")
 	domainRemoveCmd.Flags().String("app", "", "App name or ID (required)")
 	domainListCmd.Flags().String("app", "", "List one app's domains instead of the whole project's")
 	domainStatusCmd.Flags().String("app", "", "App name or ID (required)")
