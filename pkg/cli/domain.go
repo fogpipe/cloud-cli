@@ -65,7 +65,9 @@ var domainAddCmd = &cobra.Command{
 		if verr == nil {
 			renderDomainVerification(vr)
 		} else {
-			printDNSInstructions(d.Domain)
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("  The DNS records to add could not be read: %v", verr)))
+			fmt.Println(mutedStyle.Render(fmt.Sprintf("  fpcloud domain status %s --app %s prints them.", d.Domain, appRef)))
+			fmt.Println()
 		}
 		fmt.Println(mutedStyle.Render("  Once active, this domain is the app's address: its fogpipe.cloud host"))
 		fmt.Println(mutedStyle.Render("  is withdrawn, and comes back only when the last domain is removed."))
@@ -386,30 +388,6 @@ func renderDomainRoutes(d *client.Domain) {
 	}
 	fmt.Println(mutedStyle.Render("    /  →  this app (catch-all)"))
 	fmt.Println()
-}
-
-// printDNSInstructions prints DNS setup guidance for a domain.
-func printDNSInstructions(domain string) {
-	fmt.Println(lipgloss.NewStyle().Bold(true).Render("  DNS Setup:"))
-	fmt.Println()
-	if strings.Contains(domain, ".") && !strings.HasPrefix(domain, "*.") {
-		// Check if apex domain (no subdomain)
-		parts := strings.Split(domain, ".")
-		if len(parts) == 2 {
-			// Apex domain (myapp.com)
-			fmt.Println(mutedStyle.Render("  This is an apex domain. Add an A record:"))
-			fmt.Println(fmt.Sprintf("    %s  A  → (your platform IP)", domain))
-			fmt.Println(mutedStyle.Render("  Or use a CNAME-flattening provider (Cloudflare, etc.):"))
-			fmt.Println(fmt.Sprintf("    %s  CNAME  → apps.cloud.fogpipe.com", domain))
-		} else {
-			// Subdomain (www.myapp.com, api.myapp.com)
-			fmt.Println(mutedStyle.Render("  Add this CNAME record at your DNS provider:"))
-			fmt.Println()
-			fmt.Println(fmt.Sprintf("    %s  CNAME  → apps.cloud.fogpipe.com", domain))
-		}
-	}
-	fmt.Println()
-	fmt.Println(mutedStyle.Render("  TLS certificate will be issued automatically once DNS is configured."))
 }
 
 func init() {
