@@ -1428,6 +1428,15 @@ const (
 // generated types spell the field as a union instead of a bare string.
 var CheckStates = []CheckState{CheckVerified, CheckNotRequired, CheckPending}
 
+type DNSReason string
+
+const (
+	DNSNoRecord        DNSReason = "no_record"
+	DNSWrongValue      DNSReason = "wrong_value"
+	DNSPointsElsewhere DNSReason = "points_elsewhere"
+	DNSLookupFailed    DNSReason = "lookup_failed"
+)
+
 // DomainVerification is the ownership/pointing/cert breakdown for a custom
 // domain plus the exact DNS records the tenant still needs to configure.
 type DomainVerification struct {
@@ -1445,6 +1454,10 @@ type DomainVerification struct {
 	PointingType   string     `json:"pointing_type"`
 	PointingName   string     `json:"pointing_name"`
 	PointingValue  string     `json:"pointing_value"`
+	TXTFound       []string  `json:"txt_found,omitempty"`
+	TXTReason      DNSReason `json:"txt_reason,omitempty"`
+	PointingFound  []string  `json:"pointing_found,omitempty"`
+	PointingReason DNSReason `json:"pointing_reason,omitempty"`
 	// AcmeCNAMEName/AcmeCNAMEValue are the one-time ACME DNS-01 delegation CNAME
 	// a dns-mode domain must add; empty for every other mode.
 	AcmeCNAMEName  string `json:"acme_cname_name,omitempty"`

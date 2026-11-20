@@ -248,7 +248,9 @@ func renderDomainVerification(vr *client.DomainVerification) {
 
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("  Verification:"))
 	fmt.Printf("    %s\n", state(vr.TXTOwnership, "Domain ownership (TXT)"))
+	printDNSFinding(vr.TXTOwnership, vr.TXTReason, vr.TXTFound)
 	fmt.Printf("    %s\n", state(vr.DNSPointing, fmt.Sprintf("DNS pointing (%s)", vr.PointingType)))
+	printDNSFinding(vr.DNSPointing, vr.PointingReason, vr.PointingFound)
 	certLine := "TLS certificate"
 	if !vr.CertReady && vr.CertReason != "" {
 		certLine += " (" + vr.CertReason + ")"
@@ -398,6 +400,25 @@ func renderDomainRoutes(d *client.Domain) {
 	}
 	fmt.Println(mutedStyle.Render("    /  →  this app (catch-all)"))
 	fmt.Println()
+}
+
+func printDNSFinding(s client.CheckState, reason client.DNSReason, found []string) {
+	if s != client.CheckPending || reason == "" {
+		return
+	}
+	why := map[client.DNSReason]string{
+		client.DNSNoRecord:        "no record found",
+		client.DNSWrongValue:      "a record is there, with another value",
+		client.DNSPointsElsewhere: "the domain points somewhere else",
+		client.DNSLookupFailed:    "the domain's nameservers did not answer; checked again on its own",
+	}[reason]
+	if why == "" {
+		why = string(reason)
+	}
+	fmt.Println(mutedStyle.Render("        " + why))
+	if len(found) > 0 {
+		fmt.Println(mutedStyle.Render("        found: " + strings.Join(found, ", ")))
+	}
 }
 
 func init() {
