@@ -178,26 +178,9 @@ var dbGetCmd = &cobra.Command{
 			addr = mutedStyle.Render("not yet available")
 		}
 
-		fmt.Println(renderInfoBox("Database Details", [][]string{
-			{"ID", mutedStyle.Render(db.ID)},
-			{"Name", db.Name},
-			{"Display Name", db.DisplayName},
-			{"Engine", db.Engine},
-			{"Version", db.Version},
-			{"Extensions", orDash(strings.Join(db.Extensions, ", "))},
-			{"Status", renderStatus(db.Status)},
-			{"CPU", orDash(db.CPU)},
-			{"Memory", orDash(db.Memory)},
-			{"Storage", orDash(db.Storage)},
-			{"Instances", orDash(instanceCount(db.Instances))},
-			{"Address", addr},
-			{"Read address", orDash(dbReadAddress(db))},
-			{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
-			{"Secrets", orDash(ownedSecretsRow(db.Secrets))},
-			{"Used by", orDash(strings.Join(db.UsedBy, ", "))},
-			{"Access", accessRows(db.Access)},
-		}))
+		fmt.Println(renderInfoBox("Database Details", dbDetailRows(db, addr)))
 		fmt.Println()
+
 		fmt.Println(mutedStyle.Render("  The password is not stored; get a live connection with: fpcloud db connect " + db.Name))
 		fmt.Println(mutedStyle.Render("  Reads can go to the replica at the read address; they may be stale, so never read your own write there."))
 		return nil
@@ -1097,4 +1080,34 @@ func removedExtensions(installed []string, req client.UpdateDatabaseRequest) []s
 		}
 	}
 	return dropped
+}
+
+// dbDetailRows is what `db get` prints about a database. A problem is listed
+// straight under the status it explains: `degraded` alone says something is
+// wrong and not what, and the reason is on the same read.
+func dbDetailRows(db *client.Database, addr string) [][]string {
+	rows := [][]string{
+		{"ID", mutedStyle.Render(db.ID)},
+		{"Name", db.Name},
+		{"Display Name", db.DisplayName},
+		{"Engine", db.Engine},
+		{"Version", db.Version},
+		{"Extensions", orDash(strings.Join(db.Extensions, ", "))},
+		{"Status", renderStatus(db.Status)},
+	}
+	for _, note := range problemNotes(db.Problems) {
+		rows = append(rows, []string{"Problem", note})
+	}
+	return append(rows, [][]string{
+		{"CPU", orDash(db.CPU)},
+		{"Memory", orDash(db.Memory)},
+		{"Storage", orDash(db.Storage)},
+		{"Instances", orDash(instanceCount(db.Instances))},
+		{"Address", addr},
+		{"Read address", orDash(dbReadAddress(db))},
+		{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
+		{"Secrets", orDash(ownedSecretsRow(db.Secrets))},
+		{"Used by", orDash(strings.Join(db.UsedBy, ", "))},
+		{"Access", accessRows(db.Access)},
+	}...)
 }

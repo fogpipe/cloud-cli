@@ -88,7 +88,10 @@ func renderStatus(status string) string {
 		return lipgloss.NewStyle().Bold(true).Foreground(colorSuccess).Render("● " + status)
 	case "deploying", "issuing":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorWarning).Render("● " + status)
-	case "failed":
+	// Degraded is a database the platform has stopped managing: it may be
+	// serving, and it is not being looked after, which is a fault and not a
+	// step on the way to anything.
+	case "failed", "degraded":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
 	// A scheduled run that never happened, reconstructed from the reaper's audit
 	// record (#896). Marked distinctly from `failed` on purpose: nothing failed,

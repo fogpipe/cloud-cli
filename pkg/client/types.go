@@ -955,7 +955,14 @@ type Database struct {
 	Engine      string `json:"engine"`
 	Version     string `json:"version"`
 	Plan        string `json:"plan"`
-	Status      string `json:"status"`
+	// Status is `provisioning` until the database is ready for the first time,
+	// then `running`; `degraded` once the platform has not been managing it for
+	// longer than a switchover or a restart takes (it may still be serving, and
+	// Problems says why); `failed`; `deleting`.
+	Status string `json:"status"`
+	// Problems says why a database is not as it should be. Always present, and
+	// empty when nothing is wrong.
+	Problems []StatusProblem `json:"problems"`
 	// Host/Port are the database's address on the cluster network, as recorded
 	// at provisioning. No credential rides on this type: the owner credential
 	// lives in the project secret named by Secret below, which an app mounts,
