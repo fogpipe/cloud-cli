@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"sort"
@@ -83,12 +84,8 @@ var templateGetCmd = &cobra.Command{
 		if t.RunAsUser != nil {
 			fmt.Printf("Runs as:   uid %d, never root\n", *t.RunAsUser)
 		}
-		if s := t.Startup; s != nil && s.FailureThreshold > 0 {
-			period := s.PeriodSeconds
-			if period == 0 {
-				period = 10
-			}
-			fmt.Printf("Startup:   up to %ds for the first boot before the health check counts\n", s.FailureThreshold*period)
+		if p := t.Probes; p != nil && p.Startup != nil && p.Startup.FailureThreshold > 0 {
+			fmt.Printf("Startup:   up to %ds for the first boot before the probes count\n", p.Startup.FailureThreshold*cmp.Or(p.Startup.PeriodSeconds, 10))
 		}
 		if db := t.Needs.Database; db != nil {
 			fmt.Printf("Database:  %s %s, %d instances of %s cpu, %s memory, %s storage\n", db.Engine, db.Version, db.Instances, db.CPU, db.Memory, db.Storage)

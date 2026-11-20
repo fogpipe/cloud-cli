@@ -172,10 +172,6 @@ var appCreateCmd = &cobra.Command{
 			}
 		}
 
-		healthCheckPath, _ := cmd.Flags().GetString("health-check-path")
-		healthCheckTimeout, _ := cmd.Flags().GetInt("health-check-timeout")
-		healthCheckInterval, _ := cmd.Flags().GetInt("health-check-interval")
-		healthCheckRetries, _ := cmd.Flags().GetInt("health-check-retries")
 		command, _ := cmd.Flags().GetStringArray("command")
 		cmdArgs, _ := cmd.Flags().GetStringArray("arg")
 		releaseCommand, _ := cmd.Flags().GetStringArray("release-command")
@@ -207,17 +203,12 @@ var appCreateCmd = &cobra.Command{
 		displayName, _ := cmd.Flags().GetString("display-name")
 		slug, _ := cmd.Flags().GetString("slug")
 
-		// --port and --health-check-path carry defaults, so their value alone
-		// cannot say whether the user asked for them. A worker has neither and
-		// the API refuses both, so drop the untyped defaults — that way the
-		// refusal answers something the user actually wrote.
-		if appType == "worker" {
-			if !cmd.Flags().Changed("port") {
-				port = 0
-			}
-			if !cmd.Flags().Changed("health-check-path") {
-				healthCheckPath = ""
-			}
+		// --port carries a default, so its value alone cannot say whether the
+		// user asked for it. A worker has none and the API refuses one, so drop
+		// the untyped default — that way the refusal answers something the user
+		// actually wrote.
+		if appType == "worker" && !cmd.Flags().Changed("port") {
+			port = 0
 		}
 
 		outputFormat := rootCmd.Flag("output").Value.String()
@@ -244,32 +235,28 @@ var appCreateCmd = &cobra.Command{
 		var createErr error
 		action := func() {
 			app, createErr = c.CreateApp(context.Background(), projectID, client.CreateAppRequest{
-				Name:                name,
-				DisplayName:         displayName,
-				URLSlug:             slug,
-				Image:               image,
-				Command:             command,
-				Args:                cmdArgs,
-				ReleaseCommand:      releaseCommand,
-				Release:             flagStr(cmd, "release"),
-				VolumeMounts:        mounts,
-				SecurityContext:     secCtx,
-				Port:                port,
-				MinScale:            changedInt32(cmd, "min-scale"),
-				MaxScale:            changedInt32(cmd, "max-scale"),
-				CPULimit:            cpuLimit,
-				MemoryLimit:         memoryLimit,
-				Ingress:             ingress,
-				Routes:              routes,
-				Type:                appType,
-				HealthCheckPath:     healthCheckPath,
-				HealthCheckTimeout:  healthCheckTimeout,
-				HealthCheckInterval: healthCheckInterval,
-				HealthCheckRetries:  healthCheckRetries,
-				Probes:              probes,
-				EnvVars:             envVars,
-				SecretEnv:           secretEnv,
-				Firewall:            firewall,
+				Name:            name,
+				DisplayName:     displayName,
+				URLSlug:         slug,
+				Image:           image,
+				Command:         command,
+				Args:            cmdArgs,
+				ReleaseCommand:  releaseCommand,
+				Release:         flagStr(cmd, "release"),
+				VolumeMounts:    mounts,
+				SecurityContext: secCtx,
+				Port:            port,
+				MinScale:        changedInt32(cmd, "min-scale"),
+				MaxScale:        changedInt32(cmd, "max-scale"),
+				CPULimit:        cpuLimit,
+				MemoryLimit:     memoryLimit,
+				Ingress:         ingress,
+				Routes:          routes,
+				Type:            appType,
+				Probes:          probes,
+				EnvVars:         envVars,
+				SecretEnv:       secretEnv,
+				Firewall:        firewall,
 			})
 		}
 
@@ -392,9 +379,8 @@ var probeFieldNames = []string{
 
 // parseProbeSpec parses one `key=value,key=value` probe override (#453), e.g.
 // "path=/healthz,period_seconds=5". Every field is independently optional: an
-// omitted one falls back to that probe's default (the health check path; the
-// --health-check-* timing for startup and readiness, liveness's own for
-// liveness), so overriding a path never silently restates the timing.
+// omitted timing field takes that probe's default, and an omitted path means
+// no HTTP request (readiness then connects to the port, the others are off).
 func parseProbeSpec(flag, value string) (*client.ProbeSpec, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
@@ -441,7 +427,7 @@ func parseProbeSpec(flag, value string) (*client.ProbeSpec, error) {
 
 // probeOverridesFromFlags assembles the per-probe overrides from --liveness,
 // --readiness and --startup, returning nil when none is set (every probe then
-// keeps its default: the health check path, and its timing).
+// keeps its default).
 func probeOverridesFromFlags(cmd *cobra.Command) (*client.ProbeOverrides, error) {
 	liveness, _ := cmd.Flags().GetString("liveness")
 	readiness, _ := cmd.Flags().GetString("readiness")
@@ -473,10 +459,10 @@ func probeOverridesFromFlags(cmd *cobra.Command) (*client.ProbeOverrides, error)
 // `app create` and `app set-probes` spell an override identically.
 func registerProbeFlags(cmd *cobra.Command) {
 	suffix := " probe override as key=value,... (fields: " + strings.Join(probeFieldNames, ", ") + ")"
-	shared := "; anything left out keeps the --health-check-* value"
-	cmd.Flags().String("liveness", "", "Liveness"+suffix+"; a left-out path keeps --health-check-path, left-out timing keeps liveness's own default (period 60s, timeout 5s, 5 failures), e.g. path=/healthz")
-	cmd.Flags().String("readiness", "", "Readiness"+suffix+shared+", e.g. path=/ready,failure_threshold=2")
-	cmd.Flags().String("startup", "", "Startup"+suffix+shared+", e.g. path=/healthz,failure_threshold=30")
+	routing := "; left-out timing keeps the default (period 10s, timeout 5s, 3 failures)"
+	cmd.Flags().String("liveness", "", "Liveness"+suffix+"; without a path there is none; left-out timing keeps liveness's own default (period 60s, timeout 5s, 5 failures), e.g. path=/healthz")
+	cmd.Flags().String("readiness", "", "Readiness"+suffix+"; without a path it connects to the port"+routing+", e.g. path=/ready,failure_threshold=2")
+	cmd.Flags().String("startup", "", "Startup"+suffix+"; without a path there is none"+routing+", e.g. path=/healthz,failure_threshold=30")
 }
 
 // securityContextFromFlags assembles a SecurityContext from the hardening flags,
@@ -565,16 +551,8 @@ var appGetCmd = &cobra.Command{
 		}
 		saDisplay := app.ServiceAccount
 
-		healthCheck := app.HealthCheckPath
-		if healthCheck == "" || healthCheck == "/" {
-			healthCheck = mutedStyle.Render("default (/)")
-		} else {
-			healthCheck = fmt.Sprintf("%s (timeout=%ds, interval=%ds, retries=%d)", app.HealthCheckPath, app.HealthCheckTimeout, app.HealthCheckInterval, app.HealthCheckRetries)
-		}
-
-		// Only the fields a probe actually overrides are listed; everything else
-		// it inherits is already on the Health Check row above.
-		probesDisplay := mutedStyle.Render("none · all three use the health check")
+		// Only the fields a probe declares are listed; the rest are defaults.
+		probesDisplay := mutedStyle.Render("none · readiness connects to the port")
 		if lines := probeSummaries(app); len(lines) > 0 {
 			probesDisplay = strings.Join(lines, "\n")
 		}
@@ -624,7 +602,6 @@ var appGetCmd = &cobra.Command{
 				[]string{"Routes", routesDisplay},
 				[]string{"Firewall", firewallRefDisplay(app.Firewall)},
 				[]string{"URL", lipgloss.NewStyle().Bold(true).Foreground(colorInfo).Render(app.URL)},
-				[]string{"Health Check", healthCheck},
 				[]string{"Probes", probesDisplay},
 				[]string{"Domains", domains},
 			)
@@ -852,18 +829,16 @@ var appSetMountsCmd = &cobra.Command{
 var appSetProbesCmd = &cobra.Command{
 	Use:   "set-probes [name]",
 	Short: "Give liveness, readiness and startup their own path and timing",
-	Long: "By default all three probes request the app's --health-check-path, so the same " +
-		"request decides both whether traffic reaches the app and whether the pod is killed. " +
-		"Startup and readiness run on the --health-check-* timing; liveness runs on its own, " +
+	Long: "By default an app has no HTTP probe: readiness connects to its port, and nothing " +
+		"restarts a pod that hangs. Each probe is declared on its own. Startup and readiness " +
+		"run on a check every 10s with a 5s timeout and 3 failures; liveness runs on its own, " +
 		"a check every 60s with a 5s timeout, restarting the pod after 5 failures in a row " +
-		"(about five minutes), so a stall shorter than that only takes the pod out of traffic. " +
-		"Sharing the path still couples them: a health path that checks a downstream means a " +
-		"long database outage restarts pods that were fine.\n\n" +
+		"(about five minutes), so a stall shorter than that only takes the pod out of traffic.\n\n" +
 		"Point liveness at a cheap, dependency-free path and readiness at the one that checks " +
 		"downstreams, and a blip only pulls the pod out of the load balancer until it clears.\n\n" +
-		"Each probe takes a comma-separated key=value list; any field left out keeps its " +
-		"default (the health check path, and the timing above), so setting a path never means " +
-		"restating timing. " +
+		"Each probe takes a comma-separated key=value list; any timing field left out keeps its " +
+		"default, so setting a path never means restating timing. A probe without a path " +
+		"requests nothing: readiness connects to the port, liveness and startup are off. " +
 		"Fields: " + strings.Join(probeFieldNames, ", ") + ". success_threshold applies to " +
 		"readiness only — Kubernetes requires 1 for the other two.\n\n" +
 		"Replace-in-full: the flags given are the complete set, and --clear puts all three " +
@@ -871,7 +846,7 @@ var appSetProbesCmd = &cobra.Command{
 	Example: "  fpcloud app set-probes api --liveness path=/healthz\n" +
 		"  fpcloud app set-probes api --liveness path=/healthz --readiness path=/ready,failure_threshold=2\n" +
 		"  fpcloud app set-probes api --startup path=/healthz,failure_threshold=30,period_seconds=10\n" +
-		"  fpcloud app set-probes api --liveness period_seconds=10,failure_threshold=3\n" +
+		"  fpcloud app set-probes api --liveness path=/healthz,period_seconds=10,failure_threshold=3\n" +
 		"  fpcloud app set-probes api --clear",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -908,7 +883,7 @@ var appSetProbesCmd = &cobra.Command{
 		if isStructured(outputFormat) {
 			return renderData(app)
 		}
-		msg := fmt.Sprintf(" Probes on %s back on the shared health check", app.Name)
+		msg := fmt.Sprintf(" Probes on %s back on their defaults", app.Name)
 		if lines := probeSummaries(app); len(lines) > 0 {
 			msg = fmt.Sprintf(" Probes on %s: %s", app.Name, strings.Join(lines, ", "))
 		}
@@ -920,9 +895,8 @@ var appSetProbesCmd = &cobra.Command{
 }
 
 // probeSummaries renders one "name: path (timing)" line per overridden probe,
-// shared by `app set-probes` and `app get`. Only fields the app actually
-// overrode are shown — the rest come from the health-check row above it, and
-// repeating them would misreport a shared value as a per-probe one.
+// shared by `app set-probes` and `app get`. Only fields the app declared are
+// shown; the rest are defaults.
 func probeSummaries(app *client.App) []string {
 	if app.Probes == nil {
 		return nil
@@ -954,11 +928,10 @@ func probeSummaries(app *client.App) []string {
 				timing = append(timing, fmt.Sprintf("%s=%d", f.key, f.value))
 			}
 		}
-		path := p.spec.Path
-		if path == "" {
-			path = app.HealthCheckPath
+		line := p.name
+		if p.spec.Path != "" {
+			line = fmt.Sprintf("%s %s", p.name, p.spec.Path)
 		}
-		line := fmt.Sprintf("%s %s", p.name, path)
 		if len(timing) > 0 {
 			line = fmt.Sprintf("%s (%s)", line, strings.Join(timing, ", "))
 		}
@@ -2043,10 +2016,6 @@ func init() {
 	appUpdateCmd.Flags().Bool("clear-security-context", false, "Remove the security context, returning the app to the platform default")
 
 	appCreateCmd.Flags().Bool("read-only-root-fs", false, "Mount the container root filesystem read-only (hardening; pair with --empty-dir /tmp for scratch)")
-	appCreateCmd.Flags().String("health-check-path", "/", "Health check HTTP path (default: /)")
-	appCreateCmd.Flags().Int("health-check-timeout", 5, "Health check timeout in seconds")
-	appCreateCmd.Flags().Int("health-check-interval", 10, "Health check interval in seconds")
-	appCreateCmd.Flags().Int("health-check-retries", 3, "Health check failure threshold")
 	registerProbeFlags(appCreateCmd)
 
 	appListCmd.Flags().Bool("show-id", false, "Include the app ID column in the output")
@@ -2062,7 +2031,7 @@ func init() {
 	appSetMountsCmd.Flags().Bool("clear", false, "Remove every mount")
 
 	registerProbeFlags(appSetProbesCmd)
-	appSetProbesCmd.Flags().Bool("clear", false, "Drop every per-probe override, putting all three probes back on the shared health check")
+	appSetProbesCmd.Flags().Bool("clear", false, "Drop every probe declaration, putting all three probes back on their defaults")
 
 	appDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 

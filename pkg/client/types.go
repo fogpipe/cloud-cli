@@ -642,16 +642,12 @@ type App struct {
 	IdentityTokenFile string `json:"identity_token_file"`
 	// ClusterToken is operator-set: the pods also carry their ServiceAccount's
 	// token for the cluster's own API, for the one dashboard the platform runs.
-	ClusterToken        bool             `json:"cluster_token,omitempty"`
-	HealthCheckPath     string           `json:"health_check_path"`
-	HealthCheckTimeout  int              `json:"health_check_timeout"`
-	HealthCheckInterval int              `json:"health_check_interval"`
-	HealthCheckRetries  int              `json:"health_check_retries"`
-	Probes              *ProbeOverrides  `json:"probes,omitempty"`           // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
-	VolumeMounts        []VolumeMount    `json:"volume_mounts"`              // scratch directories (empty = none)
-	SecurityContext     *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
-	CreatedAt           time.Time        `json:"created_at"`
-	UpdatedAt           time.Time        `json:"updated_at"`
+	ClusterToken    bool             `json:"cluster_token,omitempty"`
+	Probes          *ProbeOverrides  `json:"probes,omitempty"`           // each probe's path and timing; nil = every probe takes its default
+	VolumeMounts    []VolumeMount    `json:"volume_mounts"`              // scratch directories (empty = none)
+	SecurityContext *SecurityContext `json:"security_context,omitempty"` // pod/container hardening (nil = image default)
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
 	// Firewall is the firewall attached to the app and what the edge enforces
 	// of it, on a single read and on every row of a list. Nil when the app
 	// has none.
@@ -669,10 +665,10 @@ type App struct {
 	CallerPermissions []string `json:"caller_permissions,omitempty"`
 }
 
-// ProbeOverrides lets liveness, readiness, and startup diverge from the shared
-// HealthCheck* shorthand (#453) — e.g. a liveness probe on a cheap,
-// dependency-free path while readiness also checks a downstream. A nil field
-// means "use HealthCheckPath/Interval/Timeout/Retries".
+// ProbeOverrides declares liveness, readiness and startup, each on its own —
+// e.g. a liveness probe on a cheap, dependency-free path while readiness also
+// checks a downstream. A nil field takes that probe's default: readiness a
+// TCP connect, liveness and startup none.
 type ProbeOverrides struct {
 	Liveness  *ProbeSpec `json:"liveness,omitempty"`
 	Readiness *ProbeSpec `json:"readiness,omitempty"`
@@ -680,7 +676,8 @@ type ProbeOverrides struct {
 }
 
 // ProbeSpec is one probe's HTTP path and timing, each field independently
-// optional (zero/empty = fall back to the shared HealthCheck* default).
+// optional: an empty path is no HTTP probe, a zero timing field the probe's
+// default.
 // SuccessThreshold is only meaningful on Readiness — Kubernetes requires 1 for
 // Liveness and Startup.
 type ProbeSpec struct {
@@ -764,12 +761,8 @@ type CreateAppRequest struct {
 	// variable then names. Written before the first rollout is gated on the
 	// release command, so a migration that reads one is created with it
 	// (ADR-112).
-	SecretEnv           map[string]SecretRef `json:"secret_env,omitempty"`
-	HealthCheckPath     string               `json:"health_check_path,omitempty"`
-	HealthCheckTimeout  int                  `json:"health_check_timeout,omitempty"`
-	HealthCheckInterval int                  `json:"health_check_interval,omitempty"`
-	HealthCheckRetries  int                  `json:"health_check_retries,omitempty"`
-	Probes              *ProbeOverrides      `json:"probes,omitempty"` // per-probe path/timing overrides (#453); nil = every probe uses the HealthCheck* shorthand
+	SecretEnv map[string]SecretRef `json:"secret_env,omitempty"`
+	Probes    *ProbeOverrides      `json:"probes,omitempty"` // each probe's path and timing; nil = every probe takes its default
 	// Firewall attaches a firewall, by id or by its name in the project, as
 	// the app is created, so its route is written with the firewall from the
 	// first write. Attaching after the create leaves the app served without
@@ -784,8 +777,7 @@ type CreateAppRequest struct {
 }
 
 // UpdateProbesRequest replaces an app's per-probe liveness/readiness/startup
-// overrides (#453). nil clears them, reverting every probe to the shared
-// HealthCheck* shorthand.
+// overrides. nil clears them, reverting every probe to its default.
 type UpdateProbesRequest struct {
 	Probes *ProbeOverrides `json:"probes"`
 }
@@ -3110,26 +3102,25 @@ type CreateDatabaseSubscriptionRequest struct {
 // reference the app is created with; Version is its tag and the release name
 // of every deploy made from it.
 type Template struct {
-	Name            string            `json:"name"`
-	Summary         string            `json:"summary"`
-	Licence         string            `json:"licence"`
-	Homepage        string            `json:"homepage"`
-	Upstream        TemplateUpstream  `json:"upstream"`
-	Version         string            `json:"version"`
-	Image           string            `json:"image"`
-	Port            int               `json:"port"`
-	HealthCheckPath string            `json:"health_check_path"`
-	Resources       TemplateResources `json:"resources"`
-	Command         []string          `json:"command"`
-	Env             map[string]string `json:"env"`
-	Secrets         []string          `json:"secrets"`
-	Inputs          []TemplateInput   `json:"inputs"`
-	Needs           TemplateNeeds     `json:"needs"`
-	Reserved        map[string]string `json:"reserved"`              // what the deployment holds while it runs, per hour, by metered resource type in that type's billing unit (cores, GiB): the most it is billed an hour; bucket and backup storage are billed by use and absent
-	Floor           map[string]string `json:"floor"`                 // the least the deployment is billed an hour while it runs, keyed as Reserved: CPU on apps and databases at a tenth of its reservation while CPU is billed on use, every other type at its reservation
-	RunAsUser       *int64            `json:"run_as_user,omitempty"` // the uid the app is created to run as, pinned non-root, where the image itself declares no user; absent when the image's own user is what runs
-	Startup         *ProbeSpec        `json:"startup,omitempty"`     // the startup probe the app is created with, where its first boot outlasts the shared health check; absent when the shared check decides
-	Notes           string            `json:"notes"`                 // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
+	Name      string            `json:"name"`
+	Summary   string            `json:"summary"`
+	Licence   string            `json:"licence"`
+	Homepage  string            `json:"homepage"`
+	Upstream  TemplateUpstream  `json:"upstream"`
+	Version   string            `json:"version"`
+	Image     string            `json:"image"`
+	Port      int               `json:"port"`
+	Resources TemplateResources `json:"resources"`
+	Command   []string          `json:"command"`
+	Env       map[string]string `json:"env"`
+	Secrets   []string          `json:"secrets"`
+	Inputs    []TemplateInput   `json:"inputs"`
+	Needs     TemplateNeeds     `json:"needs"`
+	Reserved  map[string]string `json:"reserved"`              // what the deployment holds while it runs, per hour, by metered resource type in that type's billing unit (cores, GiB): the most it is billed an hour; bucket and backup storage are billed by use and absent
+	Floor     map[string]string `json:"floor"`                 // the least the deployment is billed an hour while it runs, keyed as Reserved: CPU on apps and databases at a tenth of its reservation while CPU is billed on use, every other type at its reservation
+	RunAsUser *int64            `json:"run_as_user,omitempty"` // the uid the app is created to run as, pinned non-root, where the image itself declares no user; absent when the image's own user is what runs
+	Probes    *ProbeOverrides   `json:"probes,omitempty"`      // the probes the app is created with
+	Notes     string            `json:"notes"`                 // what a person does after the deploy: the first sign-in, a setting the app only takes in its own UI
 }
 
 // TemplateUpstream is the source image a template's mirror was copied from,

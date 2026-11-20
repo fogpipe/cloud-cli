@@ -20,8 +20,8 @@ func TestParseProbeSpec(t *testing.T) {
 		{name: "empty is no override", value: ""},
 		{name: "whitespace is no override", value: "   "},
 		{
-			// The common case: point one probe somewhere else and inherit every
-			// timing field from the app's shared --health-check-* settings.
+			// The common case: give one probe a path and keep every timing
+			// field at that probe's default.
 			name:  "path only",
 			value: "path=/healthz",
 			want:  &client.ProbeSpec{Path: "/healthz"},
@@ -84,10 +84,10 @@ func TestProbeOverridesFromFlags(t *testing.T) {
 	t.Run("no flags means no overrides", func(t *testing.T) {
 		got, err := probeOverridesFromFlags(set(t))
 		require.NoError(t, err)
-		assert.Nil(t, got, "nil is what puts every probe back on the shared health check")
+		assert.Nil(t, got, "nil is what puts every probe back on its default")
 	})
 
-	t.Run("one probe leaves the others inheriting", func(t *testing.T) {
+	t.Run("one probe leaves the others undeclared", func(t *testing.T) {
 		got, err := probeOverridesFromFlags(set(t, "--liveness", "path=/healthz"))
 		require.NoError(t, err)
 		require.NotNil(t, got)
@@ -118,25 +118,21 @@ func TestProbeOverridesFromFlags(t *testing.T) {
 
 func TestProbeSummaries(t *testing.T) {
 	t.Run("no overrides", func(t *testing.T) {
-		assert.Nil(t, probeSummaries(&client.App{HealthCheckPath: "/healthz"}))
+		assert.Nil(t, probeSummaries(&client.App{}))
 	})
 
-	t.Run("inherited path is shown, inherited timing is not", func(t *testing.T) {
-		// Timing the app didn't override belongs to the Health Check row; repeating
-		// it here would report a shared value as a per-probe one.
+	t.Run("declared fields are shown, defaults are not", func(t *testing.T) {
 		got := probeSummaries(&client.App{
-			HealthCheckPath: "/healthz",
 			Probes: &client.ProbeOverrides{
 				Liveness:  &client.ProbeSpec{Path: "/livez"},
 				Readiness: &client.ProbeSpec{FailureThreshold: 2},
 			},
 		})
-		assert.Equal(t, []string{"liveness /livez", "readiness /healthz (failures=2)"}, got)
+		assert.Equal(t, []string{"liveness /livez", "readiness (failures=2)"}, got)
 	})
 
 	t.Run("ordered liveness, readiness, startup", func(t *testing.T) {
 		got := probeSummaries(&client.App{
-			HealthCheckPath: "/healthz",
 			Probes: &client.ProbeOverrides{
 				Startup:   &client.ProbeSpec{Path: "/boot"},
 				Readiness: &client.ProbeSpec{Path: "/ready"},
