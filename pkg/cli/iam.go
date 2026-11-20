@@ -42,6 +42,11 @@ var saCreateCmd = &cobra.Command{
 			return err
 		}
 
+		// A script that creates an identity reads it back from the structured
+		// form; the box and the hint are for a person.
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(sa)
+		}
 		fmt.Println(renderInfoBox("Service Account Created", [][]string{
 			{"ID", sa.ID},
 			{"Name", sa.Name},
@@ -124,6 +129,11 @@ var saCreateOrgCmd = &cobra.Command{
 			return err
 		}
 
+		// A script that creates an identity reads it back from the structured
+		// form; the box and the hint are for a person.
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(sa)
+		}
 		fmt.Println(renderInfoBox("Service Account Created", [][]string{
 			{"ID", sa.ID},
 			{"Name", sa.Name},
@@ -491,6 +501,9 @@ never exceeds the granter, and an app's own identity grants nothing.`,
 		})
 		if err != nil {
 			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(binding)
 		}
 		fmt.Println(renderInfoBox("Granted", [][]string{
 			{"Binding ID", binding.ID},
