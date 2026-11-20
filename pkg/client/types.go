@@ -1454,10 +1454,10 @@ type DomainVerification struct {
 	PointingType   string     `json:"pointing_type"`
 	PointingName   string     `json:"pointing_name"`
 	PointingValue  string     `json:"pointing_value"`
-	TXTFound       []string  `json:"txt_found,omitempty"`
-	TXTReason      DNSReason `json:"txt_reason,omitempty"`
-	PointingFound  []string  `json:"pointing_found,omitempty"`
-	PointingReason DNSReason `json:"pointing_reason,omitempty"`
+	TXTFound       []string   `json:"txt_found,omitempty"`
+	TXTReason      DNSReason  `json:"txt_reason,omitempty"`
+	PointingFound  []string   `json:"pointing_found,omitempty"`
+	PointingReason DNSReason  `json:"pointing_reason,omitempty"`
 	// AcmeCNAMEName/AcmeCNAMEValue are the one-time ACME DNS-01 delegation CNAME
 	// a dns-mode domain must add; empty for every other mode.
 	AcmeCNAMEName  string `json:"acme_cname_name,omitempty"`
