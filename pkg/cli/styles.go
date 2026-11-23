@@ -108,7 +108,9 @@ func renderStatus(status string) string {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("◌ " + status)
 	case "not_provisioned":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
-	case "pending", "provisioning", "invited", "unchecked", "deleting":
+	// Unknown is a database whose state could not be read just now: nobody
+	// could ask, which is neither a fault of the database nor a step.
+	case "pending", "provisioning", "invited", "unchecked", "unknown", "deleting":
 		return lipgloss.NewStyle().Foreground(colorInfo).Render("◌ " + status)
 	default:
 		return status
