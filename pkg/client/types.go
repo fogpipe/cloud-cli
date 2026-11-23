@@ -87,25 +87,37 @@ type CostReport struct {
 // window consumed, never more than the allowance.
 type CostCredit struct {
 	PeriodStart time.Time `json:"period_start"`
-	Allowance   string    `json:"allowance"`
-	Applied     string    `json:"applied"`
+	// Kind is `monthly`, an amount a month, or `pool`, one total used once.
+	// A monthly credit's allowance is its amount; a pool's is what was left
+	// of it when the month began.
+	Kind      string `json:"kind"`
+	Allowance string `json:"allowance"`
+	Applied   string `json:"applied"`
 	// RunsOutAt is when the month's usage reaches the allowance at the
 	// month's pace so far, for the month in progress only: a straight-line
 	// estimate from what has been used since the month began, never a
 	// promise. Absent until a day of the month has elapsed, when nothing has
 	// been used, when the pace does not reach the allowance before the month
-	// ends, and once the allowance is fully applied.
+	// ends, and once the allowance is fully applied. A pool's may lie after
+	// the month, and is absent past the pool's last month.
 	RunsOutAt *time.Time `json:"runs_out_at,omitempty"`
 }
 
 // OrgCredit is the credit an organization holds for the month in progress
-// as the organization reads it: the amount taken off each month's
-// invoice, why, and the months it covers. Granted by the platform operator;
-// an organization reads it and sets it nowhere.
+// as the organization reads it: what its invoices are taken down by, why,
+// and the months it covers. Granted by the platform operator; an
+// organization reads it and sets it nowhere.
 type OrgCredit struct {
+	// Kind is `monthly`, where Amount is taken off each month's invoice and
+	// an unused part lapses with its month, or `pool`, where Amount is one
+	// total that months draw down until it is used up.
+	Kind     string `json:"kind"`
 	Amount   string `json:"amount"`
 	Currency string `json:"currency"`
 	Reason   string `json:"reason,omitempty"`
+	// Remaining is what is left of a pool now, the month in progress
+	// counted; absent on a monthly credit.
+	Remaining string `json:"remaining,omitempty"`
 	// EffectiveFrom is the first month covered; EffectiveTo the first month no
 	// longer covered, absent while the credit is held with no end.
 	EffectiveFrom time.Time  `json:"effective_from"`

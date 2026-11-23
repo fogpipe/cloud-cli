@@ -45,6 +45,20 @@ func TestCreditLinesSayWhatIsLeftAndWhenItRunsOut(t *testing.T) {
 	lastDay := time.Date(2026, 11, 30, 12, 0, 0, 0, time.UTC)
 	assert.Equal(t, []string{"Credit 2026-11: 0.00 of 100.00 EUR applied, 100.00 left, last day of the month (UTC)"},
 		creditLines(report, lastDay))
+
+	// A pool is one total: a month says what it took, and the month in
+	// progress what is left of the pool, which lapses with no month.
+	january := time.Date(2027, 1, 9, 0, 0, 0, 0, time.UTC)
+	report.Credits = []client.CostCredit{
+		{PeriodStart: october, Kind: "pool", Allowance: "100.00", Applied: "40.00"},
+		{PeriodStart: november, Kind: "pool", Allowance: "60.00", Applied: "25.00", RunsOutAt: &january},
+	}
+	assert.Equal(t, []string{
+		"Credit 2026-10: 40.00 EUR applied from the pool",
+		"Credit 2026-11: 25.00 EUR applied from the pool, 35.00 left; at this month's pace it runs out around 9 Jan 2027",
+	}, creditLines(report, now))
+	report.Credits = []client.CostCredit{{PeriodStart: november, Kind: "pool", Allowance: "60.00", Applied: "60.00"}}
+	assert.Equal(t, []string{"Credit 2026-11: 60.00 EUR applied from the pool, the pool is used up"}, creditLines(report, now))
 }
 
 // Under a credit the invoice list says per month what the usage cost, what

@@ -181,18 +181,39 @@ func costRecency(through *time.Time) string {
 // where the server could say. Over the allowance it is fully used, and the
 // amount due beneath says what is invoiced above it. An unused part lapses
 // with its month, so a past month says only what was applied.
+//
+// A pool is one total that months draw down, so its line says what the month
+// took from it and, for the month in progress, what is left of the pool:
+// nothing lapses with the month, and it may run out after it.
 func creditLines(report *client.CostReport, now time.Time) []string {
 	now = now.UTC()
 	lines := make([]string, 0, len(report.Credits))
 	for _, cr := range report.Credits {
+		pool := cr.Kind == "pool"
 		line := fmt.Sprintf("Credit %s: %s of %s %s applied",
 			cr.PeriodStart.UTC().Format("2006-01"), formatAmount(cr.Applied), formatAmount(cr.Allowance), report.Currency)
+		if pool {
+			line = fmt.Sprintf("Credit %s: %s %s applied from the pool",
+				cr.PeriodStart.UTC().Format("2006-01"), formatAmount(cr.Applied), report.Currency)
+		}
 		end := cr.PeriodStart.UTC().AddDate(0, 1, 0)
 		if now.Before(cr.PeriodStart.UTC()) || !now.Before(end) {
 			lines = append(lines, line)
 			continue
 		}
 		left := amountLeft(cr.Allowance, cr.Applied)
+		if pool {
+			if left.Sign() <= 0 {
+				line += ", the pool is used up"
+			} else {
+				line += fmt.Sprintf(", %s left", left.FloatString(2))
+				if cr.RunsOutAt != nil {
+					line += fmt.Sprintf("; at this month's pace it runs out around %s", cr.RunsOutAt.UTC().Format("2 Jan 2006"))
+				}
+			}
+			lines = append(lines, line)
+			continue
+		}
 		days := daysLeft(now, end)
 		switch {
 		case left.Sign() <= 0:
@@ -642,14 +663,19 @@ func invoiceRows(invoices []*client.Invoice) ([]string, [][]string) {
 var billingCreditCmd = &cobra.Command{
 	Use:   "credit",
 	Short: "Show the credit your organization holds this month",
-	Long: `The credit your organization holds for the month in progress: an amount each
-month's invoice is taken down by, why, and the months it covers.
+	Long: `The credit your organization holds for the month in progress: what its
+invoices are taken down by, why, and the months it covers.
 
 Usage is metered and priced at your rates as for everyone; the credit is one
 line at the bottom of the invoice, capped at what the month cost, so usage
-above it is what you are invoiced. It covers whole months: an unused part
-lapses with its month and nothing carries over. The platform operator grants
-it; nothing here sets it.
+above it is what you are invoiced. The platform operator grants it; nothing
+here sets it.
+
+A credit is one of two kinds. A monthly credit is an amount each month: an
+unused part lapses with its month and nothing carries over. A pool is one
+total, used once: each month takes what it cost from what is left, and what a
+month does not use stays for the next, until the pool is used up or its last
+month ends.
 
 ` + "`fpcloud billing cost`" + ` shows how much of this month's credit the usage so far
 has used, what is left, and when it runs out at this month's pace.`,
@@ -681,7 +707,13 @@ has used, what is left, and when it runs out at this month's pace.`,
 			render(nil, nil, credit)
 			return nil
 		}
-		fmt.Printf("Credit: %s %s a month\n", formatAmount(credit.Amount), credit.Currency)
+		pool := credit.Kind == "pool"
+		if pool {
+			fmt.Printf("Credit: %s %s in total\n", formatAmount(credit.Amount), credit.Currency)
+			fmt.Printf("Left:   %s %s\n", formatAmount(credit.Remaining), credit.Currency)
+		} else {
+			fmt.Printf("Credit: %s %s a month\n", formatAmount(credit.Amount), credit.Currency)
+		}
 		if credit.Reason != "" {
 			fmt.Printf("Reason: %s\n", credit.Reason)
 		}
@@ -690,10 +722,16 @@ has used, what is left, and when it runs out at this month's pace.`,
 			// The month a credit ends is the first it no longer covers; the
 			// last covered month is the one a person reads it as.
 			fmt.Printf("Until:  %s (last month covered)\n", credit.EffectiveTo.UTC().AddDate(0, -1, 0).Format("January 2006"))
+		} else if pool {
+			fmt.Println("Until:  used up")
 		} else {
 			fmt.Println("Until:  withdrawn")
 		}
-		fmt.Println(mutedStyle.Render("An unused part lapses with its month; nothing carries over."))
+		if pool {
+			fmt.Println(mutedStyle.Render("One total, used once: what a month does not use stays for the next."))
+		} else {
+			fmt.Println(mutedStyle.Render("An unused part lapses with its month; nothing carries over."))
+		}
 		return nil
 	},
 }
