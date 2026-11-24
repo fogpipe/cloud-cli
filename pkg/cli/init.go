@@ -24,6 +24,9 @@ how two people, or two accounts, work on one machine at the same time.
 There is nothing to init globally: ~/.fpcloud is written the first time a
 command has something to put there.
 
+FPCLOUD_STATE_DIR names one directory to hold every state file instead: nothing
+is looked for above the working directory or in ~/.fpcloud while it is set.
+
   fpcloud init && fpcloud switch acme web                 # this directory's context
   fpcloud init && fpcloud login --account you@example.com # …and its own identity
 

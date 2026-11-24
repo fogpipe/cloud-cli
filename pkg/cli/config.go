@@ -24,11 +24,21 @@ type Config struct {
 // project alike — there is one name, so there is one thing to look for.
 const stateDirName = ".fpcloud"
 
-// stateDir is where a state file the CLI writes goes: the nearest .fpcloud/ at
-// or above the working directory, else ~/.fpcloud. `fpcloud init` creating one
-// is therefore all it takes for a directory to keep its context — and its
-// login — to itself, and two directories can hold two identities at once.
+// stateDirEnv names one directory to hold every state file, in place of the
+// walk up from the working directory and of ~/.fpcloud. It is for a caller that
+// must not read a login found above wherever it happens to be run: a second
+// deployment's tooling inside a tree that is logged in to the first.
+const stateDirEnv = "FPCLOUD_STATE_DIR"
+
+// stateDir is where a state file the CLI writes goes: $FPCLOUD_STATE_DIR when
+// set, else the nearest .fpcloud/ at or above the working directory, else
+// ~/.fpcloud. `fpcloud init` creating one is therefore all it takes for a
+// directory to keep its context — and its login — to itself, and two
+// directories can hold two identities at once.
 func stateDir() string {
+	if dir := os.Getenv(stateDirEnv); dir != "" {
+		return dir
+	}
 	if dir := localStateDir(); dir != "" {
 		return dir
 	}
@@ -42,7 +52,13 @@ func stateDir() string {
 // there is no second variable to know about: a project dir holding only
 // config.yaml gets its own org and project and goes on using your global login,
 // with nothing to configure and no re-auth per repo.
+//
+// $FPCLOUD_STATE_DIR ends both: a file is there or it is nowhere, so nothing
+// outside that directory is read.
 func statePath(name string) string {
+	if dir := os.Getenv(stateDirEnv); dir != "" {
+		return filepath.Join(dir, name)
+	}
 	dir, err := os.Getwd()
 	if err == nil {
 		for {

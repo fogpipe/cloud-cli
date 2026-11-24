@@ -17,13 +17,17 @@ import (
 // one directory renders the right thing in the next one.
 //
 // The org and project come straight out of config.yaml, found the same way the
-// CLI finds it — the nearest .fpcloud/ holding one at or above $PWD, else
-// ~/.fpcloud — so a directory that keeps its own context renders as that
+// CLI finds it — $FPCLOUD_STATE_DIR when set, else the nearest .fpcloud/
+// holding one at or above $PWD, else ~/.fpcloud — so a directory that keeps its own context renders as that
 // context, and cd-ing out of it renders what is true outside.
 //
 // The walk uses parameter expansion rather than dirname, because this runs on
 // every prompt and a subprocess per ancestor is what it exists to avoid.
 const promptSegmentBody = `_fpcloud_prompt_file() {
+	if [ -n "${FPCLOUD_STATE_DIR:-}" ]; then
+		_fp_file="$FPCLOUD_STATE_DIR/config.yaml"
+		return 0
+	fi
 	_fp_dir=$PWD
 	while :; do
 		_fp_file="$_fp_dir/.fpcloud/config.yaml"

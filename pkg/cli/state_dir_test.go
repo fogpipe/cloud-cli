@@ -197,3 +197,40 @@ func TestInitCreatesTheLocalStateDir(t *testing.T) {
 		t.Fatalf("init on an existing dir: %v", err)
 	}
 }
+
+// A named state directory replaces both the walk and the home directory, for
+// reading and for writing: a login held above the working directory is not
+// found, which is what the variable is for.
+func TestNamedStateDirEndsTheWalkAndTheFallback(t *testing.T) {
+	local := isolateState(t)
+	home := filepath.Join(os.Getenv("HOME"), ".fpcloud")
+	for _, dir := range []string{local, home} {
+		if err := os.WriteFile(filepath.Join(dir, "oidc-token.json"), []byte(`{"id_token":"found"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	named := filepath.Join(tempRoot(t), "named")
+	t.Setenv("FPCLOUD_STATE_DIR", named)
+
+	if got := stateDir(); got != named {
+		t.Errorf("stateDir() = %q, want %q", got, named)
+	}
+	for _, tc := range []struct{ name, got string }{
+		{"config.yaml", configPath()},
+		{"oidc-token.json", tokenCachePath()},
+		{"version-check.json", versionCachePath()},
+	} {
+		if want := filepath.Join(named, tc.name); tc.got != want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.got, want)
+		}
+	}
+	if err := saveConfig(&Config{CurrentOrg: "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(named, "config.yaml")); err != nil {
+		t.Errorf("saveConfig did not write into the named directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(local, "config.yaml")); err == nil {
+		t.Error("saveConfig wrote into the walked-up directory")
+	}
+}
