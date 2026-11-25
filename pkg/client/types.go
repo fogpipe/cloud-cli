@@ -1609,6 +1609,14 @@ type Organization struct {
 	ShortID     string `json:"short_id"`
 	DisplayName string `json:"display_name"`
 
+	// SuspendedAt is when the organization was stopped for having used the
+	// credit it runs on alone, and SuspendedReason why: "credit_used_up" or
+	// "no_credit". Both absent while it runs. While suspended its apps, jobs
+	// and runners are stopped and changes are refused; reading, exporting and
+	// deleting still work.
+	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
+	SuspendedReason string     `json:"suspended_reason,omitempty"`
+
 	// Role and BillingRole are the caller's own roles in the org: its org role
 	// (owner, editor, viewer) and its billing role (billing.viewer,
 	// billing.admin). Either is absent when the caller holds none, so an org

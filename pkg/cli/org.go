@@ -22,7 +22,9 @@ var orgListCmd = &cobra.Command{
 	Long: `List every organization you hold a role in: on the organization itself,
 on one of its projects, or on its billing. ROLE says which: your org role and
 billing role, or "projects only" when you hold roles on some of its projects
-and nothing on the organization.`,
+and nothing on the organization. STATUS says "suspended" for an organization
+stopped because the credit it runs on is used up: its data is still there to
+read and export.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := getClient()
 		var orgs []*client.Organization
@@ -38,7 +40,7 @@ and nothing on the organization.`,
 		// REGISTRY is spend against the ceiling: what the org's projects were
 		// last measured to hold beside what a push is refused above (ADR-128,
 		// fogpipe/cloud-workspace#284). Never measured is said, not shown as 0.
-		headers := []string{"", "ID", "NAME", "ROLE", "REGISTRY", "BACKUPS", "CREATED"}
+		headers := []string{"", "ID", "NAME", "STATUS", "ROLE", "REGISTRY", "BACKUPS", "CREATED"}
 		var rows [][]string
 		for _, o := range orgs {
 			marker := " "
@@ -49,6 +51,7 @@ and nothing on the organization.`,
 				marker,
 				o.ShortID,
 				o.DisplayName,
+				orgStatus(o),
 				orgRoles(o),
 				orgRegistrySpend(o),
 				orgBackupSpend(o),
@@ -58,6 +61,14 @@ and nothing on the organization.`,
 		render(headers, rows, orgs)
 		return nil
 	},
+}
+
+// orgStatus says whether the org runs, and since when it has been suspended.
+func orgStatus(o *client.Organization) string {
+	if o.SuspendedAt == nil {
+		return "active"
+	}
+	return "suspended since " + o.SuspendedAt.UTC().Format("2006-01-02")
 }
 
 // orgRoles is what the caller holds in an org: its org role and billing role
