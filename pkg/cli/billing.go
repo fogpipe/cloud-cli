@@ -139,9 +139,12 @@ on the project, and is priced at the organization's real rates.
 		// A credit is taken off the month's invoice, never off the usage
 		// (ADR-276), so the total stays what the usage cost, and what the
 		// credit took off and what is due are said beneath it.
-		if len(report.Credits) > 0 {
+		if len(report.Credits) > 0 || report.WrittenOff != "" {
 			for _, line := range creditLines(report, time.Now()) {
 				fmt.Println("  " + line)
+			}
+			if report.WrittenOff != "" {
+				fmt.Printf("  Written off: %s %s, used past the credit and not owed\n", report.WrittenOff, report.Currency)
 			}
 			fmt.Printf("  Amount due: %s %s\n", report.AmountDue, report.Currency)
 		}

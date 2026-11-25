@@ -80,6 +80,10 @@ type CostReport struct {
 	// months and for a project's cost.
 	Credits   []CostCredit `json:"credits,omitempty"`
 	AmountDue string       `json:"amount_due,omitempty"`
+	// WrittenOff is what of Total less the credits is not owed: everything
+	// above the credit for an organization that stops when its pool is used
+	// up, which never owes. Present with AmountDue, absent when nothing is.
+	WrittenOff string `json:"written_off,omitempty"`
 }
 
 // CostCredit is one month's credit in a cost window (ADR-276): the allowance
