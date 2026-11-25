@@ -757,8 +757,12 @@ func showInvoice(cmd *cobra.Command, c *client.Client, orgID, invoiceID string) 
 		// The credit taken off the invoice (ADR-276): no resource, no
 		// quantity, no rate, so those cells say nothing rather than
 		// something that is not there.
-		if l.Kind == "credit" {
-			rows[i] = []string{month, "", "credit: " + l.Description, "", "", "", l.Amount}
+		if l.Kind != "usage" {
+			label := "credit: "
+			if l.Kind == "write_off" {
+				label = "written off: "
+			}
+			rows[i] = []string{month, "", label + l.Description, "", "", "", l.Amount}
 			continue
 		}
 		project := l.ProjectName

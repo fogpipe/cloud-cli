@@ -521,9 +521,10 @@ type Invoice struct {
 // month, or an earlier one for usage that arrived after that month was invoiced
 // and is billed on this one instead (ADR-269).
 type InvoiceLineItem struct {
-	// Kind is what the line is a sum of: usage at a rate, or the credit
-	// taken off the invoice (ADR-276). A credit line names no resource type,
-	// project or unit; its Description says what it is for.
+	// Kind is what the line is a sum of: "usage" at a rate, the "credit"
+	// taken off the invoice, or "write_off", what an organization
+	// held to its pool used past it. A line that is not usage names no
+	// resource type, project or unit; its Description says what it is for.
 	Kind             string    `json:"kind"`
 	Description      string    `json:"description,omitempty"`
 	ResourceType     string    `json:"resource_type"`
