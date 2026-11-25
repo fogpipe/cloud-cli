@@ -958,7 +958,7 @@ func init() {
 	dbCreateCmd.Flags().String("cpu", "", "CPU request/limit per instance (e.g. 500m); default 250m")
 	dbCreateCmd.Flags().String("memory", "", "Memory request/limit per instance (e.g. 2Gi); default 512Mi")
 	dbCreateCmd.Flags().String("storage", "", "Persistent storage size (e.g. 20Gi); default 10Gi")
-	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler (reached at the owner URL's host with -rw replaced by -pooler)")
+	dbCreateCmd.Flags().Bool("pooler", false, "Enable a PgBouncer connection pooler, reached at an address of its own (db get shows it as Pool address)")
 	dbCreateCmd.Flags().StringSlice("extension", nil, "Curated Postgres extension to install, repeatable; name or name:schema (needs Postgres 18+)")
 
 	dbUpdateCmd.Flags().String("display-name", "", "New cosmetic label")
@@ -1044,6 +1044,18 @@ func dbReadAddress(db *client.Database) string {
 	return fmt.Sprintf("%s:%d", db.ReadHost, db.Port)
 }
 
+// dbPoolAddress renders the pooler's address, on the same port as the primary.
+// Empty while the pooler is off.
+func dbPoolAddress(db *client.Database) string {
+	if db.PoolHost == "" {
+		return ""
+	}
+	if db.Port == 0 {
+		return db.PoolHost
+	}
+	return fmt.Sprintf("%s:%d", db.PoolHost, db.Port)
+}
+
 // orDash renders an empty value as a muted dash.
 // instanceCount renders an instance count the way orDash renders a string: a
 // database whose cluster could not be read reports nothing rather than "0",
@@ -1098,13 +1110,20 @@ func dbDetailRows(db *client.Database, addr string) [][]string {
 	for _, note := range problemNotes(db.Problems) {
 		rows = append(rows, []string{"Problem", note})
 	}
-	return append(rows, [][]string{
+	rows = append(rows, [][]string{
 		{"CPU", orDash(db.CPU)},
 		{"Memory", orDash(db.Memory)},
 		{"Storage", orDash(db.Storage)},
 		{"Instances", orDash(instanceCount(db.Instances))},
 		{"Address", addr},
 		{"Read address", orDash(dbReadAddress(db))},
+	}...)
+	// Only while the pooler is on: a dash here would read as an address that
+	// could not be found, where there is none to find.
+	if pool := dbPoolAddress(db); pool != "" {
+		rows = append(rows, []string{"Pool address", pool})
+	}
+	return append(rows, [][]string{
 		{"Replica lag", renderReplicationLag(db.ReplicationLagSeconds)},
 		{"Secrets", orDash(ownedSecretsRow(db.Secrets))},
 		{"Used by", orDash(strings.Join(db.UsedBy, ", "))},

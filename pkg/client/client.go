@@ -2047,15 +2047,15 @@ func (c *Client) RotateDatabasePassword(ctx context.Context, id string) (*Databa
 
 // DialTunnel opens the server-side db-connect tunnel (ADR-045): a WebSocket
 // carrying raw Postgres wire-protocol bytes, relayed by the API to the
-// database's CNPG -rw Service. No Kubernetes credential is involved — this rides
+// database's primary. No Kubernetes credential is involved — this rides
 // the same Authorization header as every other API call. Call once per local
 // TCP connection to relay (so e.g. `pg_dump -j N` gets N independent tunnels).
 func (c *Client) DialTunnel(ctx context.Context, databaseID string) (*websocket.Conn, error) {
 	return c.dialTunnel(ctx, databaseID, false)
 }
 
-// DialReplicaTunnel is DialTunnel against the database's REPLICA (CNPG's `-ro`
-// Service) instead of the primary.
+// DialReplicaTunnel is DialTunnel against the database's REPLICA instead of
+// the primary.
 //
 // Writes are refused there by Postgres itself, and READS CAN BE STALE:
 // replication is asynchronous, so a row committed on the primary a moment ago

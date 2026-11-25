@@ -978,15 +978,16 @@ type Database struct {
 	// Problems says why a database is not as it should be. Always present, and
 	// empty when nothing is wrong.
 	Problems []StatusProblem `json:"problems"`
-	// Host/Port are the database's address on the cluster network, as recorded
-	// at provisioning. No credential rides on this type: the owner credential
-	// lives in the project secret named by Secret below, which an app mounts,
-	// and a person reads a live one with `fpcloud db connect` (ADR-281).
+	// Host/Port are where the database's primary is reached on the cluster
+	// network: an address of the database's own, named after it, which stays
+	// the same for the database's whole life. No credential rides on this
+	// type: the owner credential lives in the project secret named by Secret
+	// below, which an app mounts, and a person reads a live one with
+	// `fpcloud db connect`.
 	Host string `json:"host"`
-	// ReadHost is the same database's REPLICA endpoint (CNPG's `-ro` Service),
-	// on the same Port and with the same credential — a replica is not a second
-	// identity. Every managed database has one, because every one is two
-	// instances (ADR-136).
+	// ReadHost is where the same database's REPLICAS are reached, on the same
+	// Port and with the same credential — a replica is not a second identity.
+	// Every managed database has one, because every one is two instances.
 	//
 	// READS HERE CAN BE STALE: replication is asynchronous, so a row committed
 	// on the primary a moment ago may not have arrived, and a
@@ -999,6 +1000,11 @@ type Database struct {
 	// platform deriving one of its own addresses in three places
 	// (fogpipe/cloud-workspace#862).
 	ReadHost string `json:"read_host,omitempty"`
+	// PoolHost is where the database's pooler is reached, PgBouncer in front
+	// of the primary, on the same Port and with the same credential. Empty
+	// while the pooler is off. It pools per transaction, so a session that
+	// needs prepared statements, LISTEN or an advisory lock uses Host.
+	PoolHost string `json:"pool_host,omitempty"`
 	Port     int32  `json:"port"`
 	Pooler   bool   `json:"pooler"`
 	// BackupsDisabled records a deliberate opt-out from the default-on backup
@@ -1053,8 +1059,8 @@ type Database struct {
 }
 
 // DatabaseConnection is a database's live connection info (GET
-// /databases/{id}/connection): the real CNPG credentials plus the
-// cluster-internal host, reachable through a port-forward tunnel
+// /databases/{id}/connection): a credential and the hosts the database is
+// reached at inside the cluster. From outside it, a tunnel reaches it
 // (`fpcloud db connect`).
 type DatabaseConnection struct {
 	ProjectID string `json:"project_id"`
@@ -1066,11 +1072,11 @@ type DatabaseConnection struct {
 	Username  string `json:"username"`
 	Password  string `json:"password"`
 	URL       string `json:"url"`
-	// ReadHost/ReadURL are the same database's REPLICA endpoint (CNPG's `-ro`
-	// Service), which every managed database has because every one is two
-	// instances (ADR-136). Writes are refused there — Postgres answers `cannot
-	// execute INSERT in a read-only transaction` — and the credential is the
-	// same one; a replica is not a second identity.
+	// ReadHost/ReadURL are where the same database's REPLICAS are reached,
+	// which every managed database has because every one is two instances.
+	// Writes are refused there — Postgres answers `cannot execute INSERT in a
+	// read-only transaction` — and the credential is the same one; a replica
+	// is not a second identity.
 	//
 	// READS HERE CAN BE STALE. Replication is asynchronous, so a row committed
 	// on the primary a moment ago may not have arrived. In particular a
@@ -1084,6 +1090,10 @@ type DatabaseConnection struct {
 	// (fogpipe/cloud-workspace#300).
 	ReadHost string `json:"read_host,omitempty"`
 	ReadURL  string `json:"read_url,omitempty"`
+	// PoolHost/PoolURL are where the database's pooler is reached, absent
+	// while the pooler is off.
+	PoolHost string `json:"pool_host,omitempty"`
+	PoolURL  string `json:"pool_url,omitempty"`
 }
 
 // CreateDatabaseRequest is the request body for creating a database.
