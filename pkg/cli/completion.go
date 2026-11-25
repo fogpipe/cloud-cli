@@ -278,7 +278,6 @@ func registerCompletions() {
 	// Enum-style flags.
 	for _, c := range []*cobra.Command{projectCreateCmd, projectUpdateCmd} {
 		reg(c, "egress", fixed("restricted", "https", "all"))
-		reg(c, "plan", fixed("starter", "standard", "premium"))
 	}
 	reg(appCreateCmd, "ingress", fixed("all", "internal"))
 	reg(auditLogCmd, "resource-type", fixed("project", "organization"))

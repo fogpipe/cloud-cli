@@ -990,7 +990,6 @@ type Database struct {
 	DisplayName string `json:"display_name"`
 	Engine      string `json:"engine"`
 	Version     string `json:"version"`
-	Plan        string `json:"plan"`
 	// Status is `provisioning` until the database is ready for the first time,
 	// then `running`; `degraded` once the platform has not been managing it for
 	// longer than a switchover or a restart takes (it may still be serving, and
@@ -1090,7 +1089,6 @@ type Database struct {
 type DatabaseConnection struct {
 	ProjectID string `json:"project_id"`
 	Namespace string `json:"namespace"`
-	Cluster   string `json:"cluster"`
 	Host      string `json:"host"`
 	Port      int32  `json:"port"`
 	Database  string `json:"database"`

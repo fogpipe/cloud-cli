@@ -146,9 +146,9 @@ var dbListCmd = &cobra.Command{
 
 		rows := make([][]string, len(dbs))
 		for i, db := range dbs {
-			rows[i] = []string{db.ID, db.Name, db.Engine, db.Version, db.Plan, renderStatus(db.Status)}
+			rows[i] = []string{db.ID, db.Name, db.Engine, db.Version, renderStatus(db.Status)}
 		}
-		render([]string{"ID", "NAME", "ENGINE", "VERSION", "PLAN", "STATUS"}, rows, dbs)
+		render([]string{"ID", "NAME", "ENGINE", "VERSION", "STATUS"}, rows, dbs)
 		return nil
 	},
 }
