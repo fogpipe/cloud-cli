@@ -118,6 +118,10 @@ type OrgCredit struct {
 	// Remaining is what is left of a pool now, the month in progress
 	// counted; absent on a monthly credit.
 	Remaining string `json:"remaining,omitempty"`
+	// StopsAtZero says the organization runs on this pool alone: once it is
+	// used up, the organization's apps, jobs, runners and websites stop and
+	// its data is kept.
+	StopsAtZero bool `json:"stops_at_zero,omitempty"`
 	// EffectiveFrom is the first month covered; EffectiveTo the first month no
 	// longer covered, absent while the credit is held with no end.
 	EffectiveFrom time.Time  `json:"effective_from"`
@@ -471,12 +475,15 @@ type QuoteLine struct {
 // BillingAccount is what settles an org's usage. PriceBook and Currency are one
 // pair — a rate cannot be read without both.
 type BillingAccount struct {
-	ID        string    `json:"id"`
-	OrgID     string    `json:"org_id"`
-	PriceBook string    `json:"price_book"`
-	Currency  string    `json:"currency"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string `json:"id"`
+	OrgID     string `json:"org_id"`
+	PriceBook string `json:"price_book"`
+	Currency  string `json:"currency"`
+	// StopAtZero holds the organization to its pool credit: once the pool is
+	// used up, has ended or is withdrawn, the organization is suspended.
+	StopAtZero bool      `json:"stop_at_zero"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // Invoice is what an org owed for one closed period (#111). Amounts are decimal

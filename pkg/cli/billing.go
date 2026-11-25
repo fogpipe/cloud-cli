@@ -727,7 +727,9 @@ has used, what is left, and when it runs out at this month's pace.`,
 		} else {
 			fmt.Println("Until:  withdrawn")
 		}
-		if pool {
+		if pool && credit.StopsAtZero {
+			fmt.Println(mutedStyle.Render("One total, used once. When it is used up, this organization's apps, jobs, runners and websites stop; its data is kept."))
+		} else if pool {
 			fmt.Println(mutedStyle.Render("One total, used once: what a month does not use stays for the next."))
 		} else {
 			fmt.Println(mutedStyle.Render("An unused part lapses with its month; nothing carries over."))
