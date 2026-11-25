@@ -978,6 +978,37 @@ func (c *Client) ListQuotaRequests(ctx context.Context, orgID string) ([]QuotaRe
 	return out, nil
 }
 
+// RequestCredit asks the operators to let an org on a pool credit keep
+// running past it. An org holds one open request: asking again while one is
+// open answers with it and sends nothing new. Needs billing admin on the org.
+func (c *Client) RequestCredit(ctx context.Context, orgID string, req RequestCreditRequest) (*CreditRequest, error) {
+	path := "/api/v1/orgs/" + orgID + "/billing/credit-requests"
+	httpReq, err := c.newRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+	var out CreditRequest
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListCreditRequests returns an org's open request to keep running past its
+// credit, as a list of none or one. Needs a billing role on the org.
+func (c *Client) ListCreditRequests(ctx context.Context, orgID string) ([]CreditRequest, error) {
+	path := "/api/v1/orgs/" + orgID + "/billing/credit-requests"
+	httpReq, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := []CreditRequest{}
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListPrices returns the platform's current price list.
 //
 // Unauthenticated — a rate is a published fact, not tenant data. Callable

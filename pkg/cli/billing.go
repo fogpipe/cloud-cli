@@ -728,12 +728,83 @@ has used, what is left, and when it runs out at this month's pace.`,
 			fmt.Println("Until:  withdrawn")
 		}
 		if pool && credit.StopsAtZero {
-			fmt.Println(mutedStyle.Render("One total, used once. When it is used up, this organization's apps, jobs, runners and websites stop; its data is kept."))
+			fmt.Println(mutedStyle.Render("One total, used once. When it is used up, this organization's apps, jobs, runners and websites stop; its data is kept. To keep it running past that, run `fpcloud billing credit request`."))
 		} else if pool {
 			fmt.Println(mutedStyle.Render("One total, used once: what a month does not use stays for the next."))
 		} else {
 			fmt.Println(mutedStyle.Render("An unused part lapses with its month; nothing carries over."))
 		}
+		return nil
+	},
+}
+
+var billingCreditRequestCmd = &cobra.Command{
+	Use:   "request",
+	Short: "Ask the operators to keep the organization running past its credit",
+	Long: `Ask the operators to let the organization keep running past its credit,
+or start again once it has stopped. An organization on a pool credit that
+stops when the pool is used up asks here; so can any other.
+
+Only a billing admin of the organization may ask; an owner is one. An
+organization holds one open request: asking again while one is open shows that
+one and sends nothing new. A request closes when the operators grant or add
+credit, or let the organization run past it, or after seven days. They answer
+by mail to the address that asked.
+
+  fpcloud billing credit request --note "we launch on Monday"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		note, _ := cmd.Flags().GetString("note")
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		var req *client.CreditRequest
+		withSpinner("Sending request...", func() {
+			req, err = c.RequestCredit(cmd.Context(), orgID, client.RequestCreditRequest{Note: note})
+		})
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			return renderData(req)
+		}
+		rows := [][]string{
+			{"Asked by", req.RequestedBy},
+			{"Asked at", req.CreatedAt.UTC().Format("2006-01-02 15:04 MST")},
+		}
+		if req.Note != "" {
+			rows = append(rows, []string{"Note", req.Note})
+		}
+		fmt.Println(renderInfoBox("Credit Request", rows))
+		fmt.Println(mutedStyle.Render("The operators answer by mail to the address above."))
+		return nil
+	},
+}
+
+var billingCreditRequestsCmd = &cobra.Command{
+	Use:   "requests",
+	Short: "Show the organization's open request to keep running past its credit",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		var reqs []client.CreditRequest
+		withSpinner("Fetching requests...", func() {
+			reqs, err = c.ListCreditRequests(cmd.Context(), orgID)
+		})
+		if err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(reqs))
+		for _, r := range reqs {
+			rows = append(rows, []string{r.RequestedBy, r.CreatedAt.UTC().Format("2006-01-02 15:04"), r.Note})
+		}
+		render([]string{"ASKED BY", "ASKED AT", "NOTE"}, rows, reqs)
 		return nil
 	},
 }
@@ -962,6 +1033,8 @@ func init() {
 	billingBudgetSetCmd.Flags().String("currency", "", "Currency (default EUR)")
 	billingBudgetSetCmd.Flags().IntSlice("alert-at", nil, "Percentages to alert at (default 50,90,100)")
 	billingBudgetCmd.AddCommand(billingBudgetShowCmd, billingBudgetSetCmd, billingBudgetUnsetCmd)
+	billingCreditRequestCmd.Flags().String("note", "", "why, for the operator who answers")
+	billingCreditCmd.AddCommand(billingCreditRequestCmd, billingCreditRequestsCmd)
 
 	billingPricesCmd.Flags().Bool("published", false, "Show the public price list rather than your org's own rates")
 	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingCreditCmd, billingBudgetCmd)

@@ -275,6 +275,26 @@ type RequestQuotaRequest struct {
 	Note   string  `json:"note,omitempty"`
 }
 
+// RequestCreditRequest asks the operators to let an organization on a pool
+// credit keep running past it, or start again once it has stopped. Note says
+// why, for the person who answers.
+type RequestCreditRequest struct {
+	Note string `json:"note,omitempty"`
+}
+
+// CreditRequest is an open request to let an organization keep running past
+// its credit. It closes when the operators grant or add credit, or let the
+// organization run past it, or after seven days; an organization holds at
+// most one open request.
+type CreditRequest struct {
+	ID   string `json:"id"`
+	Note string `json:"note,omitempty"`
+	// RequestedBy is the address of the billing holder who asked, which the
+	// operators answer.
+	RequestedBy string    `json:"requested_by"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // QuotaRequest is an open request to raise one of an organization's bounds.
 // It closes when the operators change that bound, or after seven days; an
 // organization holds at most one open request per axis.
