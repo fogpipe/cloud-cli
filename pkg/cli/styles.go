@@ -106,6 +106,11 @@ func renderStatus(status string) string {
 	// nothing is needed to bring it back.
 	case "asleep":
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("◌ " + status)
+	// Suspended is an app its organization's suspension holds at zero: not
+	// serving, and a request to it wakes nothing, so it is marked like a fault
+	// rather than quiet like asleep.
+	case "suspended":
+		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
 	case "not_provisioned":
 		return lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("● " + status)
 	// Unknown is a database whose state could not be read just now: nobody

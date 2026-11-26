@@ -2783,7 +2783,9 @@ type AppStatus struct {
 	MinScale int32 `json:"min_scale"`
 	MaxScale int32 `json:"max_scale"`
 	// AsleepSince is set while the app sleeps: it runs no pod by choice, with
-	// min_scale 0, and wakes on its host's next request. Status reads `asleep`.
+	// min_scale 0, and wakes on its host's next request. Status reads `asleep`,
+	// unless the organization is suspended, when it reads `suspended`: the app
+	// is held at zero and recorded asleep only so that it wakes on resume.
 	AsleepSince *time.Time `json:"asleep_since,omitempty"`
 	// RunningImage and RunningRelease are what the app's newest ready pod runs, which
 	// differs from Image/Release above while a deploy is in flight. Empty when no pod
