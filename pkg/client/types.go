@@ -279,6 +279,16 @@ type RequestQuotaRequest struct {
 	Note   string  `json:"note,omitempty"`
 }
 
+// SignupRequest redeems a signup code: the platform grants an organization
+// named OrgName to Email, with the credit the code carries, and the account
+// mail that follows is what proves the address. Code is the ten digits the
+// code was printed with; spaces and dashes are ignored.
+type SignupRequest struct {
+	Code    string `json:"code"`
+	Email   string `json:"email"`
+	OrgName string `json:"org_name"`
+}
+
 // RequestCreditRequest asks the operators to let an organization on a pool
 // credit keep running past it, or start again once it has stopped. Note says
 // why, for the person who answers.

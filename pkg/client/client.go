@@ -994,6 +994,16 @@ func (c *Client) RequestCredit(ctx context.Context, orgID string, req RequestCre
 	return &out, nil
 }
 
+// Signup redeems a signup code into an organization. It needs no credential:
+// it is how someone without an account gets one.
+func (c *Client) Signup(ctx context.Context, req SignupRequest) error {
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/api/v1/signup", req)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
 // ListCreditRequests returns an org's open request to keep running past its
 // credit, as a list of none or one. Needs a billing role on the org.
 func (c *Client) ListCreditRequests(ctx context.Context, orgID string) ([]CreditRequest, error) {
