@@ -35,13 +35,16 @@ type CreateProjectRequest struct {
 
 // AuditEntry is one record from the audit log.
 type AuditEntry struct {
-	ID           string         `json:"id"`
-	Timestamp    time.Time      `json:"ts"`
-	ActorType    string         `json:"actor_type"`
-	Actor        string         `json:"actor"`
-	Action       string         `json:"action"`
-	ResourceType string         `json:"resource_type"`
-	ResourceID   string         `json:"resource_id"`
+	ID           string    `json:"id"`
+	Timestamp    time.Time `json:"ts"`
+	ActorType    string    `json:"actor_type"`
+	Actor        string    `json:"actor"`
+	Action       string    `json:"action"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   string    `json:"resource_id"`
+	// ResourceName is the resource's name now, read when the log is listed;
+	// empty once it is gone or when its kind has no name of its own.
+	ResourceName string         `json:"resource_name,omitempty"`
 	Details      map[string]any `json:"details,omitempty"`
 }
 

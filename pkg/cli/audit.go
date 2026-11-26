@@ -71,10 +71,10 @@ var auditLogCmd = &cobra.Command{
 		rows := make([][]string, len(entries))
 		for i, e := range entries {
 			rows[i] = []string{
-				e.Timestamp.Format("2006-01-02 15:04:05"),
+				e.Timestamp.UTC().Format("2006-01-02 15:04:05 MST"),
 				e.Actor,
 				e.Action,
-				e.ResourceType + ":" + e.ResourceID,
+				auditResource(e),
 			}
 		}
 		render(headers, rows, entries)
@@ -158,4 +158,14 @@ func init() {
 	auditCmd.AddCommand(auditLogCmd)
 	auditCmd.AddCommand(auditStatementsCmd)
 	rootCmd.AddCommand(auditCmd)
+}
+
+// auditResource names what an entry is about: its kind and name while the
+// resource exists, its id once it is gone or when its kind has no name.
+// -o json carries both.
+func auditResource(e *client.AuditEntry) string {
+	if e.ResourceName != "" {
+		return e.ResourceType + ":" + e.ResourceName
+	}
+	return e.ResourceType + ":" + e.ResourceID
 }
