@@ -521,9 +521,9 @@ checked against anything.`,
 		show := func(book string, prices []*client.Price, payload any) {
 			rows := make([][]string, len(prices))
 			for i, p := range prices {
-				rows[i] = []string{p.ResourceType, p.UnitPrice + " " + p.Currency}
+				rows[i] = []string{p.ResourceType, p.Unit, p.UnitPrice + " " + p.Currency}
 			}
-			render([]string{"RESOURCE", "UNIT PRICE"}, rows, payload)
+			render([]string{"RESOURCE", "UNIT", "UNIT PRICE"}, rows, payload)
 			if !isStructured(rootCmd.Flag("output").Value.String()) {
 				fmt.Println(mutedStyle.Render("  Price book: " + book))
 			}

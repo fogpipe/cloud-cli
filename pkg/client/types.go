@@ -363,8 +363,11 @@ type CapacityRow struct {
 type Price struct {
 	// PriceBook is the rate card this rate belongs to. A rate is a function of
 	// who is billed as well as of when.
-	PriceBook     string    `json:"price_book"`
-	ResourceType  string    `json:"resource_type"`
+	PriceBook    string `json:"price_book"`
+	ResourceType string `json:"resource_type"`
+	// Unit is what one of the resource type is: core-hour, gib-hour, gb.
+	// UnitPrice is per one of it.
+	Unit          string    `json:"unit"`
 	Currency      string    `json:"currency"`
 	UnitPrice     string    `json:"unit_price"`
 	EffectiveFrom time.Time `json:"effective_from"`
@@ -2758,15 +2761,31 @@ type StatusProject struct {
 // whatever kind it belongs to.
 type StatusProblem struct {
 	Reason string `json:"reason"`
+	// Class is ProblemFault or ProblemWaiting, set by the server so that no
+	// client ranks a reason itself.
+	Class  string `json:"class"`
 	Detail string `json:"detail,omitempty"`
 	Count  int32  `json:"count,omitempty"`
 	Since  string `json:"since,omitempty"`
 }
 
-// UncheckedStatus is a check that did not run, and why.
+// The two classes of problem. A fault is something that failed. Waiting is
+// nothing having failed and the next step being the tenant's: a DNS record to
+// publish, a certificate authority that cannot reach the host yet.
+const (
+	ProblemFault   = "fault"
+	ProblemWaiting = "waiting"
+)
+
+// UncheckedStatus is a check that did not run, and why. Kind and ID name the
+// one resource the check was about, when it was about one: ID is the
+// resource's id, or a domain's hostname. Both empty for a check over the
+// whole project.
 type UncheckedStatus struct {
 	Check string `json:"check"`
 	Error string `json:"error"`
+	Kind  string `json:"kind,omitempty"`
+	ID    string `json:"id,omitempty"`
 }
 
 // AppStatus is one app: what it should be running, what it is running, and what
@@ -3032,6 +3051,9 @@ type JobStatus struct {
 	Target    string        `json:"target"`
 	Suspended bool          `json:"suspended"`
 	LastRun   *JobRunStatus `json:"last_run,omitempty"`
+	// Problems is what is wrong with the job's most recent run: it failed, or
+	// it is waiting on a pod that cannot start.
+	Problems []StatusProblem `json:"problems,omitempty"`
 }
 
 // JobRunStatus is the outcome of one run, trimmed to what a status line shows.
@@ -3086,6 +3108,9 @@ type RunnerStatus struct {
 	CurrentRunners int    `json:"current_runners"`
 	MaxRunners     int    `json:"max_runners"`
 	Message        string `json:"message,omitempty"`
+	// Problems is every problem the runner's own read carries: a registration
+	// that failed, a pod that cannot start, a read that could not be made.
+	Problems []StatusProblem `json:"problems,omitempty"`
 	// RunningRunners are the runners executing a job and PendingRunners the
 	// ones that exist as objects but are not — unschedulable, most often
 	// because the org's ceiling cannot hold them. CurrentRunners is their sum,
@@ -3096,7 +3121,7 @@ type RunnerStatus struct {
 	RunningRunners int `json:"running_runners,omitempty"`
 	PendingRunners int `json:"pending_runners,omitempty"`
 	// WaitingJobs is how many jobs GitHub has assigned the pool that no runner
-	// has started; nil when the queue could not be read, which Message says.
+	// has started; nil when the queue could not be read, which Problems says.
 	WaitingJobs *int `json:"waiting_jobs,omitempty"`
 }
 

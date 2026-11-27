@@ -34,6 +34,10 @@ the CI runner, each with what the platform can actually see about it right now
 — replicas ready, crash loops, routes that cannot reach their backend, hostnames
 whose certificate never issued, backups that stopped producing restore points.
 
+It opens with what needs attention: checks the platform could not make first,
+then faults, then what waits on you (a DNS record to publish). When nothing
+does, it says so and names what was checked.
+
   fpcloud project status                 the current project
   fpcloud project status my-project      another one
   fpcloud project status --watch         redraw as it changes (every 2s)
@@ -266,6 +270,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 	if !s.ObservedAt.IsZero() {
 		b.WriteString(mutedStyle.Render("observed "+s.ObservedAt.Local().Format("15:04:05")) + "\n")
 	}
+	b.WriteString("\n" + renderAttention(s))
 
 	prevApps := map[string]client.AppStatus{}
 	if prev != nil {
@@ -327,6 +332,7 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		}
 		jobRows = append(jobRows, statusRow{
 			cells: []string{j.Name, schedule, j.Target, lastRunLabel(j.LastRun)},
+			notes: problemNotes(j.Problems),
 		})
 	}
 	b.WriteString(renderStatusSection("JOBS", []string{"SCHEDULE", "TARGET", "LAST RUN"}, jobRows))
@@ -366,9 +372,9 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 
 	runnerRows := []statusRow{}
 	if r := s.Runner; r != nil {
-		notes := []string{}
+		notes := problemNotes(r.Problems)
 		if r.Message != "" {
-			notes = append(notes, r.Message)
+			notes = append([]string{r.Message}, notes...)
 		}
 		// The queue is what separates an idle runner from a starved one, so a
 		// queue that could not be read is a "?" and never a 0
@@ -384,14 +390,6 @@ func renderProjectStatus(s *client.ProjectStatus, prev *client.ProjectStatus, su
 		})
 	}
 	b.WriteString(renderStatusSection("RUNNER", []string{"STATUS", "ACTIVE", "WAITING"}, runnerRows))
-
-	if len(s.Unchecked) > 0 {
-		lines := []string{lipgloss.NewStyle().Bold(true).Render("Not checked — this report is incomplete:")}
-		for _, u := range s.Unchecked {
-			lines = append(lines, "  "+u.Check+": "+u.Error)
-		}
-		b.WriteString(warnBox.Render(strings.Join(lines, "\n")) + "\n")
-	}
 
 	return b.String()
 }
