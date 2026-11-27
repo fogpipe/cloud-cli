@@ -1217,6 +1217,44 @@ func (c *Client) DeleteBudget(ctx context.Context, orgID string) error {
 	return c.do(httpReq, nil)
 }
 
+// GetPaymentMethod returns how an org pays by card. Requires a billing role.
+func (c *Client) GetPaymentMethod(ctx context.Context, orgID string) (*PaymentMethod, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodGet, "/api/v1/orgs/"+orgID+"/billing/payment-method", nil)
+	if err != nil {
+		return nil, err
+	}
+	var pm PaymentMethod
+	if err := c.do(httpReq, &pm); err != nil {
+		return nil, err
+	}
+	return &pm, nil
+}
+
+// SetPaymentMethod records the caller's consent to the mandate and starts
+// storing a card: the answer's Setup.CheckoutURL is where the card is entered.
+// The card replaces the stored one once the checkout completes. Requires
+// billing.admin, and a person rather than a service account.
+func (c *Client) SetPaymentMethod(ctx context.Context, orgID string, req SetPaymentMethodRequest) (*PaymentMethod, error) {
+	httpReq, err := c.newRequest(ctx, http.MethodPut, "/api/v1/orgs/"+orgID+"/billing/payment-method", req)
+	if err != nil {
+		return nil, err
+	}
+	var pm PaymentMethod
+	if err := c.do(httpReq, &pm); err != nil {
+		return nil, err
+	}
+	return &pm, nil
+}
+
+// DeletePaymentMethod removes the stored card. Requires billing.admin.
+func (c *Client) DeletePaymentMethod(ctx context.Context, orgID string) error {
+	httpReq, err := c.newRequest(ctx, http.MethodDelete, "/api/v1/orgs/"+orgID+"/billing/payment-method", nil)
+	if err != nil {
+		return err
+	}
+	return c.do(httpReq, nil)
+}
+
 // DeleteProject accepts a project's deletion and returns it in `deleting`.
 //
 // The teardown continues server-side after this returns: emptying a project's

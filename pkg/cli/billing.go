@@ -1015,6 +1015,150 @@ var billingBudgetUnsetCmd = &cobra.Command{
 	},
 }
 
+// billingPaymentMethodCmd is hidden while paying by card is switched on only
+// for the organizations the operators chose: everyone else would read a
+// command that answers "this organization does not pay by card".
+var billingPaymentMethodCmd = &cobra.Command{
+	Use:    "payment-method",
+	Short:  "Show, store or remove the card invoices are charged to",
+	Hidden: true,
+	Long: `The card each month's invoice is charged to.
+
+A card is entered on the payment provider's own page, never here: set agrees
+to the mandate and prints the page to open. Reading needs a billing role;
+storing or removing a card needs billing.admin.`,
+}
+
+var billingPaymentMethodShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show the stored card",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		var pm *client.PaymentMethod
+		withSpinner("Fetching payment method...", func() {
+			pm, err = c.GetPaymentMethod(cmd.Context(), orgID)
+		})
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			render(nil, nil, pm)
+			return nil
+		}
+		printPaymentMethod(pm)
+		return nil
+	},
+}
+
+var billingPaymentMethodSetCmd = &cobra.Command{
+	Use:   "set",
+	Short: "Agree to the mandate and store a card on the payment provider's page",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		c := getClient()
+		var pm *client.PaymentMethod
+		withSpinner("Fetching mandate...", func() {
+			pm, err = c.GetPaymentMethod(cmd.Context(), orgID)
+		})
+		if err != nil {
+			return err
+		}
+		if pm.Payments == "off" || pm.Mandate == nil {
+			return fmt.Errorf("this organization does not pay by card")
+		}
+		if yes, _ := cmd.Flags().GetBool("yes"); !yes {
+			ok, err := confirm("Store a card for this organization?", pm.Mandate.Text, "I agree")
+			if err != nil || !ok {
+				return err
+			}
+		}
+		withSpinner("Starting checkout...", func() {
+			pm, err = c.SetPaymentMethod(cmd.Context(), orgID, client.SetPaymentMethodRequest{Consent: pm.Mandate.Version})
+		})
+		if err != nil {
+			return err
+		}
+		if isStructured(rootCmd.Flag("output").Value.String()) {
+			render(nil, nil, pm)
+			return nil
+		}
+		if pm.Setup == nil || pm.Setup.CheckoutURL == "" {
+			return fmt.Errorf("no checkout was started: run `fpcloud billing payment-method show`")
+		}
+		fmt.Println("Enter the card on the payment provider's page:")
+		fmt.Println("  " + pm.Setup.CheckoutURL)
+		fmt.Println("It replaces the stored card once the checkout completes; `fpcloud billing payment-method show` says when.")
+		return nil
+	},
+}
+
+var billingPaymentMethodDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Remove the stored card",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		orgID, err := resolveOrgID(cmd)
+		if err != nil {
+			return err
+		}
+		if yes, _ := cmd.Flags().GetBool("yes"); !yes {
+			ok, err := confirm("Remove the stored card?", "Invoices are no longer charged to it.", "Remove")
+			if err != nil || !ok {
+				return err
+			}
+		}
+		c := getClient()
+		withSpinner("Removing card...", func() {
+			err = c.DeletePaymentMethod(cmd.Context(), orgID)
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println("Card removed.")
+		return nil
+	},
+}
+
+// printPaymentMethod says how the organization pays, in the terms a billing
+// admin acts on.
+func printPaymentMethod(pm *client.PaymentMethod) {
+	if pm.Payments == "off" {
+		fmt.Println("This organization does not pay by card.")
+		return
+	}
+	if pm.Payments == "test" {
+		fmt.Println("Test mode: no money moves; use the payment provider's test cards.")
+	}
+	if pm.Card == nil {
+		fmt.Println("No card stored. `fpcloud billing payment-method set` to store one.")
+	} else {
+		fmt.Printf("Card: %s ending %s, expires %s (stored %s)\n",
+			pm.Card.Brand, pm.Card.Last4, pm.Card.Expiry, pm.Card.Since.Format("2006-01-02"))
+	}
+	if s := pm.Setup; s != nil {
+		switch s.Status {
+		case "creating", "open", "pending", "authorized":
+			fmt.Printf("A card is being stored (%s)", s.Status)
+			if s.CheckoutURL != "" {
+				fmt.Printf(": %s", s.CheckoutURL)
+			}
+			fmt.Println()
+		default:
+			line := "The last attempt to store a card ended " + s.Status
+			if s.FailureReason != "" {
+				line += " (" + s.FailureReason + ")"
+			}
+			fmt.Println(line + ".")
+		}
+	}
+}
+
 // percentList renders thresholds as "50%, 90%, 100%".
 func percentList(thresholds []int) string {
 	parts := make([]string, len(thresholds))
@@ -1036,11 +1180,14 @@ func init() {
 	billingBudgetSetCmd.Flags().String("currency", "", "Currency (default EUR)")
 	billingBudgetSetCmd.Flags().IntSlice("alert-at", nil, "Percentages to alert at (default 50,90,100)")
 	billingBudgetCmd.AddCommand(billingBudgetShowCmd, billingBudgetSetCmd, billingBudgetUnsetCmd)
+	billingPaymentMethodSetCmd.Flags().BoolP("yes", "y", false, "Agree to the mandate without the prompt")
+	billingPaymentMethodDeleteCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt")
+	billingPaymentMethodCmd.AddCommand(billingPaymentMethodShowCmd, billingPaymentMethodSetCmd, billingPaymentMethodDeleteCmd)
 	billingCreditRequestCmd.Flags().String("note", "", "why, for the operator who answers")
 	billingCreditCmd.AddCommand(billingCreditRequestCmd, billingCreditRequestsCmd)
 
 	billingPricesCmd.Flags().Bool("published", false, "Show the public price list rather than your org's own rates")
-	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingCreditCmd, billingBudgetCmd)
+	billingCmd.AddCommand(billingCostCmd, billingPricesCmd, billingInvoicesCmd, billingCreditCmd, billingBudgetCmd, billingPaymentMethodCmd)
 	rootCmd.AddCommand(billingCmd)
 }
 

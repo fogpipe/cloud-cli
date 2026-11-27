@@ -545,9 +545,62 @@ type BillingAccount struct {
 	Currency  string `json:"currency"`
 	// StopAtZero holds the organization to its pool credit: once the pool is
 	// used up, has ended or is withdrawn, the organization is suspended.
-	StopAtZero bool      `json:"stop_at_zero"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	StopAtZero bool `json:"stop_at_zero"`
+	// Payments is the mode the account pays by card in: off, test or live,
+	// set since PaymentsSince.
+	Payments      string     `json:"payments"`
+	PaymentsSince *time.Time `json:"payments_since,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// PaymentMethod is how an organization pays by card (#378). Payments is the
+// mode the operators set it to: "off" when it does not pay by card, and then
+// nothing else is set; "test" when it runs against the payment provider's test
+// mode, where no money moves; "live" otherwise.
+type PaymentMethod struct {
+	Payments string `json:"payments"`
+	// Card is the stored card every invoice is charged to, null until one is
+	// stored.
+	Card *Card `json:"card,omitempty"`
+	// Setup is the latest attempt to store a card, while it is in flight or
+	// when it ended without storing one since the card was stored.
+	Setup *CardSetup `json:"setup,omitempty"`
+	// Mandate is the text a billing admin agrees to by storing a card. A
+	// SetPaymentMethod names the version it showed.
+	Mandate *Mandate `json:"mandate,omitempty"`
+}
+
+// Card is a stored card, as much of it as the platform keeps: the brand, the
+// last four digits and the month it expires (YYYY-MM).
+type Card struct {
+	Brand  string    `json:"brand"`
+	Last4  string    `json:"last4"`
+	Expiry string    `json:"expiry"`
+	Since  time.Time `json:"since"`
+}
+
+// CardSetup is one attempt to store a card. Status is one of creating, open,
+// pending, authorized (in flight), paid (stored), failed, canceled, expired or
+// not_created. CheckoutURL is where the card is entered, while it is open.
+type CardSetup struct {
+	Status        string    `json:"status"`
+	CheckoutURL   string    `json:"checkout_url,omitempty"`
+	FailureReason string    `json:"failure_reason,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
+}
+
+// Mandate is the versioned text a card is stored under.
+type Mandate struct {
+	Version string `json:"version"`
+	Text    string `json:"text"`
+}
+
+// SetPaymentMethodRequest starts storing a card. Consent is the version of the
+// mandate text the caller showed and the billing admin agreed to; a version
+// that is not the current one is refused.
+type SetPaymentMethodRequest struct {
+	Consent string `json:"consent"`
 }
 
 // Invoice is what an org owed for one closed period (#111). Amounts are decimal
