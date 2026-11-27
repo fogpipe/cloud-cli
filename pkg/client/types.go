@@ -200,10 +200,15 @@ type CapacityReport struct {
 
 // CapacityAxis is one dimension of a CapacityReport.
 //
-// Allowed and Admitted are the organization's, at organization scope only:
-// the bound on this axis and what is already counted against it, the two
-// numbers a create is refused by. A project read carries neither, only
-// OrgBound. Reserved and Used are the scope's in the latest hour
+// Allowed is the organization's bound on this axis, at organization scope
+// only. Counted is what the bound counts now, the number a create is refused
+// by, and Counts says what that is: "booked", what may run at once (every app
+// at its max scale, every runner at its max runners, every database at its
+// instances); "stored", what was last measured held; "written", the newest
+// hour's log rate. At organization scope Counted is the organization's; at
+// project scope it is the project's own part, on a booked axis only, since the
+// organization's sums projects its members may not see. Reserved and Used are
+// the scope's in the latest hour
 // their source recorded, named by ReservedHour and UsedHour: what metering
 // last billed on this axis and what was last measured. A metered hour lands
 // about 52 minutes after it ends, so neither is the present.
@@ -213,12 +218,14 @@ type CapacityReport struct {
 //
 //   - Allowed is absent at project scope, and at organization scope when the
 //     bound cannot be read; a malformed bound refuses every create on the axis.
-//   - Admitted is absent at project scope, and when its source was not read:
-//     no cluster, or a measured axis that has never been measured.
-//   - OrgBound is present at project scope on an axis the organization
-//     bounds: "at" once what it has admitted reaches the bound, so a create on
-//     the axis is refused; "near" from 80% of it; "below" under that. Absent
-//     when that cannot be read.
+//   - Counted is absent when its source was not read (no cluster, or a
+//     measured axis that has never been measured), and at project scope on an
+//     axis whose bound does not count what is booked.
+//   - Counts is absent on an axis with no bound.
+//   - OrgBound is present on an axis the organization bounds, at both scopes:
+//     "at" once what the bound counts reaches it, so a create on the axis is
+//     refused; "near" from 80% of it; "below" under that. Absent when that
+//     cannot be read.
 //   - Reserved is null on an axis where Reserves is false (nothing reserves it:
 //     its use is what counts against the bound), and otherwise until metering
 //     has recorded an hour the scope existed in.
@@ -232,14 +239,14 @@ type CapacityAxis struct {
 	// objects.
 	Axis string `json:"axis"`
 	// Unit is "core", "byte", "byte_per_second", "count" or
-	// "request_per_hour". A count (pods, objects) has a bound and an admitted
+	// "request_per_hour". A count (pods, objects) has a bound and a counted
 	// figure and nothing else; HTTP requests are used only, an hour's requests
 	// averaged over the hours the platform read; log_bytes_per_second is what apps and
 	// jobs wrote to their logs, as bytes a second averaged over each hour,
 	// against the rate the log store refuses lines over.
 	Unit string `json:"unit"`
 	// Bounded says, at organization scope, that the organization has a bound
-	// on the axis, so Allowed and Admitted exist; false on HTTP requests, which
+	// on the axis, so Allowed and Counted exist; false on HTTP requests, which
 	// have none yet, and on every axis of a project read.
 	Bounded bool `json:"bounded,omitempty"`
 	// Reserves says the axis has a reservation distinct from its use: limits
@@ -250,7 +257,8 @@ type CapacityAxis struct {
 	// kind of resource on it; Unmeasured names the kinds it does not.
 	MeasuresUse bool     `json:"measures_use"`
 	Allowed     *float64 `json:"allowed,omitempty"`
-	Admitted    *float64 `json:"admitted,omitempty"`
+	Counts      string   `json:"counts,omitempty"`
+	Counted     *float64 `json:"counted,omitempty"`
 	OrgBound    string   `json:"org_bound,omitempty"`
 	Reserved    *float64 `json:"reserved"`
 	// ReservedHour is the start of the hour Reserved is from.
@@ -263,8 +271,9 @@ type CapacityAxis struct {
 	// average held over the hours of its step that its source recorded.
 	Series []CapacityPoint `json:"series"`
 	// Rows are the projects (organization scope) or resources (project scope)
-	// that reserved or used anything on this axis in the window, each averaged
-	// over it, largest reservation first.
+	// that book anything on this axis now, or reserved or used anything on it
+	// in the window, largest reservation first. Where Counts is "booked" their
+	// Counted figures sum to the axis's.
 	Rows []CapacityRow `json:"rows"`
 	// Unmeasured names the kinds of resource whose reservation is on this axis
 	// and whose use it does not read (runner, job, database, volume).
@@ -338,17 +347,25 @@ type CapacityPoint struct {
 	Used     *float64 `json:"used"`
 }
 
-// CapacityRow is one project or resource on an axis, averaged over the window.
+// CapacityRow is one project or resource on an axis: what it books now, and
+// what it reserved and used averaged over the window.
 type CapacityRow struct {
 	// Kind is project, app, database, job, runner or bucket. At project scope a
 	// row of kind project is what was measured on no resource of the project:
-	// its registry share, its backups, a volume no resource owns.
+	// its registry share, its backups, a volume no resource owns. Two kinds
+	// carry a booking and nothing else, and have no ID: workload, a Deployment
+	// the platform did not render, named by Name; and volume, the volumes no
+	// database owns.
 	Kind string `json:"kind"`
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
 	// Deleted marks a row whose project or resource no longer exists, while
 	// the record still holds what it used.
 	Deleted bool `json:"deleted,omitempty"`
+	// Counted is what the row books now, where the axis's Counts is "booked":
+	// null on any other axis, and when the cluster could not be read. A zero
+	// is a holder that books nothing now.
+	Counted *float64 `json:"counted"`
 	// Null as on CapacityAxis.
 	Reserved *float64 `json:"reserved"`
 	Used     *float64 `json:"used"`

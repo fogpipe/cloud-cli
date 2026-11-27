@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,17 +18,24 @@ var usageCmd = &cobra.Command{
 	Use:   "usage",
 	Short: "Show what the project or organization holds against what it may hold",
 	Long: `Show, for each dimension of what the organization holds, what it may
-hold, what is reserved and what is actually used.
+hold, what its bound counts, what is reserved and what is actually used.
 
 Each dimension in its own unit, never added together: CPU in cores, memory and
 storage in bytes, instances and objects as counts, HTTP requests per hour.
-RESERVED is what the scope held booked (limits and volume sizes) and USED what
-it measurably used, each in the latest hour the platform has recorded, which
-HOUR names (UTC): an hour is recorded about 50 minutes after it ends, so
-neither is the present. With --org-wide, ALLOWED is the organization's bound
-and ADMITTED what that bound counts now, the number a create is refused by. A
-project shows its own figures, and says when its organization is at or near a
+
+With --org-wide, ALLOWED is the organization's bound and COUNTED what that
+bound counts now, the number a create is refused by, with what it counts:
+"booked" on CPU, memory, storage and instances, which is what may run at once
+(every app at its max scale, every runner at its max runners, every database
+at its instances); "stored" on object storage, the registry, backups and
+objects, as last measured; "written" on logs. A project shows BOOKED, its own
+part of what the bound counts, and says when its organization is at or near a
 bound; an owner asks for more with ` + "`fpcloud org quota request`" + `.
+
+RESERVED is the limits and volume sizes of what ran, and USED what was
+measurably used, each in the latest hour the platform has recorded, which HOUR
+names (UTC): an hour is recorded about 50 minutes after it ends, so neither is
+the present. BOOKED and COUNTED are read now.
 
 "no reading" is a figure the platform could not read, or has not recorded
 yet: a project created after the latest recorded hour has none. 0 is a
@@ -41,7 +49,7 @@ the platform read.
 
   fpcloud usage                     this project
   fpcloud usage --org-wide          the whole organization
-  fpcloud usage --rows              and each resource's share, over 30 days
+  fpcloud usage --rows              and what each resource books now and held over 30 days
   fpcloud usage --org-wide --rows --from 7d
   fpcloud usage -o json             every figure, with each dimension's series`,
 	Args: cobra.NoArgs,
@@ -106,8 +114,11 @@ the platform read.
 				if len(a.Rows) == 0 {
 					continue
 				}
-				fmt.Printf("\n%s, averaged over %s to %s\n", capacityAxisLabel(a.Axis),
-					report.From.UTC().Format("2006-01-02 15:04"), report.To.UTC().Format("2006-01-02 15:04 MST"))
+				period := fmt.Sprintf("averaged over %s to %s", report.From.UTC().Format("2006-01-02 15:04"), report.To.UTC().Format("2006-01-02 15:04 MST"))
+				if a.Counts == "booked" {
+					period = "booked now; reserved and used " + period
+				}
+				fmt.Printf("\n%s, %s\n", capacityAxisLabel(a.Axis), period)
 				renderTable(capacityShareRows(a))
 			}
 		}
@@ -158,20 +169,26 @@ func capacityFigure(v *float64, unit string) string {
 }
 
 // capacityRows is one row per dimension: at organization scope the bound and
-// what it counts, then what the scope reserved and used in the latest hour
-// recorded and which hour that was, "-" where the dimension has no such figure
-// at all. A project read carries no bound, so its table has no column for one.
+// what it counts, at project scope what the project books, then what the scope
+// reserved and used in the latest hour recorded and which hour that was, "-"
+// where the dimension has no such figure at all. A project read carries no
+// bound, so its table has no column for one.
 func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
 	orgScope := r.Scope == "organization"
-	headers := []string{"DIMENSION", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
+	headers := []string{"DIMENSION", "BOOKED", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
 	if orgScope {
-		headers = []string{"DIMENSION", "ALLOWED", "ADMITTED", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
+		headers = []string{"DIMENSION", "ALLOWED", "COUNTED", "RESERVED", "USED", "HOUR", "NOT MEASURED"}
 	}
 	rows := make([][]string, 0, len(r.Axes))
 	for _, a := range r.Axes {
-		allowed, admitted, reserved, used := "-", "-", "-", "-"
+		allowed, counted, reserved, used := "-", "-", "-", "-"
 		if a.Bounded {
-			allowed, admitted = capacityFigure(a.Allowed, a.Unit), capacityFigure(a.Admitted, a.Unit)
+			allowed, counted = capacityFigure(a.Allowed, a.Unit), capacityFigure(a.Counted, a.Unit)
+			if a.Counted != nil && a.Counts != "" {
+				counted += " " + a.Counts
+			}
+		} else if !orgScope && a.Counts == "booked" {
+			counted = capacityFigure(a.Counted, a.Unit)
 		}
 		if a.Reserves {
 			reserved = capacityFigure(a.Reserved, a.Unit)
@@ -186,9 +203,9 @@ func capacityRows(r *client.CapacityReport) ([]string, [][]string) {
 				unmeasured[i] = w
 			}
 		}
-		row := []string{capacityAxisLabel(a.Axis), reserved, used, capacityHours(a), strings.Join(unmeasured, ", ")}
+		row := []string{capacityAxisLabel(a.Axis), counted, reserved, used, capacityHours(a), strings.Join(unmeasured, ", ")}
 		if orgScope {
-			row = append([]string{row[0], allowed, admitted}, row[1:]...)
+			row = append([]string{row[0], allowed}, row[1:]...)
 		}
 		rows = append(rows, row)
 	}
@@ -218,9 +235,13 @@ func capacityHours(a client.CapacityAxis) string {
 }
 
 // capacityNear says which dimensions a project's organization is at or near
-// its bound on, and who can ask for more; empty when none is. At the bound a
+// its bound on, and who can ask for more; empty when none is, and on an
+// organization's read, whose table shows the bound itself. At the bound a
 // create is refused, which is the reader's first question, so it comes first.
 func capacityNear(r *client.CapacityReport) string {
+	if r.Scope == "organization" {
+		return ""
+	}
 	var at, near []string
 	for _, a := range r.Axes {
 		switch a.OrgBound {
@@ -243,20 +264,31 @@ func capacityNear(r *client.CapacityReport) string {
 	return strings.Join(lines, "\n") + "\nAn owner can ask for more with `fpcloud org quota request`."
 }
 
-// capacityShareRows is what each project or resource of the scope held on one
-// dimension, averaged over the period; a deleted one is tagged, since a live
-// one may carry its name.
+// capacityShareRows is what each project or resource of the scope books now,
+// where the dimension's bound counts what is booked, largest first, and what it
+// held on the dimension averaged over the period; a deleted one is tagged,
+// since a live one may carry its name.
 func capacityShareRows(a client.CapacityAxis) ([]string, [][]string) {
+	booked := a.Counts == "booked"
 	headers := []string{"KIND", "NAME", "RESERVED", "USED"}
-	rows := make([][]string, 0, len(a.Rows))
-	for _, r := range a.Rows {
+	held := a.Rows
+	if booked {
+		headers = []string{"KIND", "NAME", "BOOKED", "RESERVED", "USED"}
+		held = append([]client.CapacityRow(nil), a.Rows...)
+		sort.SliceStable(held, func(i, j int) bool { return figureOrLess(held[i].Counted) > figureOrLess(held[j].Counted) })
+	}
+	rows := make([][]string, 0, len(held))
+	for _, r := range held {
 		name := r.Name
 		if name == "" {
 			name = r.ID
 		}
-		if r.Kind == "project" && r.ID == "" {
+		switch {
+		case r.Kind == "project" && r.ID == "":
 			// Measured on the project and no resource of it.
 			name = "(project)"
+		case r.Kind == "volume":
+			name = "(volumes no database owns)"
 		}
 		reserved, used := "-", "-"
 		if a.Reserves {
@@ -265,9 +297,21 @@ func capacityShareRows(a client.CapacityAxis) ([]string, [][]string) {
 		if a.MeasuresUse {
 			used = capacityFigure(r.Used, a.Unit)
 		}
-		rows = append(rows, []string{r.Kind, deletedName(name, r.Deleted), reserved, used})
+		row := []string{r.Kind, deletedName(name, r.Deleted), reserved, used}
+		if booked {
+			row = []string{r.Kind, deletedName(name, r.Deleted), capacityFigure(r.Counted, a.Unit), reserved, used}
+		}
+		rows = append(rows, row)
 	}
 	return headers, rows
+}
+
+// figureOrLess orders an unread figure below every read one.
+func figureOrLess(v *float64) float64 {
+	if v == nil {
+		return math.Inf(-1)
+	}
+	return *v
 }
 
 // requestRateDigits keeps a rate under ten requests an hour readable (0.4/h)
