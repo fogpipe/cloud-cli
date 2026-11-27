@@ -115,7 +115,10 @@ the platform read.
 					continue
 				}
 				period := fmt.Sprintf("averaged over %s to %s", report.From.UTC().Format("2006-01-02 15:04"), report.To.UTC().Format("2006-01-02 15:04 MST"))
-				if a.Counts == "booked" {
+				switch {
+				case a.Counts == "booked" && !a.Reserves && !a.MeasuresUse:
+					period = "booked now"
+				case a.Counts == "booked":
 					period = "booked now; reserved and used " + period
 				}
 				fmt.Printf("\n%s, %s\n", capacityAxisLabel(a.Axis), period)
@@ -302,6 +305,13 @@ func capacityShareRows(a client.CapacityAxis) ([]string, [][]string) {
 			row = []string{r.Kind, deletedName(name, r.Deleted), capacityFigure(r.Counted, a.Unit), reserved, used}
 		}
 		rows = append(rows, row)
+	}
+	if booked && !a.Reserves && !a.MeasuresUse {
+		// A count holds nothing over time: what each holder books is all.
+		for i := range rows {
+			rows[i] = rows[i][:3]
+		}
+		headers = headers[:3]
 	}
 	return headers, rows
 }

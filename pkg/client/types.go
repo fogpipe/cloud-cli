@@ -273,7 +273,8 @@ type CapacityAxis struct {
 	// Rows are the projects (organization scope) or resources (project scope)
 	// that book anything on this axis now, or reserved or used anything on it
 	// in the window, largest reservation first. Where Counts is "booked" their
-	// Counted figures sum to the axis's.
+	// Counted figures sum to the axis's; on instances, the one count that
+	// books, each row is what its holder books and nothing else.
 	Rows []CapacityRow `json:"rows"`
 	// Unmeasured names the kinds of resource whose reservation is on this axis
 	// and whose use it does not read (runner, job, database, volume).
@@ -366,6 +367,12 @@ type CapacityRow struct {
 	// null on any other axis, and when the cluster could not be read. A zero
 	// is a holder that books nothing now.
 	Counted *float64 `json:"counted"`
+	// UsedNow is what the row used in the hour the axis's UsedHour names,
+	// beside Counted, so what a holder books and what it uses are read at one
+	// moment. Set only where Counted is; null when that hour was not read, and
+	// for a kind whose use is not measured (a runner, a job, a workload, a
+	// volume), which is unknown rather than idle.
+	UsedNow *float64 `json:"used_now"`
 	// Null as on CapacityAxis.
 	Reserved *float64 `json:"reserved"`
 	Used     *float64 `json:"used"`

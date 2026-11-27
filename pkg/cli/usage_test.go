@@ -105,6 +105,14 @@ func TestCapacityShareRowsSayWhatEachHolderBooks(t *testing.T) {
 	}, rows)
 }
 
+// Instances are a count: --rows says what each holder books and nothing else.
+func TestACountsShareRowsAreWhatEachHolderBooks(t *testing.T) {
+	a := client.CapacityAxis{Axis: "pods", Unit: "count", Counts: "booked", Rows: []client.CapacityRow{{Kind: "runner", ID: "r1", Name: "ci", Counted: f(4)}}}
+	headers, rows := capacityShareRows(a)
+	assert.Equal(t, []string{"KIND", "NAME", "BOOKED"}, headers)
+	assert.Equal(t, [][]string{{"runner", "ci", "4"}}, rows)
+}
+
 // A cost total says how far it reaches, so a resource created minutes ago
 // reading nothing is explained by the hour, not taken for free.
 func TestACostTotalSaysTheHourItIsMeteredThrough(t *testing.T) {
