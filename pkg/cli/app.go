@@ -1991,7 +1991,7 @@ func init() {
 	appCreateCmd.Flags().String("memory", "", "Memory limit per instance, like 512Mi or 2Gi (default 512Mi)")
 	estimateFlag(appCreateCmd)
 	appCreateCmd.Flags().Int("port", 8080, "Port the container listens on")
-	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1); 0 lets a web app sleep after 15 minutes without a request and wake on the next one")
+	appCreateCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs (default 1); 0 lets a web app sleep 15 minutes after its last request, or a few minutes after a deploy nobody calls, and wake on the next one")
 	appCreateCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load (default 1: a fixed size; equal to --min-scale is fixed, above it autoscales)")
 	appCreateCmd.Flags().String("ingress", "internal", "Ingress setting: 'all' (public) or 'internal' (default)")
 	appCreateCmd.Flags().StringArray("route", nil, "Keep a path prefix off the public ingress while it stays reachable in-cluster: 'path[:visibility]' (e.g. /internal/). Repeatable; needs --ingress all")
@@ -2048,7 +2048,7 @@ func init() {
 	appLogsCmd.Flags().String("deployment", "", "Read the lines of one deploy only, by the id app deployments lists")
 	appLogsCmd.Flags().String("status", "", "Read the requests answered with this status: a code (500) or a class (5xx)")
 
-	appScaleCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs; 0 lets a web app sleep after 15 minutes without a request and wake on the next one")
+	appScaleCmd.Flags().Int32("min-scale", 1, "Fewest instances the app runs; 0 lets a web app sleep 15 minutes after its last request, or a few minutes after a deploy nobody calls, and wake on the next one")
 	estimateFlag(appScaleCmd)
 	appScaleCmd.Flags().Int32("max-scale", 1, "Most instances the app grows to on CPU load; equal to --min-scale is a fixed size, above it autoscales between them")
 	appScaleCmd.Flags().String("cpu", "500m", "CPU limit (e.g. 500m, 1)")
